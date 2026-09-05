@@ -1,6 +1,6 @@
 # TFT Strategist
 
-A private TFT pre-game desktop companion. M1 includes four attributed Set 18 playbooks, a deterministic three-plan portfolio, visible confidence, playbook detail, local persistence, and read-only history/scouting extension points. No runtime LLM or protected game-process access.
+A private TFT pre-game desktop companion. The current build includes four attributed and re-audited Set 18 playbooks, a deterministic three-plan portfolio, visible confidence, playbook detail, local persistence, and read-only history/scouting extension points. No runtime LLM or protected game-process access.
 
 ## Run
 
@@ -45,7 +45,7 @@ UI tests use installed Microsoft Edge via Playwright. Screenshots go to ignored 
 
 ## Source and refresh
 
-Set 18 / Enchanted Wilds / patch 18.1 was reviewed against Riot's patch notes on September 5, 2026. The available static export is dated August 29; August 31 hotfix parity is unverified. Set selection is pinned to a reviewed manifest and mutator, not automatically inferred from the highest set number.
+Set 18 / Enchanted Wilds / patch 18.1 was audited against Riot's patch notes on September 6, 2026. The available static export is dated August 29 and predates the August 31 / September 1 hotfix, so combat-value parity is explicitly `known-stale`. Set selection is pinned to a reviewed manifest and mutator, not inferred from the highest set number.
 
 The bundle contains 74 unit records (including Avatar forms), 36 traits, 502 item/special-object definitions, 254 augment definitions, and 57 art assets. Definitions do not imply that every special item is equippable or every augment is enabled on live.
 
@@ -64,11 +64,11 @@ The UI's **Refresh static source** validates and caches a successful fetch. Fail
 - **Scoring:** inputs, risk estimates, contest elasticity, core criticality and optimizer weights are seeded and labeled. Personal influence defaults to 5%, bounded to 5–10%; no history currently means zero adjustment.
 - **Team Planner:** disabled / Unverified. Mapping, fixture, round-trip tests and human client paste remain outstanding. No speculative codes are emitted.
 - **Riot:** contracts and a fixture-backed scanner exist. No authenticated provider or live account/lobby connection. No environment variables or API keys are consumed by M1.
-- **Rules:** membership, declared capacity, references and core relationships are checked. Level/capacity modifiers, special counting, unique constraints, shop/pool/economy and star rules remain unverified.
+- **Rules:** board capacity, occupied slots, Riftbeast 10 capacity, Lux/Elder Dragon counting, normal duplicate counting, shop odds, pools, XP, interest, star copies, item recipes, and current-set references are fixture-backed and validated. Emblems, other conditional capacity exceptions, most live augment statuses, and Team Planner remain unverified.
 - **Guidance:** missing stabilization boards, alternatives, substitutes, actionable pivots, precise timing and positioning are explicitly unavailable.
 - **Post-game:** typed association and deterministic end-state summary exist; import UI and historical personal modeling are future work.
 
-See [data ledger](docs/M1_DATA_SOURCES.md), [Riot setup](docs/RIOT_SETUP.md), [implementation report](docs/M1_IMPLEMENTATION_REPORT.md), and [prioritized next tasks](docs/V1_5_BACKLOG.md).
+See the [M2 rule evidence ledger](docs/M2_RULE_EVIDENCE_LEDGER.md), [playbook audit](docs/M2_PLAYBOOK_AUDIT.md), [Riot setup](docs/RIOT_SETUP.md), and [prioritized next tasks](docs/V1_5_BACKLOG.md).
 
 ## Core principle
 

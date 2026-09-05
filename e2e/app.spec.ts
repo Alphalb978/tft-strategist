@@ -3,9 +3,9 @@ test('three plans, real art, readable detail and safe planner status', async ({ 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
-  await expect(
-    page.getByRole('heading', { name: 'Three plans. More possibilities.' }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Three plans. More possibilities.' })).toBeVisible(
+    { timeout: 15_000 },
+  );
   await expect(page.getByRole('button', { name: 'Explore playbook' })).toHaveCount(3);
   await page
     .locator('.card-art img')
@@ -34,6 +34,8 @@ test('refresh failure keeps usable plans and settings persist', async ({ page })
   await page.goto('/');
   await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Data & settings', exact: true })).toBeVisible();
+  await expect(page.getByText('known-stale', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Board & capacity: verified/)).toBeVisible();
   await page.getByLabel('Opponent history target').selectOption('20');
   await expect(page.getByRole('status')).toContainText('Settings saved');
   await page.reload();

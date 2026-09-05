@@ -1,82 +1,229 @@
 import { describe, expect, it } from 'vitest';
 import { validateBoard, validatePlaybook } from '../rules/validation';
 import { teamPlanner } from '../rules/teamPlanner';
+import {
+  auditStaticData,
+  capacityForBoard,
+  set18Rules,
+  traitCount,
+  usedBoardSlots,
+} from '../rules/ruleSet';
 import { data, playbooks } from './fixtures';
+
 const board = () => structuredClone(playbooks[0].target);
-const errors = () => validateBoard(board(), data).filter((i) => i.severity === 'error');
-describe('versioned board / playbook validation', () => {
-  it('rejects a variant that removes its family core even if its own requirements are empty', () => {
-    const p = structuredClone(playbooks[0]);
-    p.variants[0].board.units = [];
-    p.variants[0].board.requiredUnits = [];
-    expect(validatePlaybook(p, data).some((i) => i.code === 'variant-core')).toBe(true);
+const errorCodes = (value = board()) =>
+  validateBoard(value, data)
+    .filter((issue) => issue.severity === 'error')
+    .map((issue) => issue.code);
+
+describe('audited Set 18 rules and validation', () => {
+  it('reconciles the normalized export with the versioned rule fixture', () => {
+    expect(auditStaticData(data)).toEqual([]);
+    expect(data.version.parityStatus).toBe('known-stale');
+    expect(set18Rules.hotfixOverlay.changes).toContainEqual([
+      'DA_Riftbeast18',
+      '7-piece team stats',
+      '6%',
+      '5%',
+    ]);
   });
-  it('accepts all curated structures while preserving verification warnings', () => {
-    expect(errors()).toEqual([]);
-    for (const p of playbooks) {
-      expect(validatePlaybook(p, data).filter((i) => i.severity === 'error')).toEqual([]);
-      expect(validatePlaybook(p, data).some((i) => i.code === 'level-capacity')).toBe(true);
+
+  it('locks current shop odds, pool sizes, XP, interest, and star copy math', () => {
+    expect(set18Rules.shop.oddsByLevel['7']).toEqual([0.19, 0.3, 0.4, 0.1, 0.01]);
+    expect(set18Rules.shop.oddsByLevel['10']).toEqual([0.05, 0.1, 0.2, 0.4, 0.25]);
+    expect(set18Rules.shop.poolCopiesByCost).toEqual({
+      1: 30,
+      2: 25,
+      3: 18,
+      4: 10,
+      5: 9,
+    });
+    expect(set18Rules.experience.xpToNextLevel).toEqual({
+      2: 2,
+      3: 6,
+      4: 10,
+      5: 20,
+      6: 36,
+      7: 60,
+      8: 68,
+      9: 68,
+    });
+    expect(set18Rules.shop.starCopies).toEqual({ 1: 1, 2: 3, 3: 9 });
+    expect(set18Rules.economy).toMatchObject({
+      interestGoldPerTenHeld: 1,
+      interestCap: 5,
+      interestCapGold: 50,
+    });
+  });
+
+  it('accepts every re-audited playbook and computes only reachable trait claims', () => {
+    for (const playbook of playbooks) {
+      expect(
+        validatePlaybook(playbook, data).filter((issue) => issue.severity === 'error'),
+      ).toEqual([]);
+      for (const claim of playbook.target.traitClaims)
+        expect(traitCount(playbook.target, data, claim.traitId)).toBeGreaterThanOrEqual(
+          claim.breakpoint,
+        );
     }
   });
-  it('rejects wrong set and inactive units', () => {
-    const b = board();
-    b.set = 17;
-    b.units[0].championId = 'TFT17_NotSet18';
-    expect(validateBoard(b, data).map((i) => i.code)).toEqual(
-      expect.arrayContaining(['set', 'membership', 'required']),
+
+  it('matches the four source-board active trait summaries', () => {
+    const names = (index: number) =>
+      playbooks[index].target.traitClaims
+        .map((claim) => data.traits.find((trait) => trait.id === claim.traitId)?.name)
+        .sort();
+    expect(names(0)).toEqual(
+      ['Defender', 'Elderwood', 'Fae', 'Juggernaut', 'Rapidfire', 'Solar', 'Vanguard'].sort(),
+    );
+    expect(names(1)).toEqual(
+      ['Adaptor', 'Blossom', 'Brawler', 'Caustic', 'Juggernaut', 'Primal', 'Rival'].sort(),
+    );
+    expect(names(2)).toEqual(
+      [
+        'Attuned',
+        'Blackthorn',
+        'Executioner',
+        'Flora Fatalis',
+        'Inferno',
+        'Juggernaut',
+        'Monolith',
+        'Spellweaver',
+        'Summoner',
+        'Thornmaiden',
+      ].sort(),
+    );
+    expect(names(3)).toEqual(
+      [
+        'Bounty Seeker',
+        'Brawler',
+        'Elderwood',
+        'Emerald Aspect',
+        'Executioner',
+        'Greenfather',
+        'Inferno',
+        'Juggernaut',
+        'Old Growth',
+      ].sort(),
     );
   });
-  it('rejects too many units and bad declared capacity', () => {
-    const b = board();
-    b.capacity = 6;
-    expect(validateBoard(b, data).some((i) => i.code === 'capacity')).toBe(true);
-    b.capacity = 2.5;
-    expect(validateBoard(b, data).some((i) => i.code === 'target')).toBe(true);
+
+  it('counts duplicate ordinary units once for traits', () => {
+    const value = board();
+    value.units = [value.units[0], structuredClone(value.units[0])];
+    value.requiredUnits = [];
+    value.targetLevel = 2;
+    value.capacity = 2;
+    value.traitClaims = [];
+    const traitId = data.champions.find((champion) => champion.id === value.units[0].championId)!
+      .traitIds[0];
+    expect(traitCount(value, data, traitId)).toBe(1);
+    expect(errorCodes(value)).not.toContain('duplicates');
   });
-  it('rejects missing required units, items and augments', () => {
-    const b = board();
-    b.units.shift();
-    b.units[0].items = ['made-up'];
-    b.augmentIds = ['made-up'];
-    expect(validateBoard(b, data).map((i) => i.code)).toEqual(
-      expect.arrayContaining(['required', 'item', 'augment']),
+
+  it('implements Lux double-origin counting and rejects the base placeholder or two forms', () => {
+    const value = board();
+    const lux = data.champions.find((champion) => champion.id === 'DA_18_Lux_Elderwood')!;
+    value.units = [{ championId: lux.id, items: [], slot: 'core' }];
+    value.requiredUnits = [];
+    value.targetLevel = 1;
+    value.capacity = 1;
+    value.traitClaims = [];
+    expect(traitCount(value, data, 'DA_18_Elderwood')).toBe(2);
+    expect(errorCodes(value)).toEqual([]);
+    value.units[0].championId = 'DA_Lux18_Base';
+    expect(errorCodes(value)).toContain('special-unit');
+    value.units[0].championId = lux.id;
+    value.units.push({ championId: 'DA_18_Lux_Fae', items: [], slot: 'flex' });
+    value.targetLevel = 2;
+    value.capacity = 2;
+    expect(errorCodes(value)).toContain('exclusive-unit');
+  });
+
+  it('applies Elder Dragon two-slot and doubled Riftbeast rules plus the 10-piece capacity modifier', () => {
+    const riftbeasts = data.champions.filter((champion) =>
+      champion.traitIds.includes('DA_Riftbeast18'),
+    );
+    const elder = riftbeasts.find((champion) => champion.id === 'DA_18_ElderDragon')!;
+    const value = board();
+    value.units = [elder, ...riftbeasts.filter((champion) => champion !== elder).slice(0, 8)].map(
+      (champion) => ({ championId: champion.id, items: [], slot: 'flex' as const }),
+    );
+    value.requiredUnits = [];
+    value.targetLevel = 8;
+    value.traitClaims = [{ traitId: 'DA_Riftbeast18', breakpoint: 10 }];
+    value.capacity = 10;
+    expect(traitCount(value, data, 'DA_Riftbeast18')).toBe(10);
+    expect(usedBoardSlots(value)).toBe(10);
+    expect(capacityForBoard(value, data)).toBe(10);
+    expect(errorCodes(value)).toEqual([]);
+  });
+
+  it('rejects wrong set, unknown units, invalid capacities, and missing references', () => {
+    const value = board();
+    value.set = 17;
+    value.capacity = 6;
+    value.units[0].championId = 'TFT17_NotSet18';
+    value.units[1].items = ['made-up'];
+    value.augmentIds = ['made-up'];
+    expect(errorCodes(value)).toEqual(
+      expect.arrayContaining([
+        'set',
+        'capacity-declaration',
+        'membership',
+        'required',
+        'item',
+        'augment',
+      ]),
     );
   });
-  it('flags duplicates without inventing uniqueness rules', () => {
-    const b = board();
-    b.units[1].championId = b.units[0].championId;
-    expect(validateBoard(b, data).find((i) => i.code === 'duplicates')?.severity).toBe(
-      'unverified',
+
+  it('rejects impossible or unavailable trait threshold claims', () => {
+    const value = board();
+    value.traitClaims = [{ traitId: 'DA_18_Elderwood', breakpoint: 11 }];
+    expect(errorCodes(value)).toContain('trait-count');
+    value.traitClaims = [{ traitId: 'DA_18_Eclipse', breakpoint: 1 }];
+    expect(errorCodes(value)).toContain('trait');
+    expect(data.traits.find((trait) => trait.id === 'DA_18_Eclipse')?.availability).toBe(
+      'unavailable',
     );
   });
-  it('rejects unreachable source thresholds but never certifies unknown counting', () => {
-    const b = board();
-    b.traitClaims = [{ traitId: 'DA_18_Elderwood', breakpoint: 11 }];
-    expect(validateBoard(b, data).some((i) => i.code === 'trait-count')).toBe(true);
-    b.traitClaims[0].breakpoint = 3;
-    expect(validateBoard(b, data).some((i) => i.code === 'trait-rule')).toBe(true);
+
+  it('distinguishes export presence from live augment availability', () => {
+    const forge = data.augments.find((augment) => augment.id === 'DA_ForgeAFriend')!;
+    expect(forge).toMatchObject({ presentInExport: true, liveStatus: 'disabled' });
+    const value = board();
+    value.augmentIds = [forge.id];
+    expect(errorCodes(value)).toContain('augment-disabled');
+    expect(data.augments.some((augment) => augment.liveStatus === 'unverified')).toBe(true);
   });
-  it('rejects a dangling Decision Map edge and item holder', () => {
-    const p = structuredClone(playbooks[0]);
-    p.decisionMap.edges[0].to = 'missing';
-    p.items[0].holder = 'missing';
-    expect(validatePlaybook(p, data).map((i) => i.code)).toEqual(
-      expect.arrayContaining(['decision-edge', 'holder']),
+
+  it('rejects invalid variants, Decision Map edges, holders, and recipes', () => {
+    const playbook = structuredClone(playbooks[0]);
+    playbook.variants[0].board.units = [];
+    playbook.variants[0].board.requiredUnits = [];
+    playbook.decisionMap.edges[0].to = 'missing';
+    playbook.items[0].holder = 'missing';
+    playbook.items[0].priorities = ['DA_Component_RecurveBow'];
+    expect(validatePlaybook(playbook, data).map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(['variant-core', 'decision-edge', 'holder', 'item-reference']),
     );
   });
-  it('does not label source capacity as rolling level', () => {
+
+  it('preserves the Fast 8 guide contradiction without inventing a level-8 cut', () => {
     expect(playbooks[2].features.style).toBe('Fast 8');
     expect(playbooks[2].target.capacity).toBe(9);
-    expect(playbooks[2].stages.find((s) => s.stage === 'stabilization')?.board.value).toBeNull();
+    expect(
+      playbooks[2].stages.find((stage) => stage.stage === 'stabilization')?.board.value,
+    ).toBeNull();
   });
-  it('fails safely for unverified and unsupported Team Planner formats', () => {
+
+  it('keeps Team Planner fail-safe until every acceptance gate is verified', () => {
     expect(teamPlanner.supportStatus({ set: 18 }).state).toBe('unverified');
     expect(teamPlanner.supportStatus({ set: 17 }).state).toBe('unsupported');
     expect(teamPlanner.encode(board()).ok).toBe(false);
-  });
-  it('rejects supported=true before manual acceptance', () => {
-    const p = structuredClone(playbooks[0]);
-    p.planner.state = 'supported';
-    expect(validatePlaybook(p, data).some((i) => i.code === 'planner')).toBe(true);
+    const playbook = structuredClone(playbooks[0]);
+    playbook.planner.state = 'supported';
+    expect(validatePlaybook(playbook, data).some((issue) => issue.code === 'planner')).toBe(true);
   });
 });

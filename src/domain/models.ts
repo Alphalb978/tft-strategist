@@ -15,8 +15,9 @@ export interface ActiveSetVersion {
   name: string;
   patch: string;
   sourceVersion: string;
-  schemaVersion: 1;
+  schemaVersion: 2;
   patchVerified: boolean;
+  parityStatus: 'current' | 'known-stale' | 'unverified';
   provenance: Provenance;
 }
 export interface Champion {
@@ -29,6 +30,9 @@ export interface Champion {
   set: number;
   role?: string;
   plannerId?: string;
+  shopStatus: 'pool' | 'runtime-variant' | 'placeholder';
+  boardEligible: boolean;
+  provenance: Provenance;
 }
 export interface Trait {
   id: ID;
@@ -36,6 +40,7 @@ export interface Trait {
   icon: string | null;
   breakpoints: number[];
   counting: 'unverified' | 'unique-unit';
+  availability: 'verified' | 'unavailable';
   provenance: Provenance;
 }
 export interface Item {
@@ -46,6 +51,7 @@ export interface Item {
   category: 'component' | 'combined' | 'other';
   set: number;
   availability: Verification;
+  provenance: Provenance;
 }
 export interface Augment {
   id: ID;
@@ -55,7 +61,10 @@ export interface Augment {
   tier?: string;
   category?: string;
   availability: Verification;
+  presentInExport: boolean;
+  liveStatus: 'enabled' | 'disabled' | 'unverified';
   requiredTraits: ID[];
+  provenance: Provenance;
 }
 export interface StaticData {
   version: ActiveSetVersion;

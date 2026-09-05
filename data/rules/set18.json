@@ -1,15 +1,276 @@
 {
-  "id": "set18-structural-v1",
-  "set": 18,
-  "schemaVersion": 1,
-  "verifiedAt": "2026-09-05",
-  "source": "https://raw.communitydragon.org/latest/cdragon/tft/en_us.json",
-  "notes": [
-    "Only declared board capacity is enforced. Level/capacity modifiers, shop odds, pools, XP and economy are unverified.",
-    "Trait thresholds come from the static payload. Special counting (Avatar, emblems, summons, duplicates) is not implemented."
-  ],
-  "capacityByLevel": null,
-  "uniqueUnitLimits": {},
-  "specialTraitIds": ["DA_18_LuxUniqueTrait"],
-  "planner": "unverified"
+  "schemaVersion": 2,
+  "scope": {
+    "setId": "set18",
+    "setNumber": 18,
+    "setName": "Enchanted Wilds",
+    "patch": "18.1",
+    "mode": "standard",
+    "mutator": "TFTSet18",
+    "verifiedAt": "2026-09-06T00:00:00.000Z"
+  },
+  "sources": {
+    "riotPatch181": {
+      "title": "Teamfight Tactics patch 18.1 notes",
+      "url": "https://teamfighttactics.leagueoflegends.com/en-sg/news/game-updates/teamfight-tactics-patch-18-1/",
+      "publisher": "Riot Games",
+      "sourceClass": "official",
+      "checkedAt": "2026-09-06T00:00:00.000Z"
+    },
+    "riotSetOverview": {
+      "title": "Enchanted Wilds overview",
+      "url": "https://teamfighttactics.leagueoflegends.com/en-sg/news/game-updates/enchanted-wilds-overview/",
+      "publisher": "Riot Games",
+      "sourceClass": "official",
+      "checkedAt": "2026-09-06T00:00:00.000Z"
+    },
+    "riotPatch161": {
+      "title": "Teamfight Tactics patch 16.1 notes",
+      "url": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-16-1/",
+      "publisher": "Riot Games",
+      "sourceClass": "official",
+      "checkedAt": "2026-09-06T00:00:00.000Z"
+    },
+    "riotPatch164": {
+      "title": "Teamfight Tactics patch 16.4 notes",
+      "url": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-16-4/",
+      "publisher": "Riot Games",
+      "sourceClass": "official",
+      "checkedAt": "2026-09-06T00:00:00.000Z"
+    },
+    "riotPatch171": {
+      "title": "Teamfight Tactics patch 17.1 notes",
+      "url": "https://teamfighttactics.leagueoflegends.com/en-gb/news/game-updates/teamfight-tactics-patch-17-1/",
+      "publisher": "Riot Games",
+      "sourceClass": "official",
+      "checkedAt": "2026-09-06T00:00:00.000Z"
+    },
+    "communityDragonStatic": {
+      "title": "CommunityDragon TFT normalized data",
+      "url": "https://raw.communitydragon.org/latest/cdragon/tft/en_us.json",
+      "publisher": "CommunityDragon",
+      "sourceClass": "technical",
+      "checkedAt": "2026-09-06T00:00:00.000Z",
+      "lastModified": "2026-08-29T00:53:30.000Z",
+      "etag": "\"6a922d8a-170fa5c\""
+    },
+    "communityDragonMap22": {
+      "title": "CommunityDragon Map22 raw game data",
+      "url": "https://raw.communitydragon.org/latest/game/data/maps/shipping/map22/map22.bin.json",
+      "publisher": "CommunityDragon",
+      "sourceClass": "technical",
+      "checkedAt": "2026-09-06T00:00:00.000Z",
+      "lastModified": "2026-08-29T00:50:59.000Z",
+      "etag": "W/\"6a922cf3-4217efc\""
+    },
+    "wikiChampion": {
+      "title": "TFT champion and shop mechanics",
+      "url": "https://wiki.leagueoflegends.com/en-us/TFT:Champion",
+      "publisher": "League of Legends Wiki",
+      "sourceClass": "secondary",
+      "checkedAt": "2026-09-06T00:00:00.000Z"
+    },
+    "wikiExperience": {
+      "title": "TFT experience mechanics",
+      "url": "https://wiki.leagueoflegends.com/en-us/TFT:Experience",
+      "publisher": "League of Legends Wiki",
+      "sourceClass": "secondary",
+      "checkedAt": "2026-09-06T00:00:00.000Z"
+    },
+    "tftLabGold": {
+      "title": "TFT gold and interest handbook",
+      "url": "https://tft-lab.com/en/handbook/gold",
+      "publisher": "TFT Lab",
+      "sourceClass": "secondary",
+      "checkedAt": "2026-09-06T00:00:00.000Z"
+    },
+    "traitLadder": {
+      "title": "Set 18 trait counting notes",
+      "url": "https://traitladder.com/",
+      "publisher": "Trait Ladder",
+      "sourceClass": "secondary",
+      "checkedAt": "2026-09-06T00:00:00.000Z"
+    }
+  },
+  "parity": {
+    "status": "known-stale",
+    "exportLastModified": "2026-08-29T00:53:30.000Z",
+    "liveEvidenceThrough": "2026-09-01T00:00:00.000Z",
+    "reason": "The available CommunityDragon export predates the official August 31 / September 1 patch 18.1 hotfix. Structural identifiers and rule tables are audited independently; live combat values are not claimed current.",
+    "sourceRefs": ["communityDragonStatic", "communityDragonMap22", "riotPatch181"]
+  },
+  "board": {
+    "status": "verified",
+    "capacityByLevel": {
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4,
+      "5": 5,
+      "6": 6,
+      "7": 7,
+      "8": 8,
+      "9": 9,
+      "10": 10
+    },
+    "ordinaryMaxLevel": 10,
+    "slotSizeOverrides": { "DA_18_ElderDragon": 2 },
+    "capacityModifiers": [
+      {
+        "traitApiName": "DA_Riftbeast18",
+        "minimumCount": 10,
+        "additionalSlots": 2,
+        "status": "verified",
+        "sourceRefs": ["communityDragonMap22"]
+      }
+    ],
+    "disallowedUnitApiNames": ["DA_Lux18_Base"],
+    "exclusiveUnitGroups": [
+      {
+        "id": "lux-avatar-form",
+        "maximumDistinct": 1,
+        "unitApiNames": [
+          "DA_Lux18_Blackthorn",
+          "DA_Lux18_Blossom",
+          "DA_18_Lux_Coven",
+          "DA_18_Lux_Elderwood",
+          "DA_18_Lux_Fae",
+          "DA_18_Lux_Inferno",
+          "DA_18_Lux_Moonbeam",
+          "DA_18_Lux_Primal",
+          "DA_18_Lux_Sunbeam"
+        ]
+      }
+    ],
+    "sourceRefs": ["wikiChampion", "riotSetOverview", "communityDragonMap22"]
+  },
+  "traits": {
+    "status": "verified",
+    "normalCounting": "unique-unit",
+    "emblemCounting": "unsupported",
+    "contributionOverrides": [
+      ["DA_18_ElderDragon", "DA_Riftbeast18", 2],
+      ["DA_Lux18_Blackthorn", "DA_18_Blackthorn", 2],
+      ["DA_Lux18_Blossom", "DA_18_Blossom", 2],
+      ["DA_18_Lux_Coven", "DA_18_Coven", 2],
+      ["DA_18_Lux_Elderwood", "DA_18_Elderwood", 2],
+      ["DA_18_Lux_Fae", "DA_18_Fae", 2],
+      ["DA_18_Lux_Inferno", "DA_18_Inferno", 2],
+      ["DA_18_Lux_Moonbeam", "DA_18_Lunar", 2],
+      ["DA_18_Lux_Primal", "DA_Primal18", 2],
+      ["DA_18_Lux_Sunbeam", "DA_18_Solar", 2]
+    ],
+    "sourceRefs": [
+      "communityDragonStatic",
+      "communityDragonMap22",
+      "riotSetOverview",
+      "traitLadder"
+    ]
+  },
+  "shop": {
+    "status": "verified",
+    "shopSlots": 5,
+    "rerollCost": 2,
+    "costBands": [1, 2, 3, 4, 5],
+    "oddsByLevel": {
+      "1": [1, 0, 0, 0, 0],
+      "2": [1, 0, 0, 0, 0],
+      "3": [0.75, 0.25, 0, 0, 0],
+      "4": [0.55, 0.3, 0.15, 0, 0],
+      "5": [0.45, 0.33, 0.2, 0.02, 0],
+      "6": [0.3, 0.4, 0.25, 0.05, 0],
+      "7": [0.19, 0.3, 0.4, 0.1, 0.01],
+      "8": [0.15, 0.2, 0.32, 0.3, 0.03],
+      "9": [0.1, 0.17, 0.25, 0.33, 0.15],
+      "10": [0.05, 0.1, 0.2, 0.4, 0.25]
+    },
+    "poolCopiesByCost": { "1": 30, "2": 25, "3": 18, "4": 10, "5": 9 },
+    "expectedUniqueUnitsByCost": { "1": 14, "2": 13, "3": 14, "4": 14, "5": 10 },
+    "starCopies": { "1": 1, "2": 3, "3": 9 },
+    "sourceRefs": [
+      "communityDragonMap22",
+      "riotPatch161",
+      "riotPatch164",
+      "riotPatch171",
+      "wikiChampion"
+    ]
+  },
+  "experience": {
+    "status": "verified",
+    "xpToNextLevel": { "2": 2, "3": 6, "4": 10, "5": 20, "6": 36, "7": 60, "8": 68, "9": 68 },
+    "purchaseGold": 4,
+    "purchaseXp": 4,
+    "freeXpPerRound": 2,
+    "sourceRefs": ["riotPatch161", "riotPatch164", "wikiExperience"]
+  },
+  "economy": {
+    "status": "verified",
+    "interestGoldPerTenHeld": 1,
+    "interestCap": 5,
+    "interestCapGold": 50,
+    "sourceRefs": ["tftLabGold"]
+  },
+  "mechanics": {
+    "wisps": {
+      "status": "verified",
+      "shopPosition": "rightmost",
+      "durationRounds": 1,
+      "planningPhaseOnly": true,
+      "appearsEveryOtherShop": true,
+      "stageFiveEveryOtherGuaranteedCategory": "combat",
+      "sourceRefs": ["riotPatch181", "riotSetOverview"]
+    },
+    "teamPlanner": {
+      "status": "unverified",
+      "encoderEnabled": false,
+      "reason": "No known-good fixture plus manual TFT client paste verification exists."
+    }
+  },
+  "augmentAvailability": {
+    "exportPresenceStatus": "verified",
+    "defaultLiveStatus": "unverified",
+    "overrides": {
+      "DA_ForgeAFriend": {
+        "liveStatus": "disabled",
+        "effectiveAt": "2026-08-28T00:00:00.000Z",
+        "reason": "Temporarily disabled in the official patch 18.1 notes.",
+        "sourceRefs": ["riotPatch181"]
+      }
+    },
+    "sourceRefs": ["communityDragonStatic", "riotPatch181"]
+  },
+  "hotfixOverlay": {
+    "status": "verified",
+    "effectiveThrough": "2026-09-01T00:00:00.000Z",
+    "sourceRefs": ["riotPatch181"],
+    "changes": [
+      ["DA_Riftbeast18", "7-piece team stats", "6%", "5%"],
+      ["DA_Cinderling18", "attack damage / ability AD ratio", "48 / 450%", "45 / 500%"],
+      ["DA_18_Cassiopeia", "ability damage", "240/360/540", "245/370/555"],
+      ["DA_18_MasterYi_AD", "bonus armor and magic resistance", "40", "45"],
+      ["DA_18_Ahri", "ability damage", "270/405/610", "280/420/630"],
+      ["DA_Amumu18", "mana / heal", "40/100 / 80/105/135", "25/85 / 90/115/145"],
+      ["DA_18_Morgana", "mana", "0/40", "10/50"],
+      ["DA_18_Soraka", "ability damage", "110/165/270", "115/175/285"],
+      ["DA_Draven18", "mana / attack speed", "0/75 / 0.8", "0/60 / 0.85"],
+      ["DA_18_ElderDragon", "attack damage", "80", "75"],
+      ["DA_Lux18_Base", "ability damage", "330/495/9,999", "360/540/9,999"],
+      ["DA_18_Lux_Moonbeam", "Lunar ally damage amplification", "15/15/50%", "10/10/50%"]
+    ]
+  },
+  "unknowns": [
+    ["emblem-trait-counting", "The board model does not represent emblems; no inference is made."],
+    [
+      "conditional-board-capacity-exceptions",
+      "Only the Set 18 Riftbeast 10 modifier is implemented."
+    ],
+    [
+      "live-augment-availability-except-explicit-overrides",
+      "Static export presence does not prove live availability."
+    ],
+    [
+      "team-planner-format",
+      "Encoder support requires a known-good fixture and manual client paste verification."
+    ]
+  ]
 }

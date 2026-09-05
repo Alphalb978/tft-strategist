@@ -1,6 +1,7 @@
 import { Database, ExternalLink, Radio, RefreshCw, SlidersHorizontal } from 'lucide-react';
 import type { ApplicationState } from '../services/application';
 import type { Settings } from '../storage/repository';
+import { set18Rules } from '../rules/ruleSet';
 export function DataSettings({
   state,
   mode,
@@ -43,7 +44,10 @@ export function DataSettings({
               </div>
             ))}
           </div>
-          <p>Set 18 · Enchanted Wilds · patch 18.1</p>
+          <p>
+            Set 18 · Enchanted Wilds · patch 18.1 ·{' '}
+            <span className="badge muted">{state.data.version.parityStatus}</span>
+          </p>
           <p className="fine-print">
             Fetched {new Date(state.data.version.provenance.fetchedAt).toLocaleString()}
             <br />
@@ -141,6 +145,19 @@ export function DataSettings({
             <Database size={18} />
             <h2>Verification ledger</h2>
           </div>
+          {[
+            ['Board & capacity', set18Rules.board.status],
+            ['Trait counting', set18Rules.traits.status],
+            ['Shop odds & pools', set18Rules.shop.status],
+            ['XP', set18Rules.experience.status],
+            ['Interest', set18Rules.economy.status],
+            ['Team Planner', set18Rules.mechanics.teamPlanner.status],
+          ].map(([label, status]) => (
+            <p className="ledger-row" key={label}>
+              <span>{status === 'verified' ? '●' : '○'}</span>
+              {label}: {status}
+            </p>
+          ))}
           {state.data.warnings.map((w) => (
             <p className="ledger-row" key={w}>
               <span>○</span>

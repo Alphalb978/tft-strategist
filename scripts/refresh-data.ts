@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { normalizeCommunityDragon, STATIC_URL } from '../src/providers/communityDragon';
 import { loadPlaybooks } from '../src/providers/playbooks';
 import type { Provenance } from '../src/domain/models';
+import { auditStaticData } from '../src/rules/ruleSet';
 // Explicit --download replaces the source fixture; ordinary runs reproduce the bundled snapshot.
 if (process.argv.includes('--download')) {
   const response = await fetch(STATIC_URL, { signal: AbortSignal.timeout(120000) });
@@ -54,6 +55,11 @@ const data = normalizeCommunityDragon(JSON.parse(raw), {
   ...provenance,
   hash: createHash('sha256').update(raw).digest('hex'),
 });
+const auditIssues = auditStaticData(data);
+if (auditIssues.length)
+  throw new Error(
+    `Audited rule fixture mismatch: ${auditIssues.map((issue) => issue.message).join(' ')}`,
+  );
 await mkdir('public/data', { recursive: true });
 await mkdir('public/assets/tft', { recursive: true });
 await writeFile('public/data/static-set18.json', JSON.stringify(data));
@@ -107,7 +113,10 @@ await Promise.all(
     }
   }),
 );
-await writeFile('public/data/asset-manifest.json', JSON.stringify(manifest));
+const stableManifest = Object.fromEntries(
+  Object.entries(manifest).sort(([left], [right]) => left.localeCompare(right)),
+);
+await writeFile('public/data/asset-manifest.json', JSON.stringify(stableManifest));
 console.log(
   JSON.stringify(
     {
@@ -115,7 +124,7 @@ console.log(
       traits: data.traits.length,
       items: data.items.length,
       augments: data.augments.length,
-      assets: Object.keys(manifest).length,
+      assets: Object.keys(stableManifest).length,
       failed,
     },
     null,

@@ -14,6 +14,7 @@ import type { Playbook as PlaybookModel, RecommendationCandidate } from '../doma
 import type { ApplicationState } from '../services/application';
 import { Portrait, Art } from '../components/Art';
 import { boardTraitCounts, validatePlaybook } from '../rules/validation';
+import { usedBoardSlots } from '../rules/ruleSet';
 export function Playbook({
   plan,
   candidate,
@@ -100,7 +101,7 @@ export function Playbook({
           <h2>Build toward this board</h2>
           <span>
             {board
-              ? `${board.units.length} / ${board.capacity} declared slots`
+              ? `${usedBoardSlots(board)} / ${board.capacity} audited slots`
               : 'Board unavailable'}
           </span>
         </div>
@@ -138,14 +139,15 @@ export function Playbook({
         {board && (
           <div className="trait-strip" aria-label="Source trait membership counts">
             {boardTraitCounts(board, data)
+              .filter(({ activeBreakpoint }) => activeBreakpoint !== null)
               .slice(0, 7)
-              .map(({ trait, count }) => (
-                <span key={trait.id}>
+              .map(({ trait, count, activeBreakpoint }) => (
+                <span key={trait.id} title={`Active breakpoint: ${activeBreakpoint}`}>
                   <b>{count}</b>
                   {trait.name}
                 </span>
               ))}
-            <small>Membership counts · bonuses unverified</small>
+            <small>Active thresholds · audited unique-unit counting</small>
           </div>
         )}
         <div className="board-foot">
@@ -314,7 +316,7 @@ export function Playbook({
           Read original public guide ↗
         </a>
         <p>
-          Reviewed September 5, 2026 · patch 18.1 · no measured sample. “Experimental” reflects this
+          Reviewed September 6, 2026 · patch 18.1 · no measured sample. “Experimental” reflects this
           app’s limited evidence.
         </p>
         {warnings.map((w, i) => (

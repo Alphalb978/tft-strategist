@@ -8,6 +8,12 @@ import type {
   StaticData,
 } from '../domain/models';
 import { teamPlanner } from '../rules/teamPlanner';
+import {
+  activeBreakpoint,
+  baseCapacityForLevel,
+  capacityForBoard,
+  traitCount,
+} from '../rules/ruleSet';
 const unavailable = <T>(note: string): Guidance<T> => ({ value: null, status: 'unverified', note });
 export function loadPlaybooks(data: StaticData): Playbook[] {
   if (data.version.set !== seed.set) return [];
@@ -28,24 +34,34 @@ export function loadPlaybooks(data: StaticData): Playbook[] {
       value,
       status: 'curated',
       source: s.source,
-      note: 'Public guide, reviewed September 5. Outcome evidence not collected.',
+      note: 'Public guide, re-audited September 6. Outcome evidence not collected.',
     });
     const core = s.core.map(id);
-    const board = (names: string[], stage: string): Board => ({
-      id: `${s.id}-${stage}`,
-      set: seed.set,
-      targetLevel: names.length,
-      capacity: names.length,
-      units: names.map((name) => ({
-        championId: id(name),
-        items: [],
-        slot: core.includes(id(name)) ? 'core' : stage === 'final' ? 'flex' : 'temporary',
-      })),
-      requiredUnits: stage === 'final' ? core : [],
-      augmentIds: [],
-      traitClaims: [],
-      provenance,
-    });
+    const board = (names: string[], stage: string): Board => {
+      const targetLevel = names.length;
+      const value: Board = {
+        id: `${s.id}-${stage}`,
+        set: seed.set,
+        targetLevel,
+        capacity: baseCapacityForLevel(targetLevel) ?? targetLevel,
+        units: names.map((name) => ({
+          championId: id(name),
+          items: [],
+          slot: core.includes(id(name)) ? 'core' : stage === 'final' ? 'flex' : 'temporary',
+        })),
+        requiredUnits: stage === 'final' ? core : [],
+        augmentIds: [],
+        traitClaims: [],
+        provenance,
+      };
+      value.capacity = capacityForBoard(value, data) ?? value.capacity;
+      value.traitClaims = data.traits.flatMap((trait) => {
+        if (trait.availability !== 'verified') return [];
+        const breakpoint = activeBreakpoint(trait.breakpoints, traitCount(value, data, trait.id));
+        return breakpoint === null ? [] : [{ traitId: trait.id, breakpoint }];
+      });
+      return value;
+    };
     const target = board(s.board, 'final');
     const keys: FeatureKey[] = [
       'meta',

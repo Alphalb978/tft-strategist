@@ -7,6 +7,7 @@ import { defaultSettings } from '../storage/repository';
 import { scoreCandidate } from '../strategy/scoring';
 import { optimizePortfolio } from '../strategy/portfolio';
 import { isStaticData } from '../domain/staticSchema';
+import { auditStaticData } from '../rules/ruleSet';
 export interface ApplicationState {
   data: StaticData;
   playbooks: Playbook[];
@@ -22,6 +23,11 @@ export function createRecommendations(
   settings: Settings,
   now = new Date().toISOString(),
 ) {
+  const dataIssues = auditStaticData(data);
+  if (dataIssues.length)
+    throw new Error(
+      `Static data failed the audited rules: ${dataIssues.map((issue) => issue.message).join(' ')}`,
+    );
   const all = loadPlaybooks(data),
     notices: string[] = [];
   const playbooks = all.filter((p) => {

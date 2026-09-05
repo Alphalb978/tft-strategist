@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { StaticData, ActiveSetVersion, Provenance } from '../domain/models';
+import type { StaticData, ActiveSetVersion, Augment, Provenance } from '../domain/models';
+import auditedRules from '../../data/rules/set18.json';
 
 const unit = z.object({
   apiName: z.string(),
@@ -42,7 +43,7 @@ export const ACTIVE_SET = {
   name: 'Enchanted Wilds',
   patch: '18.1',
   mutator: 'TFTSet18',
-  checkedAt: '2026-09-05',
+  checkedAt: '2026-09-06',
   source:
     'https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-1/',
 };
@@ -89,7 +90,10 @@ export function normalizeCommunityDragon(input: unknown, provenance: Provenance)
     breakpoints: [
       ...new Set(t.effects.map((e) => e.minUnits).filter((n): n is number => n !== null)),
     ].sort((a, b) => a - b),
-    counting: 'unverified' as const,
+    counting: 'unique-unit' as const,
+    availability: t.effects.some((effect) => effect.minUnits !== null)
+      ? ('verified' as const)
+      : ('unavailable' as const),
     provenance,
   }));
   const traitIds = new Map(traits.map((t) => [t.name, t.id]));
@@ -105,6 +109,15 @@ export function normalizeCommunityDragon(input: unknown, provenance: Provenance)
     icon: assetUrl(c.squareIcon),
     splash: assetUrl(c.icon),
     set: set.number,
+    shopStatus: auditedRules.board.disallowedUnitApiNames.includes(c.apiName)
+      ? ('placeholder' as const)
+      : auditedRules.board.exclusiveUnitGroups.some((group) =>
+            group.unitApiNames.includes(c.apiName),
+          )
+        ? ('runtime-variant' as const)
+        : ('pool' as const),
+    boardEligible: !auditedRules.board.disallowedUnitApiNames.includes(c.apiName),
+    provenance,
     ...(c.role ? { role: c.role } : {}),
   }));
   if (new Set(champions.map((c) => c.id)).size !== champions.length)
@@ -123,24 +136,43 @@ export function normalizeCommunityDragon(input: unknown, provenance: Provenance)
           : ('other' as const),
       set: set.number,
       availability: 'verified' as const,
+      provenance,
     }));
   const augments = sourceItems
     .filter((i) => i.isAugment && set.augments.includes(i.apiName))
-    .map((i) => ({
-      id: i.apiName,
-      name: i.name,
-      icon: assetUrl(i.icon),
-      set: set.number,
-      availability: 'unverified' as const,
-      requiredTraits: [],
-    }));
+    .map((i) => {
+      const override =
+        auditedRules.augmentAvailability.overrides[
+          i.apiName as keyof typeof auditedRules.augmentAvailability.overrides
+        ];
+      return {
+        id: i.apiName,
+        name: i.name,
+        icon: assetUrl(i.icon),
+        set: set.number,
+        availability: 'unverified' as const,
+        presentInExport: true,
+        liveStatus: (override?.liveStatus ?? 'unverified') as Augment['liveStatus'],
+        requiredTraits: [],
+        provenance: override
+          ? {
+              source: auditedRules.sources.riotPatch181.url,
+              fetchedAt: auditedRules.scope.verifiedAt,
+              patch: auditedRules.scope.patch,
+              status: 'verified' as const,
+              note: override.reason,
+            }
+          : provenance,
+      };
+    });
   const version: ActiveSetVersion = {
     set: set.number,
     name: ACTIVE_SET.name,
     patch: ACTIVE_SET.patch,
     sourceVersion: provenance.hash ?? provenance.publishedAt ?? provenance.fetchedAt,
-    schemaVersion: 1,
+    schemaVersion: 2,
     patchVerified: false,
+    parityStatus: auditedRules.parity.status as 'known-stale',
     provenance,
   };
   return {
@@ -150,10 +182,10 @@ export function normalizeCommunityDragon(input: unknown, provenance: Provenance)
     items,
     augments,
     warnings: [
-      `Static export date: ${provenance.publishedAt ?? 'unavailable'}; current hotfix parity is unverified.`,
-      'Augments are exported definitions; enabled-in-live status is unverified.',
+      `Static export date: ${provenance.publishedAt ?? 'unavailable'}; official hotfix evidence runs through ${auditedRules.parity.liveEvidenceThrough}. Combat-value parity is known stale.`,
+      'Augment export presence is verified; live availability remains unverified except official overrides.',
       `Provider internal set name is ${set.name}; display name verified from Riot patch notes.`,
-      'Special units, trait modifiers, shop odds and economy rules are unverified.',
+      'Board capacity, shop odds, pools, XP, interest, normal trait counting, Lux Avatar and Elder Dragon exceptions are audited in the Set 18 rules fixture.',
     ],
   };
 }

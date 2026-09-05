@@ -16,6 +16,7 @@ describe('real CommunityDragon fixture normalization', () => {
     expect(data.version.name).toBe('Enchanted Wilds');
     expect(data.version.set).toBe(18);
     expect(data.version.patchVerified).toBe(false);
+    expect(data.version.parityStatus).toBe('known-stale');
   });
   it('normalizes IDs, costs, traits and art from source', () => {
     const x = data.champions.find((c) => c.name === 'Xayah')!;
@@ -23,6 +24,8 @@ describe('real CommunityDragon fixture normalization', () => {
     expect(x.cost).toBe(1);
     expect(x.traitIds).toContain('DA_18_Elderwood');
     expect(x.icon).toMatch(/tft18_xayah.*\.png$/);
+    expect(x.shopStatus).toBe('pool');
+    expect(x.provenance.source).toBeTruthy();
   });
   it('does not include neutral PvE units or historical items', () => {
     expect(data.champions.every((c) => c.id.startsWith('DA_'))).toBe(true);
@@ -35,9 +38,25 @@ describe('real CommunityDragon fixture normalization', () => {
     ]);
     expect(data.augments.length).toBeGreaterThan(200);
     expect(data.augments.every((a) => a.availability === 'unverified')).toBe(true);
+    expect(data.augments.every((a) => a.presentInExport)).toBe(true);
   });
   it('keeps missing Eclipse thresholds unavailable', () => {
     expect(data.traits.find((t) => t.name === 'Eclipse')?.breakpoints).toEqual([]);
+    expect(data.traits.find((t) => t.name === 'Eclipse')?.availability).toBe('unavailable');
+  });
+  it('classifies Lux export entities and the official augment override explicitly', () => {
+    expect(data.champions.find((c) => c.id === 'DA_Lux18_Base')).toMatchObject({
+      shopStatus: 'placeholder',
+      boardEligible: false,
+    });
+    expect(data.champions.find((c) => c.id === 'DA_18_Lux_Elderwood')).toMatchObject({
+      shopStatus: 'runtime-variant',
+      boardEligible: true,
+    });
+    expect(data.augments.find((a) => a.id === 'DA_ForgeAFriend')).toMatchObject({
+      presentInExport: true,
+      liveStatus: 'disabled',
+    });
   });
   it('rejects a missing set and malformed unit instead of using memory', () => {
     expect(() => normalizeCommunityDragon({ ...raw, setData: [] }, provenance)).toThrow(/absent/);

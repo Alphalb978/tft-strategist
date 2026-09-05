@@ -75,7 +75,7 @@ export function App() {
     setRefreshing(true);
     try {
       setState(await refreshApplication(state, repository.current));
-      setToast('Static source refreshed. Hotfix parity remains unverified.');
+      setToast('Static source refreshed. Combat-value parity remains known stale.');
     } catch {
       setToast('Refresh unavailable. Your previous data and plans are still available.');
     } finally {
@@ -184,7 +184,7 @@ export function App() {
           <div className="topbar-right">
             <span className="patch-dot" />
             <span>
-              Patch 18.1 <small>Hotfix parity unverified</small>
+              Patch 18.1 <small>Combat parity known stale</small>
             </span>
             <span className="top-divider" />
             <span className="profile-avatar">S</span>

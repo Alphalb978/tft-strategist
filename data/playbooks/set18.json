@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "set": 18,
   "patch": "18.1",
-  "reviewedAt": "2026-09-05T20:30:00Z",
+  "reviewedAt": "2026-09-06T00:00:00Z",
   "playbooks": [
     {
       "id": "solar-elderwood",
@@ -11,6 +11,7 @@
       "hero": "Xayah",
       "source": "https://mobalytics.gg/tft/comps-guide/elderwood-reroll-3HDqt0FrDEBPMY81ihqGePxVjU3",
       "sourceTitle": "Rise and Vine",
+      "auditStatus": "re-audited-current-page",
       "style": "Level 6 slow roll",
       "core": ["Kayle", "Xayah", "Sejuani", "Ornn"],
       "board": ["Kayle", "Sejuani", "Ornn", "Xayah", "Hecarim", "Leona", "Rakan"],
@@ -41,6 +42,7 @@
       "hero": "Master Yi",
       "source": "https://mobalytics.gg/tft/comps-guide/adaptor-reroll-3HRVQSudB7SJTckVeLxU4ICvPDg",
       "sourceTitle": "Adapt or Die",
+      "auditStatus": "re-audited-current-page",
       "style": "Level 7 slow roll",
       "core": ["Master Yi", "Kog'Maw", "Vi"],
       "board": ["Nidalee", "Kog'Maw", "Master Yi", "Rengar", "Vi", "Sett", "Krug", "Yorick"],
@@ -67,6 +69,7 @@
       "hero": "Soraka",
       "source": "https://mobalytics.gg/tft/comps-guide/eldritch-3GPUwYsD4LyC2jj0jH40XM7iS2f",
       "sourceTitle": "AP 8-4",
+      "auditStatus": "re-audited-current-page",
       "style": "Fast 8",
       "core": ["Soraka", "Zyra", "Malphite"],
       "board": [
@@ -103,6 +106,7 @@
       "hero": "Draven",
       "source": "https://mobalytics.gg/tft/comps-guide/elderwood-cap-3HBMcPmR81fWMyuppwi8smQJ37O",
       "sourceTitle": "The Final Forest",
+      "auditStatus": "re-audited-current-page",
       "style": "Fast 9",
       "core": ["Draven", "Maokai", "Ezreal", "Kennen"],
       "board": [
