@@ -1,0 +1,1 @@
+{ "$schema": "../gen/schemas/desktop-schema.json", "identifier": "default", "description": "Local application storage only", "windows": ["main"], "permissions": ["core:default", "sql:default", "sql:allow-execute"] }

@@ -1,0 +1,15 @@
+{
+  "id": "set18-structural-v1",
+  "set": 18,
+  "schemaVersion": 1,
+  "verifiedAt": "2026-09-05",
+  "source": "https://raw.communitydragon.org/latest/cdragon/tft/en_us.json",
+  "notes": [
+    "Only declared board capacity is enforced. Level/capacity modifiers, shop odds, pools, XP and economy are unverified.",
+    "Trait thresholds come from the static payload. Special counting (Avatar, emblems, summons, duplicates) is not implemented."
+  ],
+  "capacityByLevel": null,
+  "uniqueUnitLimits": {},
+  "specialTraitIds": ["DA_18_LuxUniqueTrait"],
+  "planner": "unverified"
+}

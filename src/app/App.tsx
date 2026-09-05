@@ -1,0 +1,313 @@
+import { useEffect, useRef, useState } from 'react';
+import {
+  BookOpen,
+  Check,
+  ChevronRight,
+  Compass,
+  Database,
+  Hexagon,
+  Layers3,
+  LockKeyhole,
+  RefreshCw,
+} from 'lucide-react';
+import { openRepository, type Repository, type Settings } from '../storage/repository';
+import {
+  createRecommendations,
+  loadApplication,
+  refreshApplication,
+  selectPlan,
+  type ApplicationState,
+} from '../services/application';
+import { scoreCandidate } from '../strategy/scoring';
+import { Home } from '../features/Home';
+import { Playbook } from '../features/Playbook';
+import { DataSettings } from '../features/DataSettings';
+import { Art } from '../components/Art';
+type Page = 'home' | 'library' | 'data';
+export function App() {
+  const [state, setState] = useState<ApplicationState | null>(null),
+    [page, setPage] = useState<Page>('home'),
+    [detail, setDetail] = useState<string | null>(null),
+    [error, setError] = useState(''),
+    [toast, setToast] = useState(''),
+    [refreshing, setRefreshing] = useState(false),
+    [attempt, setAttempt] = useState(0);
+  const repository = useRef<Repository | null>(null),
+    main = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const repo = await openRepository();
+        const loaded = await loadApplication(repo);
+        if (alive) {
+          repository.current = repo;
+          setState(loaded);
+          setError('');
+        }
+      } catch {
+        if (alive)
+          setError(
+            'Unable to load local data. Check the bundled snapshot and storage availability, then retry.',
+          );
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [attempt]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(''), 5000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+  const navigate = (next: Page) => {
+    setPage(next);
+    setDetail(null);
+    main.current?.scrollTo(0, 0);
+  };
+  const open = (id: string) => {
+    setDetail(id);
+    main.current?.scrollTo(0, 0);
+  };
+  const refresh = async () => {
+    if (!state || !repository.current || state.selection) return;
+    setRefreshing(true);
+    try {
+      setState(await refreshApplication(state, repository.current));
+      setToast('Static source refreshed. Hotfix parity remains unverified.');
+    } catch {
+      setToast('Refresh unavailable. Your previous data and plans are still available.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  const saveSettings = async (settings: Settings) => {
+    if (!state || !repository.current) return;
+    try {
+      await repository.current.set('settings', settings);
+      setState({ ...state, settings, ...createRecommendations(state.data, settings) });
+      setToast('Settings saved locally.');
+    } catch {
+      setToast('Settings could not be saved. Your previous settings are unchanged.');
+    }
+  };
+  const lock = async () => {
+    if (!state || !repository.current || !detail) return;
+    try {
+      const selection = await selectPlan(detail, state, repository.current);
+      setState({ ...state, selection });
+      setToast('Plan locked. Recommendations are frozen for this game.');
+    } catch {
+      setToast(
+        'This plan is outside the current three-plan portfolio. Choose a portfolio plan to lock.',
+      );
+    }
+  };
+  const unlock = async () => {
+    if (!state || !repository.current) return;
+    try {
+      await repository.current.set('selection', null);
+      setState({ ...state, selection: null });
+      setToast('Portfolio unlocked.');
+    } catch {
+      setToast('Unable to update the saved plan.');
+    }
+  };
+  const portfolio = state?.selection?.snapshot ?? state?.portfolio;
+  const candidate =
+    detail && state
+      ? (portfolio?.plans.find((p) => p.candidate.playbook.id === detail)?.candidate ??
+        (() => {
+          const p = state.playbooks.find((p) => p.id === detail);
+          return p
+            ? scoreCandidate(p, { version: state.data.version, now: new Date().toISOString() })
+            : undefined;
+        })())
+      : undefined;
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand-mark">
+          <Hexagon size={29} />
+          <span>S</span>
+        </div>
+        <div className="brand-name">
+          STRATEGIST<span>TEAMFIGHT TACTICS</span>
+        </div>
+        <div className="nav-label">WORKSPACE</div>
+        <nav aria-label="Primary navigation">
+          {(
+            [
+              { id: 'home', label: 'Your plans', icon: Compass },
+              { id: 'library', label: 'Playbook library', icon: BookOpen },
+              { id: 'data', label: 'Data & settings', icon: Database },
+            ] as const
+          ).map((n) => (
+            <button
+              key={n.id}
+              className={page === n.id ? 'active' : ''}
+              onClick={() => navigate(n.id)}
+            >
+              <n.icon size={18} />
+              {n.label}
+              {page === n.id && <span className="nav-indicator" />}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="local-badge">
+            <span /> LOCAL FIRST
+          </div>
+          <p>
+            Your plans stay with you.
+            <br />
+            No runtime AI required.
+          </p>
+          <span className="version-label">FOUNDATION / 0.1</span>
+        </div>
+      </aside>
+      <div className="main-shell">
+        <header className="topbar">
+          <div className="breadcrumb">
+            Workspace <ChevronRight size={13} />
+            <strong>
+              {detail
+                ? 'Playbook'
+                : page === 'home'
+                  ? 'Your plans'
+                  : page === 'library'
+                    ? 'Library'
+                    : 'Data & settings'}
+            </strong>
+          </div>
+          <div className="topbar-right">
+            <span className="patch-dot" />
+            <span>
+              Patch 18.1 <small>Hotfix parity unverified</small>
+            </span>
+            <span className="top-divider" />
+            <span className="profile-avatar">S</span>
+          </div>
+        </header>
+        <main ref={main} id="main-content">
+          {!state ? (
+            <div className="loading-state">
+              {error ? (
+                <>
+                  <Database size={36} />
+                  <h1>Let’s get your data ready.</h1>
+                  <p>{error}</p>
+                  <button
+                    className="primary"
+                    onClick={() => {
+                      setError('');
+                      setAttempt((a) => a + 1);
+                    }}
+                  >
+                    Retry local load
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Hexagon className="spin" size={38} />
+                  <h1>Preparing your plans</h1>
+                  <p>Loading the active set and validating source playbooks…</p>
+                </>
+              )}
+            </div>
+          ) : (
+            <>
+              {state.selection && (
+                <div className="lock-banner">
+                  <LockKeyhole size={15} />
+                  <span>
+                    Portfolio locked ·{' '}
+                    {state.playbooks.find((p) => p.id === state.selection?.playbookId)?.title}
+                  </span>
+                  <button onClick={unlock}>Unlock</button>
+                </div>
+              )}
+              {state.notices.length > 0 && (
+                <div className="validation-notice" role="status">
+                  {state.notices.join(' ')}
+                </div>
+              )}
+              {candidate ? (
+                <Playbook
+                  key={candidate.playbook.id}
+                  plan={candidate.playbook}
+                  candidate={candidate}
+                  state={state}
+                  onBack={() => setDetail(null)}
+                  onLock={lock}
+                  onOpen={open}
+                />
+              ) : page === 'home' ? (
+                <Home
+                  state={state}
+                  portfolio={portfolio!}
+                  onOpen={open}
+                  onData={() => navigate('data')}
+                />
+              ) : page === 'data' ? (
+                <DataSettings
+                  state={state}
+                  mode={repository.current?.mode ?? 'Unavailable'}
+                  onSave={saveSettings}
+                  onRefresh={refresh}
+                  refreshing={refreshing}
+                />
+              ) : (
+                <>
+                  <div className="page-heading">
+                    <div>
+                      <div className="eyebrow">A SMALL, ATTRIBUTED STARTING LIBRARY</div>
+                      <h1>Find your next direction.</h1>
+                      <p>Four current-set examples. All retain their evidence limits.</p>
+                    </div>
+                    <Layers3 size={30} />
+                  </div>
+                  <div className="library-grid">
+                    {state.playbooks.map((p) => (
+                      <button className="library-card" key={p.id} onClick={() => open(p.id)}>
+                        <Art
+                          url={state.data.champions.find((c) => c.id === p.hero)!.splash}
+                          alt={p.title}
+                          assets={state.assets}
+                        />
+                        <div>
+                          <span className="eyebrow">{p.features.style}</span>
+                          <h2>{p.title}</h2>
+                          <p>{p.subtitle}</p>
+                          <span className="badge">Experimental · public guide</span>
+                        </div>
+                        <ChevronRight />
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <footer>
+                <span>
+                  Independent companion. Riot Games assets via CommunityDragon. Not endorsed by Riot
+                  Games.
+                </span>
+                <button onClick={refresh} disabled={refreshing || !!state.selection}>
+                  <RefreshCw size={12} />
+                  {state.source}
+                </button>
+              </footer>
+            </>
+          )}
+        </main>
+      </div>
+      {toast && (
+        <div className="toast" role="status">
+          <Check size={16} />
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}

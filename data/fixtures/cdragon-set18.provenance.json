@@ -1,0 +1,8 @@
+{
+  "source": "https://raw.communitydragon.org/latest/cdragon/tft/en_us.json",
+  "fetchedAt": "2026-09-05T20:30:00Z",
+  "publishedAt": "2026-08-29T00:53:30Z",
+  "patch": null,
+  "status": "verified",
+  "note": "Reduced real CommunityDragon Set 18 export captured and reviewed September 5. Hash identifies the reduced payload; hotfix parity is unverified."
+}

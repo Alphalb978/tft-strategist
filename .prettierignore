@@ -1,0 +1,8 @@
+node_modules
+dist
+.cache
+artifacts
+data/fixtures
+public
+package-lock.json
+src-tauri/target
