@@ -1,0 +1,234 @@
+# Technical Architecture & Data Pipeline
+
+## Working stack
+- Tauri 2 desktop shell
+- React
+- TypeScript
+- Vite
+- SQLite for local cache/history/derived features
+- Versioned JSON fixtures for TFT rules and seeded playbooks
+
+Most strategy logic should stay in TypeScript initially for development speed and inspectability. Move work to Rust/native code only when a measured need appears.
+
+## Layering
+`providers -> domain -> rules/validation -> strategy -> application services -> UI`
+
+### Providers
+Responsibilities:
+- CommunityDragon/static current-set data;
+- Riot account/rank/spectator-current-game participant discovery where available;
+- Riot completed-match history;
+- local seeded playbooks;
+- local settings/cache;
+- future provider adapters without changing domain contracts.
+
+Providers should return typed source records plus provenance/version metadata.
+
+### Domain
+Core stable entities:
+- Champion
+- Trait
+- Item
+- Augment
+- Board
+- Playbook
+- CompFamily
+- CompVariant
+- OpponentProfile
+- LobbyPressure
+- PersonalProfile
+- RecommendationCandidate
+- RecommendationPortfolio
+- Confidence/EvidenceLabel
+
+Domain objects should not depend on React.
+
+### Rules/validation
+Own:
+- current-set legality checks;
+- board capacity/unit membership;
+- trait computation/breakpoint validation;
+- versioned rule values used by scoring;
+- playbook structural validation;
+- Team Planner support capability validation.
+
+Rules must be explicit and testable.
+
+### Strategy
+Suggested modules:
+- candidate scoring;
+- confidence calibration;
+- portfolio optimizer;
+- contest model;
+- stage-strength/risk features;
+- opponent tendency features;
+- comp-family classifier;
+- flex-slot/variant optimizer;
+- emerging-meta detector;
+- personal weak-signal adjustment;
+- post-game analyzer.
+
+### Application services
+Coordinate use cases such as:
+- refresh active set;
+- load recommendation context;
+- scan lobby;
+- select/lock plan;
+- copy Team Planner code;
+- import completed game;
+- rebuild derived features.
+
+### UI
+Consumes application/domain view models. UI should not recreate strategy formulas or query external APIs directly.
+
+## Suggested repository shape
+```text
+src/
+  app/
+  components/
+  features/
+  domain/
+  providers/
+  rules/
+  strategy/
+  services/
+  storage/
+  styles/
+  test/
+
+src-tauri/
+
+data/
+  rules/
+  playbooks/
+  fixtures/
+
+docs/
+tasks/
+```
+
+Exact names may vary if the implementation stays equally clear.
+
+## SQLite
+Store at minimum where useful:
+- settings;
+- source/cache metadata;
+- Riot account identifiers needed by the app;
+- immutable completed-match cache keyed by match ID;
+- player recent-match index/cache timestamps;
+- opponent derived profiles with derivation version;
+- personal derived profile;
+- selected plan/game association;
+- recommendation snapshots/provenance;
+- comp-family classification outputs.
+
+Do not store API keys in plain logs. Use environment/config/secure local mechanism appropriate to the eventual app.
+
+## Cache strategy
+Opponent scanning depends on fast cache-first behavior.
+
+### Immutable match payloads
+Completed match payloads can be cached long-term by match ID.
+
+### Player recent-match lists
+Cache with a short freshness window. Refresh only when needed.
+
+### Opponent derived profile
+Cache with:
+- generated-at time;
+- source match IDs;
+- patch/set relevance;
+- classifier/feature version.
+
+### Shared-match dedup
+When multiple lobby members were in the same historical match, fetch/parse that match once.
+
+## Parallel opponent scan
+Use bounded concurrency consistent with actual Riot API limits.
+
+Desired pipeline:
+1. resolve seven opponents;
+2. load warm cached profile immediately if usable;
+3. fetch missing/stale recent-match IDs in parallel;
+4. dedupe match IDs globally;
+5. fetch missing immutable matches with bounded concurrency;
+6. classify matches to families;
+7. update opponent profiles;
+8. recompute lobby pressure;
+9. update recommendation context;
+10. return partial-confidence results if timeout/error prevents completeness.
+
+Never wait minutes just to claim a complete scan.
+
+## Recommendation context contract
+Conceptual shape:
+```ts
+interface RecommendationContext {
+  activeSet: ActiveSetVersion;
+  meta: MetaSnapshot;
+  candidatePlaybooks: Playbook[];
+  lobby?: LobbyPressure;
+  personal?: PersonalProfile;
+  dataFreshness: DataFreshness;
+}
+```
+
+The engine returns candidates with inspectable score components and then a portfolio with pairwise compatibility/diversity reasoning.
+
+## Team Planner module
+Keep isolated behind a narrow interface such as:
+```ts
+interface TeamPlannerCodec {
+  supportStatus(set: ActiveSetVersion): TeamPlannerSupport;
+  encode(board: Board): Result<string, TeamPlannerError>;
+}
+```
+
+Tests must include known-good fixtures. Unsupported formats must fail clearly.
+
+## Meta / comp discovery pipeline
+V1 may use seeded curated playbooks, but preserve a path to data-derived evolution:
+1. ingest completed match boards;
+2. normalize active-set units/items/traits;
+3. classify to nearest known family;
+4. collect unknown/high-distance boards;
+5. cluster or rules-group repeated patterns;
+6. calculate performance/recency/sample statistics;
+7. surface candidate variants/emerging families;
+8. pass legal candidates through rule validation;
+9. label evidence class;
+10. make them eligible for recommendation only under configured confidence rules.
+
+Start with simple weighted core-unit/trait family matching before introducing complex ML.
+
+## Testing
+Critical unit/integration tests should cover:
+- active-set normalization;
+- board legality;
+- trait calculation/breakpoints used by playbooks;
+- seeded playbook validation;
+- recommendation score component determinism;
+- portfolio diversity behavior;
+- contest weighting/criticality;
+- recency weighting;
+- cache/dedup behavior;
+- Team Planner known-good fixture behavior;
+- personal shrinkage toward neutral;
+- evidence-label gating.
+
+Use fixtures rather than network calls for deterministic tests.
+
+## Observability
+Development diagnostics may show:
+- source version/freshness;
+- cache hits/misses;
+- opponent scan timings;
+- number of matches requested/fetched/deduped;
+- classifier confidence;
+- recommendation component scores;
+- unsupported data fields.
+
+Never log tokens, API keys, auth headers, or private connector credentials.
+
+## Protected-process boundary
+This architecture intentionally does not require memory reading, injection, packet interception, automated input, kernel access, or Vanguard bypass. If a future feature proposal requires one of those, it is outside current project authority and must not be added silently.
