@@ -1,180 +1,530 @@
-import type { CompletedMatch, LobbyPressure, OpponentProfile } from '../domain/models';
-import type { RiotProvider } from '../providers/riot';
-import type { Repository } from '../storage/repository';
+import type {
+  CompletedMatch,
+  LobbyPressure,
+  OpponentProfile,
+  RiotIdentity,
+  RiotTelemetry,
+} from '../domain/models';
+import { parseOpponentList, type ParsedRiotId } from '../providers/riotId';
+import { RiotProviderError, type RiotProvider } from '../providers/riot';
+import type { HistoryStore, RecentMatchIndex } from '../storage/history';
 import { clamp } from '../strategy/scoring';
-const VERSION = 'opponent-v1';
+
+export const OPPONENT_DERIVATION_VERSION = 'opponent-evidence-v2';
+export const RECENT_INDEX_TTL_MS = 5 * 60 * 1000;
+export const IDENTITY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const PAGE_SIZE = 20;
+const MAX_HISTORY_IDS = 60;
+
+const emptyTelemetry = (): RiotTelemetry => ({
+  requestsAttempted: 0,
+  cacheHits: 0,
+  retries: 0,
+  rateLimitWaits: 0,
+  rateLimitWaitMs: 0,
+  uniqueMatchDetailsFetched: 0,
+  sharedMatchesDeduplicated: 0,
+});
+
+function isFresh(fetchedAt: string, now: string, ttl: number) {
+  const age = Date.parse(now) - Date.parse(fetchedAt);
+  return Number.isFinite(age) && age >= 0 && age < ttl;
+}
+
+function relevantMatch(match: CompletedMatch, puuid: string, set: number) {
+  return (
+    match.set === set &&
+    match.modeSupport !== 'unsupported' &&
+    match.participants.some((participant) => participant.puuid === puuid)
+  );
+}
+
 export function deriveOpponent(
   puuid: string,
   matches: CompletedMatch[],
   set: number,
   patch: string,
   now: string,
+  target = 15,
+  freshness: OpponentProfile['freshness'] = 'fresh',
+  riotId?: string,
 ): OpponentProfile {
-  const familyFrequency: Record<string, number> = {},
-    unitFrequency: Record<string, number> = {},
-    styleFrequency: Record<string, number> = {},
-    placementByFamily: Record<string, number> = {};
   const relevant = [
     ...new Map(
-      matches
-        .filter((m) => m.set === set && m.participants.some((p) => p.puuid === puuid))
-        .map((m) => [m.id, m]),
+      matches.filter((match) => relevantMatch(match, puuid, set)).map((match) => [match.id, match]),
     ).values(),
-  ];
-  let total = 0;
-  for (const match of relevant) {
-    const p = match.participants.find((p) => p.puuid === puuid)!;
-    const age = Math.max(0, Date.parse(now) - Date.parse(match.completedAt)) / 86400000;
-    const weight = Math.exp(-age / 14) * (match.patch === patch ? 1 : 0.25);
+  ].sort((a, b) => Date.parse(b.completedAt) - Date.parse(a.completedAt));
+  const sample = relevant.slice(0, target);
+  const unitFrequency: Record<string, number> = {};
+  const traitFrequency: Record<string, number> = {};
+  const augmentFrequency: Record<string, number> = {};
+  const unitGames: Record<string, number> = {};
+  const unresolved = {
+    units: new Set<string>(),
+    items: new Set<string>(),
+    traits: new Set<string>(),
+    augments: new Set<string>(),
+  };
+  let effectiveSample = 0;
+  let placementWeight = 0;
+  let placementTotal = 0;
+  let topFourWeight = 0;
+  let samePatchGames = 0;
+  let unverifiedModeGames = 0;
+  for (const match of sample) {
+    const participant = match.participants.find((candidate) => candidate.puuid === puuid)!;
+    const ageDays = Math.max(0, Date.parse(now) - Date.parse(match.completedAt)) / 86_400_000;
+    const patchWeight = match.patch === patch ? 1 : 0.25;
+    const weight = Math.exp(-ageDays / 14) * patchWeight;
     if (!Number.isFinite(weight)) continue;
-    total += weight;
-    if (p.familyId) {
-      familyFrequency[p.familyId] = (familyFrequency[p.familyId] ?? 0) + weight;
-      placementByFamily[p.familyId] = (placementByFamily[p.familyId] ?? 0) + weight * p.placement;
+    if (match.patch === patch) samePatchGames++;
+    if (match.modeSupport === 'unverified') unverifiedModeGames++;
+    effectiveSample += weight;
+    placementTotal += participant.placement * weight;
+    placementWeight += weight;
+    if (participant.placement <= 4) topFourWeight += weight;
+    for (const unit of new Map(
+      participant.units.map((value) => [value.championId, value]),
+    ).values()) {
+      unitFrequency[unit.championId] = (unitFrequency[unit.championId] ?? 0) + weight;
+      unitGames[unit.championId] = (unitGames[unit.championId] ?? 0) + 1;
+      if (unit.unresolvedUnit) unresolved.units.add(unit.championId);
+      unit.unresolvedItems.forEach((id) => unresolved.items.add(id));
     }
-    if (p.style) styleFrequency[p.style] = (styleFrequency[p.style] ?? 0) + weight;
-    for (const id of new Set(p.units.map((u) => u.championId)))
-      unitFrequency[id] = (unitFrequency[id] ?? 0) + weight;
+    for (const trait of new Map(participant.traits.map((value) => [value.id, value])).values()) {
+      traitFrequency[trait.id] = (traitFrequency[trait.id] ?? 0) + weight;
+      if (trait.unresolved) unresolved.traits.add(trait.id);
+    }
+    for (const augment of new Set(participant.augmentIds)) {
+      augmentFrequency[augment] = (augmentFrequency[augment] ?? 0) + weight;
+    }
+    participant.unresolvedAugmentIds.forEach((id) => unresolved.augments.add(id));
   }
-  for (const family of Object.keys(placementByFamily))
-    placementByFamily[family] /= familyFrequency[family];
-  for (const map of [familyFrequency, unitFrequency, styleFrequency])
-    for (const key of Object.keys(map)) map[key] /= total || 1;
-  const forceIndex = Math.max(0, ...Object.values(familyFrequency));
+  for (const frequency of [unitFrequency, traitFrequency, augmentFrequency])
+    for (const key of Object.keys(frequency)) frequency[key] /= effectiveSample || 1;
+  const patchQuality = sample.length ? 0.4 + 0.6 * (samePatchGames / sample.length) : 0;
+  const modeQuality = sample.length ? 1 - 0.25 * (unverifiedModeGames / sample.length) : 0;
   return {
     puuid,
+    riotId,
     generatedAt: now,
-    sourceMatchIds: relevant.map((m) => m.id),
+    sourceMatchIds: sample.map((match) => match.id),
     set,
     patch,
-    derivationVersion: VERSION,
-    relevantGames: relevant.length,
-    effectiveSample: total,
-    familyFrequency,
+    derivationVersion: OPPONENT_DERIVATION_VERSION,
+    relevantGames: sample.length,
+    effectiveSample,
     unitFrequency,
-    styleFrequency,
-    placementByFamily,
-    forceIndex,
-    flexIndex: Object.keys(familyFrequency).length ? 1 - forceIndex : 0,
-    confidence: clamp(total / 15),
+    traitFrequency,
+    augmentFrequency,
+    placement: {
+      games: sample.length,
+      average: placementWeight ? placementTotal / placementWeight : null,
+      topFourRate: placementWeight ? topFourWeight / placementWeight : null,
+    },
+    samePatchGames,
+    unresolvedIds: {
+      units: [...unresolved.units].sort(),
+      items: [...unresolved.items].sort(),
+      traits: [...unresolved.traits].sort(),
+      augments: [...unresolved.augments].sort(),
+    },
+    repeatedUnitCandidates: Object.entries(unitGames)
+      .filter(([, games]) => games >= 2)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([id]) => id),
+    freshness,
+    classification: {
+      family: 'unavailable',
+      style: 'unavailable',
+      note: 'M3 does not infer composition families or strategic styles from final boards.',
+    },
+    confidence: clamp((effectiveSample / target) * patchQuality * modeQuality),
   };
 }
-async function bounded<T>(values: T[], fn: (value: T) => Promise<void>, signal: AbortSignal) {
+
+export interface OpponentResolution {
+  input: string;
+  state: 'resolved' | 'cached' | 'invalid' | 'failed';
+  identity?: RiotIdentity;
+  error?: string;
+}
+
+export interface ResolveOpponentsResult {
+  requested: number;
+  resolved: RiotIdentity[];
+  entries: OpponentResolution[];
+  duplicates: string[];
+  overflow: number;
+}
+
+function safeResolutionMessage(error: unknown) {
+  if (error instanceof RiotProviderError) return error.message;
+  return 'This Riot ID could not be resolved.';
+}
+
+async function resolveOne(
+  parsed: ParsedRiotId,
+  provider: RiotProvider,
+  store: HistoryStore,
+  platform: string,
+  now: string,
+  options: { signal?: AbortSignal; deadlineAt?: number },
+): Promise<OpponentResolution> {
+  const cached = await store.getIdentity(parsed.gameName, parsed.tagLine, platform);
+  if (cached && isFresh(cached.fetchedAt, now, IDENTITY_TTL_MS))
+    return { input: parsed.display, state: 'cached', identity: cached };
+  try {
+    const identity = await provider.resolveAccount(parsed.gameName, parsed.tagLine, options);
+    await store.putIdentity(identity, now);
+    return { input: parsed.display, state: 'resolved', identity };
+  } catch (error) {
+    if (cached) return { input: parsed.display, state: 'cached', identity: cached };
+    return { input: parsed.display, state: 'failed', error: safeResolutionMessage(error) };
+  }
+}
+
+export async function resolveOpponentIdentities(
+  value: string,
+  provider: RiotProvider,
+  store: HistoryStore,
+  platform: string,
+  now = new Date().toISOString(),
+  ownPuuid?: string,
+  options: { signal?: AbortSignal; deadlineAt?: number } = {},
+): Promise<ResolveOpponentsResult> {
+  const parsed = parseOpponentList(value);
+  const entries: OpponentResolution[] = parsed.invalid.map((input) => ({
+    input,
+    state: 'invalid',
+    error: 'Use a Riot ID in the form gameName#tagLine.',
+  }));
+  entries.push(
+    ...(await Promise.all(
+      parsed.valid.map((id) => resolveOne(id, provider, store, platform, now, options)),
+    )),
+  );
+  const identities = entries.flatMap((entry) =>
+    entry.identity && entry.identity.puuid !== ownPuuid ? [entry.identity] : [],
+  );
+  return {
+    requested: parsed.valid.length + parsed.invalid.length,
+    resolved: [...new Map(identities.map((identity) => [identity.puuid, identity])).values()].slice(
+      0,
+      7,
+    ),
+    entries,
+    duplicates: parsed.duplicates,
+    overflow: parsed.overflow,
+  };
+}
+
+async function bounded<T>(
+  values: T[],
+  fn: (value: T) => Promise<void>,
+  signal: AbortSignal,
+  workers = 7,
+) {
   const queue = [...values];
   await Promise.all(
-    Array.from({ length: Math.min(3, queue.length) }, async () => {
+    Array.from({ length: Math.min(workers, queue.length) }, async () => {
       while (queue.length && !signal.aborted) await fn(queue.shift()!);
     }),
   );
 }
+
 export interface ScoutOptions {
   set: number;
   patch: string;
   now: string;
   historyWindow?: number;
   timeoutMs?: number;
+  routing?: string;
+  requestedOpponents?: number;
+  onWarmResult?: (result: LobbyPressure) => void;
 }
-export async function scanLobby(
-  puuids: string[],
-  provider: RiotProvider,
-  repository: Repository,
+
+type PersonState = {
+  identity: RiotIdentity;
+  index: RecentMatchIndex | null;
+  ids: string[];
+  nextStart: number;
+  exhausted: boolean;
+  needsRefresh: boolean;
+  failed: boolean;
+};
+
+function fingerprint(ids: string[]) {
+  return [...ids].sort().join('|');
+}
+
+function makeLobbyResult(
+  people: RiotIdentity[],
+  profiles: OpponentProfile[],
+  target: number,
   options: ScoutOptions,
-): Promise<LobbyPressure> {
-  const people = [...new Set(puuids)].slice(0, 7),
-    errors: string[] = [],
-    matches = new Map<string, CompletedMatch>();
-  const indexes = new Map<string, string[]>(),
-    profiles: OpponentProfile[] = [];
-  const controller = new AbortController(),
-    timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 8000);
-  const signal = controller.signal;
-  // Race every provider call: even a non-cooperative adapter cannot block partial results.
-  const abortable = <T>(promise: Promise<T>): Promise<T> =>
-    new Promise((resolve, reject) => {
-      const abort = () => reject(new Error('Scout timeout'));
-      if (signal.aborted) {
-        reject(new Error('Scout timeout'));
-        return;
-      }
-      signal.addEventListener('abort', abort, { once: true });
-      promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
-    });
-  try {
-    await bounded(
-      people,
-      async (puuid) => {
-        const key = `recent:${puuid}`;
-        const cached = await repository.get<{ ids: string[]; fetchedAt: string; count: number }>(
-          key,
-        );
-        const count = Math.round(clamp(options.historyWindow ?? 15, 10, 20));
-        try {
-          if (
-            cached &&
-            cached.count >= count &&
-            Date.parse(options.now) - Date.parse(cached.fetchedAt) < 300000
-          )
-            indexes.set(puuid, cached.ids.slice(0, count));
-          else {
-            const ids = await abortable(provider.recentMatchIds(puuid, count, signal));
-            indexes.set(puuid, ids);
-            await repository.set(key, { ids, fetchedAt: options.now, count });
-          }
-        } catch {
-          errors.push('A recent-history request was unavailable.');
-          if (cached) indexes.set(puuid, cached.ids.slice(0, count));
-        }
-      },
-      signal,
-    );
-    const ids = [...new Set([...indexes.values()].flat())];
-    // Cached immutable matches remain usable even after a deadline.
-    for (const id of ids) {
-      const cached = await repository.get<CompletedMatch>(`match:${id}`);
-      if (cached) matches.set(id, cached);
-    }
-    await bounded(
-      ids.filter((id) => !matches.has(id)),
-      async (id) => {
-        try {
-          const match = await abortable(provider.completedMatch(id, signal));
-          if (match.id !== id) throw new Error('Match identity mismatch');
-          matches.set(id, match);
-          await repository.set(`match:${id}`, match);
-        } catch {
-          errors.push('A completed match was unavailable.');
-        }
-      },
-      signal,
-    );
-    for (const puuid of people) {
-      const available = (indexes.get(puuid) ?? []).flatMap((id) =>
-        matches.has(id) ? [matches.get(id)!] : [],
-      );
-      const profile = deriveOpponent(puuid, available, options.set, options.patch, options.now);
-      if (profile.relevantGames) {
-        profiles.push(profile);
-        await repository.set(`opponent:${puuid}:${VERSION}`, profile);
-      }
-    }
-  } finally {
-    clearTimeout(timer);
-  }
-  if (signal.aborted) errors.push('Time budget reached; results are partial.');
-  const coverage = people.length
-    ? profiles.reduce((s, p) => s + clamp(p.effectiveSample / (options.historyWindow ?? 15)), 0) /
-      people.length
-    : 0;
+  errors: string[],
+  telemetry: RiotTelemetry,
+  elapsedMs: number,
+  timedOut: boolean,
+): LobbyPressure {
+  const relevantGamesAvailable = profiles.reduce(
+    (total, profile) => total + profile.relevantGames,
+    0,
+  );
+  const relevantGamesTarget = people.length * target;
+  const coverage = relevantGamesTarget ? clamp(relevantGamesAvailable / relevantGamesTarget) : 0;
   return {
-    state: !profiles.length
-      ? 'unavailable'
-      : coverage >= 0.95 && !errors.length
-        ? 'complete'
-        : 'partial',
+    state:
+      profiles.length === 0
+        ? 'unavailable'
+        : profiles.length === people.length && coverage >= 1 && !errors.length && !timedOut
+          ? 'complete'
+          : 'partial',
     expectedOpponents: people.length,
+    requestedOpponents: options.requestedOpponents ?? people.length,
+    resolvedOpponents: people.length,
+    profilesCompleted: profiles.length,
     profiles,
     coverage,
+    relevantGamesAvailable,
+    relevantGamesTarget,
+    freshProfiles: profiles.filter((profile) => profile.freshness === 'fresh').length,
+    cachedProfiles: profiles.filter((profile) => profile.freshness !== 'fresh').length,
+    elapsedMs,
+    telemetry,
     fetchedAt: options.now,
     errors: [...new Set(errors)],
   };
+}
+
+export async function scanLobby(
+  identities: Array<RiotIdentity | string>,
+  provider: RiotProvider,
+  store: HistoryStore,
+  options: ScoutOptions,
+): Promise<LobbyPressure> {
+  const started = performance.now();
+  const target = Math.round(clamp(options.historyWindow ?? 15, 10, 20));
+  const normalizedIdentities = identities.map(
+    (identity): RiotIdentity =>
+      typeof identity === 'string'
+        ? {
+            puuid: identity,
+            gameName: identity,
+            tagLine: 'fixture',
+            platform: 'fixture',
+            routing: options.routing ?? 'fixture',
+          }
+        : identity,
+  );
+  const people = [
+    ...new Map(normalizedIdentities.map((identity) => [identity.puuid, identity])).values(),
+  ].slice(0, 7);
+  const errors: string[] = [];
+  const telemetry = emptyTelemetry();
+  const timeoutMs = options.timeoutMs ?? 8_000;
+  const deadlineAt = Date.now() + timeoutMs;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const signal = controller.signal;
+  const metricStart = await provider.metrics();
+  const abortable = <T>(promise: Promise<T>): Promise<T> =>
+    new Promise((resolve, reject) => {
+      const abort = () => reject(new RiotProviderError('deadline'));
+      if (signal.aborted) return reject(new RiotProviderError('deadline'));
+      signal.addEventListener('abort', abort, { once: true });
+      promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+    });
+  const matches = new Map<string, CompletedMatch>();
+  const cachedProfiles = new Map<string, OpponentProfile>();
+  try {
+    for (const identity of people) {
+      const stored = await store.getProfile(
+        identity.puuid,
+        options.set,
+        options.patch,
+        OPPONENT_DERIVATION_VERSION,
+      );
+      if (stored) {
+        const profile = {
+          ...stored.profile,
+          riotId: `${identity.gameName}#${identity.tagLine}`,
+          freshness: isFresh(stored.profile.generatedAt, options.now, RECENT_INDEX_TTL_MS)
+            ? ('cached' as const)
+            : ('stale' as const),
+        };
+        cachedProfiles.set(identity.puuid, profile);
+      }
+    }
+    if (cachedProfiles.size) {
+      options.onWarmResult?.(
+        makeLobbyResult(
+          people,
+          [...cachedProfiles.values()],
+          target,
+          options,
+          ['Refreshing cached opponent evidence.'],
+          telemetry,
+          performance.now() - started,
+          false,
+        ),
+      );
+    }
+
+    const states: PersonState[] = [];
+    for (const identity of people) {
+      const routing = identity.routing || options.routing || 'fixture';
+      const index = await store.getRecentIndex(identity.puuid, routing);
+      const fresh = Boolean(index && isFresh(index.fetchedAt, options.now, RECENT_INDEX_TTL_MS));
+      states.push({
+        identity,
+        index,
+        ids: fresh ? [...index!.ids] : [],
+        nextStart: fresh ? index!.requestedCount : 0,
+        exhausted: fresh ? index!.exhausted : false,
+        needsRefresh: !fresh,
+        failed: false,
+      });
+      if (fresh) telemetry.cacheHits++;
+    }
+
+    const loadDetails = async () => {
+      const references = states.reduce((total, state) => total + state.ids.length, 0);
+      const uniqueIds = [...new Set(states.flatMap((state) => state.ids))];
+      telemetry.sharedMatchesDeduplicated = Math.max(0, references - uniqueIds.length);
+      for (const id of uniqueIds) {
+        if (matches.has(id)) continue;
+        const cached = await store.getCompletedMatch(id);
+        if (cached) {
+          matches.set(id, cached);
+          telemetry.cacheHits++;
+        }
+      }
+      await bounded(
+        uniqueIds.filter((id) => !matches.has(id)),
+        async (id) => {
+          try {
+            const match = await abortable(provider.completedMatch(id, { signal, deadlineAt }));
+            if (match.id !== id) throw new RiotProviderError('malformed-response');
+            matches.set(id, match);
+            telemetry.uniqueMatchDetailsFetched++;
+            await store.putCompletedMatch(match, options.now);
+          } catch (error) {
+            errors.push(
+              error instanceof RiotProviderError && error.code === 'not-found'
+                ? `Completed match ${id} was no longer available.`
+                : 'A completed-match request was unavailable.',
+            );
+          }
+        },
+        signal,
+      );
+    };
+
+    await loadDetails();
+    for (
+      let round = 0;
+      round < Math.ceil(MAX_HISTORY_IDS / PAGE_SIZE) && !signal.aborted;
+      round++
+    ) {
+      const candidates = states.filter((state) => {
+        if (state.failed || state.exhausted) return false;
+        if (state.needsRefresh) return true;
+        const relevant = state.ids.filter((id) => {
+          const match = matches.get(id);
+          return match && relevantMatch(match, state.identity.puuid, options.set);
+        }).length;
+        return relevant < target && state.nextStart < MAX_HISTORY_IDS;
+      });
+      if (!candidates.length) break;
+      await bounded(
+        candidates,
+        async (state) => {
+          const start = state.needsRefresh ? 0 : state.nextStart;
+          try {
+            const ids = await abortable(
+              provider.recentMatchIds(state.identity.puuid, start, PAGE_SIZE, {
+                signal,
+                deadlineAt,
+              }),
+            );
+            state.ids = state.needsRefresh
+              ? [...new Set(ids)]
+              : [...new Set([...state.ids, ...ids])];
+            state.needsRefresh = false;
+            state.nextStart = start + ids.length;
+            state.exhausted = ids.length < PAGE_SIZE || state.nextStart >= MAX_HISTORY_IDS;
+            await store.putRecentIndex({
+              puuid: state.identity.puuid,
+              routing: state.identity.routing || options.routing || 'fixture',
+              targetCount: target,
+              requestedCount: state.nextStart,
+              ids: state.ids,
+              exhausted: state.exhausted,
+              fetchedAt: options.now,
+            });
+          } catch {
+            state.failed = true;
+            errors.push(`Recent history for ${state.identity.gameName} was unavailable.`);
+            if (state.index) {
+              state.ids = [...state.index.ids];
+              state.nextStart = state.index.requestedCount;
+              state.exhausted = state.index.exhausted;
+            }
+          }
+        },
+        signal,
+      );
+      await loadDetails();
+    }
+
+    const profiles: OpponentProfile[] = [];
+    for (const state of states) {
+      const available = state.ids.flatMap((id) => (matches.has(id) ? [matches.get(id)!] : []));
+      const derived = deriveOpponent(
+        state.identity.puuid,
+        available,
+        options.set,
+        options.patch,
+        options.now,
+        target,
+        'fresh',
+        `${state.identity.gameName}#${state.identity.tagLine}`,
+      );
+      const old = cachedProfiles.get(state.identity.puuid);
+      const profile = derived.relevantGames ? derived : old;
+      if (!profile) continue;
+      profiles.push(profile);
+      if (derived.relevantGames)
+        await store.putProfile(derived, fingerprint(derived.sourceMatchIds));
+    }
+    if (signal.aborted)
+      errors.push('Time budget reached; cached and partial results were retained.');
+    const metricEnd = await provider.metrics();
+    telemetry.requestsAttempted = Math.max(
+      0,
+      metricEnd.requestsAttempted - metricStart.requestsAttempted,
+    );
+    telemetry.retries = Math.max(0, metricEnd.retries - metricStart.retries);
+    telemetry.rateLimitWaits = Math.max(0, metricEnd.rateLimitWaits - metricStart.rateLimitWaits);
+    telemetry.rateLimitWaitMs = Math.max(
+      0,
+      metricEnd.rateLimitWaitMs - metricStart.rateLimitWaitMs,
+    );
+    const result = makeLobbyResult(
+      people,
+      profiles,
+      target,
+      options,
+      errors,
+      telemetry,
+      performance.now() - started,
+      signal.aborted,
+    );
+    await store.putScanSnapshot(result);
+    return result;
+  } finally {
+    clearTimeout(timer);
+  }
 }

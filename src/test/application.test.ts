@@ -42,7 +42,12 @@ describe('application persistence and refresh', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}')));
     const result = await loadApplication(repo);
     expect(result.source).toBe('Local cache');
-    expect(result.settings).toEqual({ personalWeight: 0.1, historyWindow: 20 });
+    expect(result.settings).toEqual({
+      personalWeight: 0.1,
+      historyWindow: 20,
+      riotId: '',
+      riotPlatform: 'EUW1',
+    });
     expect(result.portfolio.plans).toHaveLength(3);
   });
   it('failed refresh preserves the previously successful cache', async () => {

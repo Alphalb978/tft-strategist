@@ -1,5 +1,5 @@
 import { ArrowRight, Layers3, Radio, ShieldQuestion, Sparkles } from 'lucide-react';
-import type { RecommendationPortfolio } from '../domain/models';
+import type { LobbyPressure, RecommendationPortfolio } from '../domain/models';
 import type { ApplicationState } from '../services/application';
 import { Art, Portrait } from '../components/Art';
 export function Home({
@@ -7,11 +7,13 @@ export function Home({
   portfolio,
   onOpen,
   onData,
+  lobby,
 }: {
   state: ApplicationState;
   portfolio: RecommendationPortfolio;
   onOpen: (id: string) => void;
   onData: () => void;
+  lobby: LobbyPressure | null;
 }) {
   const { data, assets } = state;
   return (
@@ -167,18 +169,26 @@ export function Home({
           <div className="panel-heading">
             <Radio size={18} />
             <h2>Lobby intelligence</h2>
-            <span className="badge muted">Unavailable</span>
+            <span className={`badge ${lobby?.state === 'complete' ? 'success' : 'muted'}`}>
+              {lobby?.state ?? 'Unavailable'}
+            </span>
           </div>
           <div className="opponent-dots">
             {Array.from({ length: 7 }, (_, i) => (
-              <span key={i}>?</span>
+              <span key={i}>{lobby?.profiles[i] ? '✓' : '?'}</span>
             ))}
           </div>
-          <p>Opponent history will refine contest pressure. No lobby or account is connected.</p>
+          <p>
+            {lobby
+              ? `${lobby.profilesCompleted}/${lobby.resolvedOpponents} profiles · ${Math.round(lobby.coverage * 100)}% evidence coverage · ${Math.round(lobby.elapsedMs)} ms.`
+              : 'Opponent history evidence is not connected. Recommendations remain unchanged.'}
+          </p>
           <button className="text-button" onClick={onData}>
             Connection & data setup <ArrowRight size={14} />
           </button>
-          <small>{state.settings.historyWindow} recent games per opponent · cache first</small>
+          <small>
+            {state.settings.historyWindow} relevant games per opponent · cache first · evidence only
+          </small>
         </section>
       </div>
     </>

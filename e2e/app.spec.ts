@@ -47,6 +47,27 @@ test('refresh failure keeps usable plans and settings persist', async ({ page })
   await page.getByRole('button', { name: 'Your plans', exact: true }).click();
   await expect(page.locator('.plan-card')).toHaveCount(3);
 });
+test('M3 manual Riot identity and history flow is operable with fixtures', async ({ page }) => {
+  await page.goto('/?riot-fixture=1');
+  await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
+  await expect(page.getByText('Fixture preview', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Riot ID', { exact: true })).toHaveValue('Strategist#M3');
+  await page.getByRole('button', { name: 'Resolve', exact: true }).click();
+  await expect(page.getByText('Account resolved through the native Riot boundary.')).toBeVisible();
+  await page.getByRole('button', { name: 'Resolve & scan history' }).click();
+  await expect(page.getByText('7/7 profiles')).toBeVisible();
+  await expect(page.getByText('105/105 relevant games')).toBeVisible();
+  await expect(page.locator('.opponent-profile-grid article')).toHaveCount(7);
+  await page.screenshot({ path: 'artifacts/m3-scouting-1440.png', fullPage: true });
+});
+test('M3 no-key state exposes no credential value', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
+  await expect(page.getByText('API key unavailable', { exact: true })).toBeVisible();
+  await expect(page.getByText(/RGAPI-/)).toHaveCount(0);
+  await expect(page.getByLabel('Riot ID', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Platform')).toHaveValue('EUW1');
+});
 for (const width of [1000, 860])
   test(`desktop layout at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
@@ -63,6 +84,22 @@ for (const width of [1000, 860])
     expect(await page.locator('main').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
       true,
     );
+  });
+for (const width of [1000, 860])
+  test(`M3 scouting layout at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/?riot-fixture=1');
+    await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
+    await expect(
+      page.getByRole('heading', { name: 'Riot history & opponent scouting' }),
+    ).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    expect(
+      await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    await page.screenshot({ path: `artifacts/m3-scouting-${width}.png`, fullPage: true });
   });
 test('bundled data and all visible art work without external requests', async ({ page }) => {
   await page.route(/^https:\/\//, (route) => route.abort());

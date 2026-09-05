@@ -3,7 +3,7 @@ import { CommunityDragonProvider } from '../providers/communityDragon';
 import { loadPlaybooks } from '../providers/playbooks';
 import { validatePlaybook } from '../rules/validation';
 import type { Repository, Settings } from '../storage/repository';
-import { defaultSettings } from '../storage/repository';
+import { normalizeSettings } from '../storage/repository';
 import { scoreCandidate } from '../strategy/scoring';
 import { optimizePortfolio } from '../strategy/portfolio';
 import { isStaticData } from '../domain/staticSchema';
@@ -51,13 +51,7 @@ export async function loadApplication(repository: Repository): Promise<Applicati
     repository.get<SelectedPlan>('selection'),
     fetch('/data/asset-manifest.json').catch(() => null),
   ]);
-  const settings = {
-    personalWeight: Math.min(
-      0.1,
-      Math.max(0.05, Number(savedSettings?.personalWeight) || defaultSettings.personalWeight),
-    ),
-    historyWindow: Math.min(20, Math.max(10, Number(savedSettings?.historyWindow) || 15)),
-  };
+  const settings = normalizeSettings(savedSettings);
   let cacheUsable = isStaticData(cached);
   if (cacheUsable) {
     try {

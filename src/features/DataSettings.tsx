@@ -1,19 +1,31 @@
-import { Database, ExternalLink, Radio, RefreshCw, SlidersHorizontal } from 'lucide-react';
+import { Database, ExternalLink, RefreshCw, SlidersHorizontal } from 'lucide-react';
+import type { LobbyPressure } from '../domain/models';
+import type { RiotProvider } from '../providers/riot';
 import type { ApplicationState } from '../services/application';
+import type { HistoryStore } from '../storage/history';
 import type { Settings } from '../storage/repository';
 import { set18Rules } from '../rules/ruleSet';
+import { RiotScouting } from './RiotScouting';
 export function DataSettings({
   state,
   mode,
   onSave,
   onRefresh,
   refreshing,
+  riotProvider,
+  historyStore,
+  fixturePreview,
+  onLobby,
 }: {
   state: ApplicationState;
   mode: string;
   onSave: (s: Settings) => void;
   onRefresh: () => void;
   refreshing: boolean;
+  riotProvider: RiotProvider;
+  historyStore: HistoryStore;
+  fixturePreview: boolean;
+  onLobby: (lobby: LobbyPressure) => void;
 }) {
   return (
     <>
@@ -113,33 +125,15 @@ export function DataSettings({
             deduplication, and partial results.
           </p>
         </section>
-        <section className="panel">
-          <div className="panel-heading">
-            <Radio size={18} />
-            <h2>Riot connection</h2>
-            <span className="badge muted">Not configured</span>
-          </div>
-          <p>
-            Live scouting requires an approved Riot API integration. This build includes typed
-            provider contracts and fixture-backed services.
-          </p>
-          <ol className="setup-list">
-            <li>Obtain a developer key through Riot’s Developer Portal.</li>
-            <li>
-              Connect it through a native adapter with rate-limit handling. Keep credentials out of
-              frontend bundles.
-            </li>
-            <li>
-              Use manual participant identity input if official lobby discovery is unavailable.
-            </li>
-          </ol>
-          <a href="https://developer.riotgames.com/docs/tft" target="_blank" rel="noreferrer">
-            Riot TFT API documentation ↗
-          </a>
-          <p className="fine-print">
-            No account, lobby, match history, or protected game process is connected.
-          </p>
-        </section>
+        <RiotScouting
+          data={state.data}
+          settings={state.settings}
+          provider={riotProvider}
+          store={historyStore}
+          fixturePreview={fixturePreview}
+          onSave={onSave}
+          onLobby={onLobby}
+        />
         <section className="panel">
           <div className="panel-heading">
             <Database size={18} />

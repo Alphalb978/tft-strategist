@@ -226,6 +226,7 @@ export interface RecommendationPortfolio {
 }
 export interface OpponentProfile {
   puuid: string;
+  riotId?: string;
   generatedAt: string;
   sourceMatchIds: ID[];
   set: number;
@@ -233,19 +234,58 @@ export interface OpponentProfile {
   derivationVersion: string;
   relevantGames: number;
   effectiveSample: number;
-  familyFrequency: Record<ID, number>;
   unitFrequency: Record<ID, number>;
-  forceIndex: number;
-  flexIndex: number;
-  styleFrequency: Record<string, number>;
-  placementByFamily: Record<ID, number>;
+  traitFrequency: Record<ID, number>;
+  augmentFrequency: Record<ID, number>;
+  placement: {
+    games: number;
+    average: number | null;
+    topFourRate: number | null;
+  };
+  samePatchGames: number;
+  unresolvedIds: {
+    units: ID[];
+    items: ID[];
+    traits: ID[];
+    augments: ID[];
+  };
+  repeatedUnitCandidates: ID[];
+  freshness: 'fresh' | 'cached' | 'stale';
+  familyFrequency?: Record<ID, number>;
+  styleFrequency?: Record<string, number>;
+  placementByFamily?: Record<ID, number>;
+  forceIndex?: number;
+  flexIndex?: number;
+  classification: {
+    family: 'unavailable';
+    style: 'unavailable';
+    note: string;
+  };
   confidence: number;
+}
+export interface RiotTelemetry {
+  requestsAttempted: number;
+  cacheHits: number;
+  retries: number;
+  rateLimitWaits: number;
+  rateLimitWaitMs: number;
+  uniqueMatchDetailsFetched: number;
+  sharedMatchesDeduplicated: number;
 }
 export interface LobbyPressure {
   state: 'complete' | 'partial' | 'unavailable';
   expectedOpponents: number;
+  requestedOpponents: number;
+  resolvedOpponents: number;
+  profilesCompleted: number;
   profiles: OpponentProfile[];
   coverage: number;
+  relevantGamesAvailable: number;
+  relevantGamesTarget: number;
+  freshProfiles: number;
+  cachedProfiles: number;
+  elapsedMs: number;
+  telemetry: RiotTelemetry;
   fetchedAt: string;
   errors: string[];
 }
@@ -269,20 +309,51 @@ export interface RiotIdentity {
   platform: string;
   routing: string;
 }
+export interface MatchTrait {
+  id: ID;
+  count: number;
+  style: number | null;
+  tierCurrent: number | null;
+  tierTotal: number | null;
+  unresolved: boolean;
+}
+export interface MatchUnit {
+  championId: ID;
+  items: ID[];
+  stars: number;
+  rarity: number | null;
+  rawName: string | null;
+  unresolvedUnit: boolean;
+  unresolvedItems: ID[];
+}
 export interface MatchParticipant {
   puuid: string;
   placement: number;
   level: number;
-  units: BoardUnit[];
+  units: MatchUnit[];
+  traits: MatchTrait[];
   augmentIds: ID[];
+  unresolvedAugmentIds: ID[];
+  riotId?: string;
+  /** Synthetic fixtures may carry classifier output. Native M3 normalization never sets it. */
   familyId?: ID;
+  /** Synthetic fixtures may carry classifier output. Native M3 normalization never sets it. */
   style?: string;
 }
 export interface CompletedMatch {
   id: ID;
   set: number;
+  setCoreName: string | null;
   patch: string;
+  gameVersion: string;
+  dataVersion: string;
+  gameTimestamp: string;
   completedAt: string;
+  queueId: number | null;
+  gameType: string | null;
+  mapId: number | null;
+  endOfGameResult: string | null;
+  modeSupport: 'supported' | 'unsupported' | 'unverified';
   participants: MatchParticipant[];
   source: string;
 }

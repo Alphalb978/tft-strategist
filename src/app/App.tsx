@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
   Check,
@@ -23,6 +23,10 @@ import { Home } from '../features/Home';
 import { Playbook } from '../features/Playbook';
 import { DataSettings } from '../features/DataSettings';
 import { Art } from '../components/Art';
+import type { LobbyPressure } from '../domain/models';
+import { NativeRiotProvider } from '../providers/riot';
+import { createRiotPreviewProvider } from '../providers/riotPreview';
+import { openHistoryStore, type HistoryStore } from '../storage/history';
 type Page = 'home' | 'library' | 'data';
 export function App() {
   const [state, setState] = useState<ApplicationState | null>(null),
@@ -31,17 +35,20 @@ export function App() {
     [error, setError] = useState(''),
     [toast, setToast] = useState(''),
     [refreshing, setRefreshing] = useState(false),
-    [attempt, setAttempt] = useState(0);
+    [attempt, setAttempt] = useState(0),
+    [historyStore, setHistoryStore] = useState<HistoryStore | null>(null),
+    [lobby, setLobby] = useState<LobbyPressure | null>(null);
   const repository = useRef<Repository | null>(null),
     main = useRef<HTMLElement | null>(null);
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const repo = await openRepository();
+        const [repo, history] = await Promise.all([openRepository(), openHistoryStore()]);
         const loaded = await loadApplication(repo);
         if (alive) {
           repository.current = repo;
+          setHistoryStore(history);
           setState(loaded);
           setError('');
         }
@@ -56,6 +63,18 @@ export function App() {
       alive = false;
     };
   }, [attempt]);
+  const fixturePreview =
+    import.meta.env.DEV && new URLSearchParams(window.location.search).has('riot-fixture');
+  const riotProvider = useMemo(() => {
+    if (!state) return null;
+    if (fixturePreview) return createRiotPreviewProvider(state.data);
+    return new NativeRiotProvider(state.settings.riotPlatform, {
+      unitIds: new Set(state.data.champions.map((unit) => unit.id)),
+      itemIds: new Set(state.data.items.map((item) => item.id)),
+      traitIds: new Set(state.data.traits.map((trait) => trait.id)),
+      augmentIds: new Set(state.data.augments.map((augment) => augment.id)),
+    });
+  }, [fixturePreview, state]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(''), 5000);
@@ -249,14 +268,19 @@ export function App() {
                   portfolio={portfolio!}
                   onOpen={open}
                   onData={() => navigate('data')}
+                  lobby={lobby}
                 />
-              ) : page === 'data' ? (
+              ) : page === 'data' && riotProvider && historyStore ? (
                 <DataSettings
                   state={state}
                   mode={repository.current?.mode ?? 'Unavailable'}
                   onSave={saveSettings}
                   onRefresh={refresh}
                   refreshing={refreshing}
+                  riotProvider={riotProvider}
+                  historyStore={historyStore}
+                  fixturePreview={fixturePreview}
+                  onLobby={setLobby}
                 />
               ) : (
                 <>

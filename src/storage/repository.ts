@@ -1,10 +1,35 @@
 import type Database from '@tauri-apps/plugin-sql';
 import type { StaticData, SelectedPlan } from '../domain/models';
+import { parsePlatform, type RiotPlatform } from '../providers/riotRouting';
 export interface Settings {
   personalWeight: number;
   historyWindow: number;
+  riotId: string;
+  riotPlatform: RiotPlatform;
 }
-export const defaultSettings: Settings = { personalWeight: 0.05, historyWindow: 15 };
+export const defaultSettings: Settings = {
+  personalWeight: 0.05,
+  historyWindow: 15,
+  riotId: '',
+  riotPlatform: 'EUW1',
+};
+export function normalizeSettings(value?: Partial<Settings> | null): Settings {
+  let riotPlatform = defaultSettings.riotPlatform;
+  try {
+    riotPlatform = parsePlatform(value?.riotPlatform ?? riotPlatform);
+  } catch {
+    /* Unknown saved values fail closed to the explicit default. */
+  }
+  return {
+    personalWeight: Math.min(
+      0.1,
+      Math.max(0.05, Number(value?.personalWeight) || defaultSettings.personalWeight),
+    ),
+    historyWindow: Math.min(20, Math.max(10, Number(value?.historyWindow) || 15)),
+    riotId: typeof value?.riotId === 'string' ? value.riotId : '',
+    riotPlatform,
+  };
+}
 export interface Repository {
   mode: 'SQLite' | 'Browser local storage' | 'Memory';
   get<T>(key: string): Promise<T | null>;
