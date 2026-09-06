@@ -77,6 +77,7 @@ export async function loadApplication(repository: Repository): Promise<Applicati
       selection.sourceVersion === data.version.sourceVersion &&
       Array.isArray(selection.snapshot?.plans) &&
       selection.snapshot.plans.length === 3 &&
+      selection.snapshot.version === 'portfolio-v2-m4-unit-pressure' &&
       selection.snapshot.plans.some((p) => p.candidate.playbook.id === selection.playbookId) &&
       selection.snapshot.plans.every(
         (p) =>

@@ -1,4 +1,5 @@
 import type { RecommendationCandidate, RecommendationPortfolio } from '../domain/models';
+import { M4_UNIT_MODEL } from './lobbyPressure';
 export function portfolioInteractions(candidates: RecommendationCandidate[]) {
   const items = new Set(candidates.flatMap((c) => c.playbook.features.itemCoverage));
   const openings = new Set(candidates.flatMap((c) => c.playbook.features.openingCoverage));
@@ -17,6 +18,17 @@ export function portfolioInteractions(candidates: RecommendationCandidate[]) {
         ...b.pivots.filter((p) => p.destination === a.id),
       ].filter((p) => p.trigger.status === 'verified' || p.trigger.status === 'curated').length;
     }
+  const pressureExposure = new Map<string, number[]>();
+  for (const candidate of candidates)
+    for (const unit of candidate.contest.pressuredUnits) {
+      const values = pressureExposure.get(unit.championId) ?? [];
+      values.push(unit.contribution);
+      pressureExposure.set(unit.championId, values);
+    }
+  const redundantPressure = [...pressureExposure.values()].reduce((total, values) => {
+    if (values.length < 2) return total;
+    return total + values.reduce((sum, value) => sum + value, 0) - Math.max(...values);
+  }, 0);
   return [
     { label: 'Individual quality', value: candidates.reduce((s, c) => s + c.score, 0) },
     { label: 'Item opening coverage', value: items.size * 4 },
@@ -24,6 +36,10 @@ export function portfolioInteractions(candidates: RecommendationCandidate[]) {
     { label: 'Roll / level diversity', value: styles.size * 4 },
     { label: 'Verified pivot connections', value: pivots * 3 },
     { label: 'Shared core dependency', value: -shared * 18 },
+    {
+      label: 'Redundant pressured-unit exposure',
+      value: -redundantPressure * M4_UNIT_MODEL.portfolio.redundantPressurePenalty,
+    },
   ];
 }
 export function optimizePortfolio(
@@ -60,6 +76,6 @@ export function optimizePortfolio(
     objective: Number.isFinite(best) ? best : 0,
     interactions: portfolioInteractions(chosen),
     generatedAt: now,
-    version: 'portfolio-v1-seeded-weights',
+    version: 'portfolio-v2-m4-unit-pressure',
   };
 }

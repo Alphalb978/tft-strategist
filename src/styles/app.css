@@ -1482,9 +1482,97 @@ select {
   gap: 6px;
   margin: 13px 0;
 }
-.opponent-profile-grid {
+.lobby-pressure-summary {
+  border: 1px solid #304252;
+  background: linear-gradient(120deg, #13232b, #111a24);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 13px 0;
+}
+.lobby-pressure-summary.compact {
+  margin: 14px 0 4px;
+  padding: 10px;
+}
+.pressure-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 9px;
+}
+.pressure-heading strong {
+  color: #d3e0e6;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+.pressure-heading span {
+  color: #7d94a7;
+  font-size: 8px;
+}
+.pressure-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+.lobby-pressure-summary.compact .pressure-strip {
+  grid-template-columns: 1fr;
+}
+.pressure-strip > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid #293b48;
+  background: #16232c;
+  border-radius: 5px;
+  padding: 6px;
+}
+.pressure-strip img,
+.pressure-strip .art-fallback {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.pressure-strip > div > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.pressure-strip strong {
+  color: #dce4e9;
+  font-size: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pressure-strip small {
+  color: #7e94a5;
+  font-size: 8px;
+  line-height: 1.4;
+}
+.pressure-details {
+  margin-top: 10px;
+}
+.pressure-table > div {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) repeat(3, minmax(90px, auto));
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid #23323f;
+  color: #8297a8;
+  font-size: 8px;
+}
+.pressure-table strong {
+  color: #c7d4dc;
+  font-size: 9px;
+}
+.opponent-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 8px;
 }
 .opponent-profile-grid article {
@@ -1535,6 +1623,120 @@ select {
   color: #72869a;
   font-size: 8px;
   font-style: normal;
+}
+.unit-signal-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 8px 0;
+}
+.unit-signal-preview > span {
+  border: 1px solid #2b3c49;
+  background: #18242d;
+  border-radius: 3px;
+  padding: 4px 6px;
+  color: #9bb1bf !important;
+  font-size: 8px !important;
+  text-transform: none !important;
+}
+.unit-evidence-details {
+  margin: 8px 0;
+}
+.unit-evidence-list > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #22303d;
+}
+.unit-evidence-list img,
+.unit-evidence-list .art-fallback {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.unit-evidence-list > div > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 54px;
+  color: #b7c4cd !important;
+  text-transform: none !important;
+}
+.unit-evidence-list .unit-signal-name {
+  min-width: 105px;
+  flex: 1;
+}
+.unit-evidence-list small {
+  min-height: 0;
+  font-size: 7px;
+  color: #708596;
+}
+.unit-evidence-list .trend.rising strong {
+  color: #8dd7bd;
+}
+.unit-evidence-list .trend.falling strong {
+  color: #d4ad88;
+}
+.card-pressure-units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: -3px 0 10px;
+}
+.card-pressure-units span {
+  border: 1px solid #3a454f;
+  background: #1a252e;
+  color: #a9bac4;
+  border-radius: 3px;
+  padding: 4px 6px;
+  font-size: 8px;
+}
+.contest-explanation {
+  border-top: 1px solid #2a3947;
+  margin-top: 19px;
+  padding-top: 15px;
+}
+.contest-explanation > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.contest-explanation > div:first-child svg {
+  color: var(--cyan);
+}
+.contest-explanation > div:first-child .badge {
+  margin-left: auto;
+}
+.contest-explanation > p,
+.contest-explanation > small {
+  color: #8397a8;
+  font-size: 9px;
+}
+.contest-unit-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 11px 0;
+}
+.contest-unit-list > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid #2c3c49;
+  background: #131e27;
+  border-radius: 4px;
+  padding: 9px;
+}
+.contest-unit-list strong {
+  color: #d4dfe5;
+  font-size: 10px;
+}
+.contest-unit-list span {
+  color: #7d92a2;
+  font-size: 8px;
 }
 .scout-errors {
   margin-top: 11px;

@@ -6,6 +6,7 @@ import {
   Check,
   Copy,
   GitBranch,
+  Radio,
   ShieldQuestion,
   Swords,
   WandSparkles,
@@ -307,6 +308,41 @@ export function Playbook({
               Personal history contributes no adjustment until relevant games exist.
             </p>
           </div>
+        </div>
+        <div className="contest-explanation">
+          <div>
+            <Radio size={15} />
+            <strong>Lobby / contest fit</strong>
+            <span className="badge muted">
+              {candidate.contest.lobbyFit === null
+                ? 'Unavailable · neutral'
+                : `${Math.round(candidate.contest.lobbyFit)} / 100 · ${candidate.contest.state}`}
+            </span>
+          </div>
+          <p>{candidate.contest.note}</p>
+          {candidate.contest.pressuredUnits.length > 0 && (
+            <div className="contest-unit-list">
+              {candidate.contest.pressuredUnits.slice(0, 3).map((unit) => (
+                <div key={unit.championId}>
+                  <strong>
+                    {data.champions.find((champion) => champion.id === unit.championId)?.name ??
+                      unit.championId}
+                  </strong>
+                  <span>{Math.round(unit.criticality * 100)}% seeded criticality</span>
+                  <span>
+                    {unit.equivalentHistoricalUsers.toFixed(1)} equivalent historical users
+                  </span>
+                  <span>+{(unit.contribution * 100).toFixed(1)} raw penalty contribution</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <small>
+            {Math.round(candidate.contest.evidenceCoverage * 100)}% seven-player evidence coverage ·
+            {Math.round(candidate.contest.contestElasticity * 100)}% seeded contest elasticity ·
+            {candidate.contest.styleFactor.toFixed(2)}× curated roll-style factor · historical
+            signal, not a future-choice probability
+          </small>
         </div>
       </section>
       <details className="source-details">

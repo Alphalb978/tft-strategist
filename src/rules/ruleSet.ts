@@ -43,6 +43,13 @@ export function activeBreakpoint(breakpoints: number[], count: number): number |
   return [...breakpoints].sort((a, b) => b - a).find((value) => value <= count) ?? null;
 }
 
+/** Verified ordinary TFT star-copy math. Special or out-of-range tiers fail closed. */
+export function ordinaryCopiesForStar(stars: number): number | null {
+  if (!Number.isInteger(stars) || stars < 1 || stars > 3) return null;
+  const copies = set18Rules.shop.starCopies[String(stars) as '1' | '2' | '3'];
+  return typeof copies === 'number' ? copies : null;
+}
+
 export function capacityForBoard(board: Board, data: StaticData): number | null {
   const base = baseCapacityForLevel(board.targetLevel);
   if (base === null) return null;

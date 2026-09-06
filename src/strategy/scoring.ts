@@ -1,5 +1,6 @@
 import type {
   ActiveSetVersion,
+  CandidateContest,
   Confidence,
   FeatureKey,
   LobbyPressure,
@@ -8,6 +9,7 @@ import type {
   RecommendationCandidate,
   ScoreComponent,
 } from '../domain/models';
+import { candidateContestFor } from './lobbyPressure';
 export const clamp = (n: number, lo = 0, hi = 1) =>
   Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : lo));
 const weights: Record<FeatureKey, number> = {
@@ -97,28 +99,8 @@ export function confidenceFor(p: Playbook, context: ScoringContext): Confidence 
     drivers,
   };
 }
-export function contestFor(
-  p: Playbook,
-  lobby?: LobbyPressure,
-): { state: RecommendationCandidate['contest']['state']; value: number | null } {
-  if (!lobby || !lobby.profiles.length || lobby.state === 'unavailable')
-    return { state: 'Unavailable', value: null };
-  const importance = Object.values(p.features.unitCriticality).reduce((a, b) => a + b, 0) || 1;
-  const pressure = clamp(
-    lobby.profiles.reduce(
-      (sum, profile) =>
-        sum +
-        (Object.entries(p.features.unitCriticality).reduce(
-          (s, [id, w]) => s + (profile.unitFrequency[id] ?? 0) * w,
-          0,
-        ) /
-          importance) *
-          profile.confidence *
-          p.features.contestElasticity,
-      0,
-    ),
-  );
-  return { state: pressure > 0.65 ? 'High' : pressure > 0.3 ? 'Medium' : 'Low', value: pressure };
+export function contestFor(p: Playbook, lobby?: LobbyPressure): CandidateContest {
+  return candidateContestFor(p, lobby);
 }
 export function scoreCandidate(p: Playbook, context: ScoringContext): RecommendationCandidate {
   const components: ScoreComponent[] = (Object.keys(weights) as FeatureKey[]).map((key) => ({
@@ -130,14 +112,14 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
     status: p.features.provenance.status,
   }));
   const contest = contestFor(p, context.lobby);
-  const lobbyValue = contest.value === null ? null : (1 - contest.value) * 100;
+  const lobbyValue = contest.lobbyFit;
   components.push({
     key: 'lobby',
     label: 'Lobby / contest fit',
     input: lobbyValue,
     weight: 0.1,
     contribution: (lobbyValue ?? 50) * 0.1,
-    status: lobbyValue === null ? 'unavailable' : 'curated',
+    status: lobbyValue === null ? 'unavailable' : 'seeded',
   });
   const adjustment = personalAdjustment(p, context.personal, context.personalWeight);
   components.push({

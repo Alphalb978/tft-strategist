@@ -27,9 +27,12 @@ import {
 } from '../services/scouting';
 import type { HistoryStore } from '../storage/history';
 import type { Settings } from '../storage/repository';
+import { Art } from '../components/Art';
+import { LobbyPressureSummary } from '../components/LobbyPressureSummary';
 
 export function RiotScouting({
   data,
+  assets,
   settings,
   provider,
   store,
@@ -38,6 +41,7 @@ export function RiotScouting({
   onLobby,
 }: {
   data: StaticData;
+  assets: Record<string, string>;
   settings: Settings;
   provider: RiotProvider;
   store: HistoryStore;
@@ -96,6 +100,13 @@ export function RiotScouting({
       patch: data.version.patch,
       now,
       historyWindow: settings.historyWindow,
+      currentUnitIds: data.champions.filter((unit) => unit.boardEligible).map((unit) => unit.id),
+      copyEligibleUnitIds: new Set(
+        data.champions
+          .filter((unit) => unit.boardEligible && unit.shopStatus === 'pool')
+          .map((unit) => unit.id),
+      ),
+      staticSourceVersion: data.version.sourceVersion,
       timeoutMs: 8_000,
       requestedOpponents: requested,
       onWarmResult: (warm) => {
@@ -180,10 +191,7 @@ export function RiotScouting({
     }
   };
 
-  const nameFor = (id: string) =>
-    data.champions.find((unit) => unit.id === id)?.name ??
-    data.traits.find((trait) => trait.id === id)?.name ??
-    id;
+  const championFor = (id: string) => data.champions.find((unit) => unit.id === id);
 
   return (
     <section className="panel riot-panel">
@@ -334,9 +342,9 @@ export function RiotScouting({
               </small>
             </div>
             <div>
-              <strong>{Math.round(result.elapsedMs)} ms</strong>
+              <strong>{Math.round(result.acquisitionMs)} ms acquisition</strong>
               <small>
-                <Clock3 size={11} /> last refresh {new Date(result.fetchedAt).toLocaleTimeString()}
+                <Clock3 size={11} /> M4 derivation {result.derivationMs.toFixed(2)} ms
               </small>
             </div>
           </div>
@@ -348,6 +356,7 @@ export function RiotScouting({
             <span>{result.telemetry.retries} retries</span>
             <span>{result.telemetry.rateLimitWaits} limit waits</span>
           </div>
+          <LobbyPressureSummary lobby={result} data={data} assets={assets} />
           <div className="opponent-profile-grid">
             {result.profiles.map((profile) => (
               <article key={profile.puuid}>
@@ -362,10 +371,76 @@ export function RiotScouting({
                     : `${profile.patchRelevance.samePatchGames}/${profile.patchRelevance.comparableGames} same content patch`}{' '}
                   · avg {profile.placement.average?.toFixed(1) ?? '—'}
                 </p>
-                <small>
-                  Repeated units:{' '}
-                  {profile.repeatedUnitCandidates.slice(0, 3).map(nameFor).join(', ') || 'none yet'}
-                </small>
+                <div className="unit-signal-preview">
+                  {profile.unitEvidence.slice(0, 3).map((unit) => (
+                    <span key={unit.championId}>
+                      {championFor(unit.championId)?.name ?? unit.championId} ·{' '}
+                      {Math.round(unit.weightedPresence * 100)}% · {unit.recentFiveAppearances}/
+                      {unit.recentWindowGames} last 5
+                    </span>
+                  ))}
+                </div>
+                <details className="unit-evidence-details">
+                  <summary>
+                    Inspect {Math.min(12, profile.unitEvidence.length)} unit signals
+                  </summary>
+                  <div className="unit-evidence-list">
+                    {profile.unitEvidence.slice(0, 12).map((unit) => {
+                      const champion = championFor(unit.championId);
+                      return (
+                        <div key={unit.championId} data-unit-signal={unit.championId}>
+                          {champion && (
+                            <Art url={champion.icon} alt={champion.name} assets={assets} />
+                          )}
+                          <span className="unit-signal-name">
+                            <strong>{champion?.name ?? unit.championId}</strong>
+                            <small title={unit.championId}>{unit.championId}</small>
+                          </span>
+                          <span>
+                            <strong>{Math.round(unit.weightedPresence * 100)}%</strong>
+                            <small>weighted history</small>
+                          </span>
+                          <span>
+                            <strong>
+                              {unit.gamesAppeared}/{unit.sampleGames}
+                            </strong>
+                            <small>raw games</small>
+                          </span>
+                          <span>
+                            <strong>
+                              {unit.recentFiveAppearances}/{unit.recentWindowGames}
+                            </strong>
+                            <small>last 5</small>
+                          </span>
+                          <span className={`trend ${unit.trend}`}>
+                            <strong>
+                              {unit.trend === 'rising'
+                                ? '↗ rising'
+                                : unit.trend === 'falling'
+                                  ? '↘ falling'
+                                  : unit.trend === 'stable'
+                                    ? '→ stable'
+                                    : '— trend'}
+                            </strong>
+                            <small>
+                              {unit.trendDelta === null
+                                ? 'no prior window'
+                                : `${unit.trendDelta >= 0 ? '+' : ''}${Math.round(unit.trendDelta * 100)} pts`}
+                            </small>
+                          </span>
+                          {unit.historicalCopyDemand.weightedAverageFinalCopies !== null && (
+                            <span>
+                              <strong>
+                                {unit.historicalCopyDemand.weightedAverageFinalCopies.toFixed(1)}
+                              </strong>
+                              <small>final copies when seen</small>
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
                 <div className="confidence-track">
                   <i style={{ width: `${Math.round(profile.confidence * 100)}%` }} />
                 </div>

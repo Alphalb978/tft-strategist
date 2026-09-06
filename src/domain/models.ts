@@ -215,7 +215,7 @@ export interface RecommendationCandidate {
   components: ScoreComponent[];
   confidence: Confidence;
   reasons: string[];
-  contest: { state: 'Unavailable' | 'Low' | 'Medium' | 'High'; value: number | null };
+  contest: CandidateContest;
 }
 export interface RecommendationPortfolio {
   plans: { candidate: RecommendationCandidate; role: string }[];
@@ -234,6 +234,7 @@ export interface OpponentProfile {
   derivationVersion: string;
   relevantGames: number;
   effectiveSample: number;
+  unitEvidence: OpponentUnitEvidence[];
   unitFrequency: Record<ID, number>;
   traitFrequency: Record<ID, number>;
   augmentFrequency: Record<ID, number>;
@@ -274,6 +275,76 @@ export interface OpponentProfile {
   };
   confidence: number;
 }
+
+export type UnitTrend = 'rising' | 'stable' | 'falling' | 'unavailable';
+
+export interface OpponentUnitEvidence {
+  championId: ID;
+  gamesAppeared: number;
+  sampleGames: number;
+  rawPresenceRate: number;
+  weightedPresence: number;
+  recentFiveAppearances: number;
+  recentWindowGames: number;
+  recentFiveRate: number;
+  priorAppearances: number;
+  priorWindowGames: number;
+  priorWindowRate: number | null;
+  trendDelta: number | null;
+  trend: UnitTrend;
+  historicalCopyDemand: {
+    status: 'verified-ordinary' | 'unavailable';
+    evidenceGames: number;
+    evidenceCoverage: number;
+    weightedAverageFinalCopies: number | null;
+    weightedDemand: number | null;
+    note: string;
+  };
+}
+
+export interface LobbyUnitPressureSource {
+  puuid: string;
+  riotId?: string;
+  confidence: number;
+  weightedPresence: number;
+  recentFiveRate: number;
+  trendDelta: number | null;
+  weightedHistoricalCopyDemand: number | null;
+}
+
+export interface LobbyUnitPressureEvidence {
+  championId: ID;
+  opponentsWithEvidence: number;
+  equivalentHistoricalUsers: number;
+  recentSpikeEquivalentUsers: number;
+  historicalCopyEquivalentUsers: number;
+  totalEquivalentUsers: number;
+  normalizedPressure: number;
+  evidenceCoverage: number;
+  sourceOpponents: LobbyUnitPressureSource[];
+}
+
+export interface CandidateContestUnit {
+  championId: ID;
+  criticality: number;
+  role: 'carry' | 'tank' | 'support' | 'unassigned';
+  membership: 'core' | 'flex';
+  lobbyPressure: number;
+  equivalentHistoricalUsers: number;
+  contribution: number;
+}
+
+export interface CandidateContest {
+  state: 'Unavailable' | 'Low' | 'Medium' | 'High';
+  value: number | null;
+  lobbyFit: number | null;
+  evidenceCoverage: number;
+  contestElasticity: number;
+  styleFactor: number;
+  pressuredUnits: CandidateContestUnit[];
+  note: string;
+  provenance: 'unavailable' | 'seeded-criticality-and-m4-history';
+}
 export interface RiotTelemetry {
   requestsAttempted: number;
   cacheHits: number;
@@ -290,11 +361,15 @@ export interface LobbyPressure {
   resolvedOpponents: number;
   profilesCompleted: number;
   profiles: OpponentProfile[];
+  unitPressure: LobbyUnitPressureEvidence[];
+  unitPressureVersion: string;
   coverage: number;
   relevantGamesAvailable: number;
   relevantGamesTarget: number;
   freshProfiles: number;
   cachedProfiles: number;
+  acquisitionMs: number;
+  derivationMs: number;
   elapsedMs: number;
   telemetry: RiotTelemetry;
   fetchedAt: string;

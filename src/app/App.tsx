@@ -19,6 +19,7 @@ import {
   type ApplicationState,
 } from '../services/application';
 import { scoreCandidate } from '../strategy/scoring';
+import { optimizePortfolio } from '../strategy/portfolio';
 import { Home } from '../features/Home';
 import { Playbook } from '../features/Playbook';
 import { DataSettings } from '../features/DataSettings';
@@ -94,6 +95,7 @@ export function App() {
     setRefreshing(true);
     try {
       setState(await refreshApplication(state, repository.current));
+      setLobby(null);
       setToast('Static source refreshed. Combat-value parity remains known stale.');
     } catch {
       setToast('Refresh unavailable. Your previous data and plans are still available.');
@@ -106,15 +108,20 @@ export function App() {
     try {
       await repository.current.set('settings', settings);
       setState({ ...state, settings, ...createRecommendations(state.data, settings) });
+      if (
+        settings.historyWindow !== state.settings.historyWindow ||
+        settings.riotPlatform !== state.settings.riotPlatform
+      )
+        setLobby(null);
       setToast('Settings saved locally.');
     } catch {
       setToast('Settings could not be saved. Your previous settings are unchanged.');
     }
   };
   const lock = async () => {
-    if (!state || !repository.current || !detail) return;
+    if (!state || !portfolio || !repository.current || !detail) return;
     try {
-      const selection = await selectPlan(detail, state, repository.current);
+      const selection = await selectPlan(detail, { ...state, portfolio }, repository.current);
       setState({ ...state, selection });
       setToast('Plan locked. Recommendations are frozen for this game.');
     } catch {
@@ -133,14 +140,35 @@ export function App() {
       setToast('Unable to update the saved plan.');
     }
   };
-  const portfolio = state?.selection?.snapshot ?? state?.portfolio;
+  const livePortfolio = useMemo(() => {
+    if (!state) return null;
+    const now = new Date().toISOString();
+    return optimizePortfolio(
+      state.playbooks.map((playbook) =>
+        scoreCandidate(playbook, {
+          version: state.data.version,
+          now,
+          lobby: lobby ?? undefined,
+          personalWeight: state.settings.personalWeight,
+        }),
+      ),
+      now,
+    );
+  }, [lobby, state]);
+  const portfolio = state?.selection?.snapshot ?? livePortfolio ?? state?.portfolio;
+  const displayState = state && portfolio ? { ...state, portfolio } : state;
   const candidate =
     detail && state
       ? (portfolio?.plans.find((p) => p.candidate.playbook.id === detail)?.candidate ??
         (() => {
           const p = state.playbooks.find((p) => p.id === detail);
           return p
-            ? scoreCandidate(p, { version: state.data.version, now: new Date().toISOString() })
+            ? scoreCandidate(p, {
+                version: state.data.version,
+                now: new Date().toISOString(),
+                lobby: lobby ?? undefined,
+                personalWeight: state.settings.personalWeight,
+              })
             : undefined;
         })())
       : undefined;
@@ -257,14 +285,14 @@ export function App() {
                   key={candidate.playbook.id}
                   plan={candidate.playbook}
                   candidate={candidate}
-                  state={state}
+                  state={displayState!}
                   onBack={() => setDetail(null)}
                   onLock={lock}
                   onOpen={open}
                 />
               ) : page === 'home' ? (
                 <Home
-                  state={state}
+                  state={displayState!}
                   portfolio={portfolio!}
                   onOpen={open}
                   onData={() => navigate('data')}

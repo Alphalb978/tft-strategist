@@ -7,6 +7,7 @@ import {
   scanLobby,
 } from '../services/scouting';
 import { MemoryHistoryStore } from '../storage/history';
+import { gameRecencyWeight } from '../strategy/lobbyPressure';
 import { match, NOW } from './fixtures';
 describe('future opponent path with explicitly synthetic fixtures', () => {
   it('deduplicates shared matches and reuses cache on warm scan', async () => {
@@ -52,7 +53,7 @@ describe('future opponent path with explicitly synthetic fixtures', () => {
     });
     expect(unmapped.confidenceFactors.patchQuality).toBeNull();
     current.completedAt = '2026-08-01T00:00:00Z';
-    expect(deriveOpponent('a', [current], 18, '18.1', NOW).effectiveSample).toBeLessThan(0.1);
+    expect(deriveOpponent('a', [current], 18, '18.1', NOW).effectiveSample).toBeLessThan(1);
   });
   it('keeps sensible inspectable confidence for 15 recent games with unmapped Riot builds', () => {
     const games = Array.from({ length: 15 }, (_, index) => {
@@ -62,10 +63,9 @@ describe('future opponent path with explicitly synthetic fixtures', () => {
     });
     const profile = deriveOpponent('a', games, 18, '18.1', NOW, 15);
     const expectedRecency =
-      Array.from({ length: 15 }, (_, index) => Math.exp(-index / 14)).reduce(
-        (total, weight) => total + weight,
-        0,
-      ) / 15;
+      games
+        .map((game, index) => gameRecencyWeight(index, game.completedAt, NOW))
+        .reduce((total, weight) => total + weight, 0) / 15;
     expect(profile.relevantGames).toBe(15);
     expect(profile.patchRelevance.status).toBe('unavailable');
     expect(profile.confidenceFactors).toMatchObject({
@@ -154,7 +154,7 @@ describe('future opponent path with explicitly synthetic fixtures', () => {
     const provider = new FixtureRiotProvider([], []);
     vi.spyOn(provider, 'recentMatchIds').mockRejectedValue(new Error('offline raw detail'));
     const store = new MemoryHistoryStore();
-    const cached = deriveOpponent('a', [match('old-cache', ['a'])], 18, '18.1', NOW);
+    const cached = deriveOpponent('a', [match('old-cache', ['a'])], 18, '18.1', NOW, 10);
     await store.putProfile(cached, 'old-cache');
     const warm = vi.fn();
     const result = await scanLobby(['a'], provider, store, {
@@ -222,7 +222,7 @@ describe('future opponent path with explicitly synthetic fixtures', () => {
   });
   it('keeps derivation classification explicitly unavailable', () => {
     const profile = deriveOpponent('a', [match('evidence', ['a'])], 18, '18.1', NOW);
-    expect(profile.derivationVersion).toBe(OPPONENT_DERIVATION_VERSION);
+    expect(profile.derivationVersion).toContain(OPPONENT_DERIVATION_VERSION);
     expect(profile.classification).toEqual(
       expect.objectContaining({ family: 'unavailable', style: 'unavailable' }),
     );

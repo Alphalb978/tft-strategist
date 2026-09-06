@@ -32,6 +32,11 @@ test('three plans, real art, readable detail and safe planner status', async ({ 
 });
 test('refresh failure keeps usable plans and settings persist', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Three plans. More possibilities.' })).toBeVisible(
+    {
+      timeout: 15_000,
+    },
+  );
   await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Data & settings', exact: true })).toBeVisible();
   await expect(page.getByText('known-stale', { exact: true })).toBeVisible();
@@ -47,7 +52,9 @@ test('refresh failure keeps usable plans and settings persist', async ({ page })
   await page.getByRole('button', { name: 'Your plans', exact: true }).click();
   await expect(page.locator('.plan-card')).toHaveCount(3);
 });
-test('M3 manual Riot identity and history flow is operable with fixtures', async ({ page }) => {
+test('M4 unit-history, lobby pressure, and recommendation fit are inspectable', async ({
+  page,
+}) => {
   await page.goto('/?riot-fixture=1');
   await expect(page.getByRole('heading', { name: 'Three plans. More possibilities.' })).toBeVisible(
     {
@@ -61,9 +68,37 @@ test('M3 manual Riot identity and history flow is operable with fixtures', async
   await expect(page.getByText('Account resolved through the native Riot boundary.')).toBeVisible();
   await page.getByRole('button', { name: 'Resolve & scan history' }).click();
   await expect(page.getByText('7/7 profiles')).toBeVisible();
-  await expect(page.getByText('105/105 relevant games')).toBeVisible();
+  await expect(page.getByText('140/140 relevant games')).toBeVisible();
   await expect(page.locator('.opponent-profile-grid article')).toHaveCount(7);
-  await page.screenshot({ path: 'artifacts/m3-scouting-1440.png', fullPage: true });
+  await expect(page.getByText('Historical unit pressure', { exact: true })).toBeVisible();
+  const firstProfile = page.locator('.opponent-profile-grid article').first();
+  await firstProfile.getByText(/Inspect \d+ unit signals/).click();
+  expect(await firstProfile.locator('[data-unit-signal]').count()).toBeGreaterThan(3);
+  await expect(firstProfile.getByText('last 5', { exact: true }).first()).toBeVisible();
+  await expect(firstProfile.getByText(/rising|falling|stable/).first()).toBeVisible();
+  await page.screenshot({ path: 'artifacts/m4-scouting-1440.png', fullPage: true });
+  await page.getByRole('button', { name: 'Your plans', exact: true }).click();
+  await expect(page.getByText(/Historical contest:/).first()).toBeVisible();
+  await expect(page.getByLabel('Pressured critical units').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+  await expect(page.locator('.contest-explanation').getByText('Lobby / contest fit')).toBeVisible();
+  await expect(page.getByText(/equivalent historical users/).first()).toBeVisible();
+  await page.screenshot({ path: 'artifacts/m4-playbook-1440.png', fullPage: true });
+});
+test('M4 partial identity resolution renders without fabricated opponent evidence', async ({
+  page,
+}) => {
+  await page.goto('/?riot-fixture=1');
+  await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
+  await page
+    .getByLabel('One Riot ID per line, or comma-separated', { exact: true })
+    .fill('Scout One#M3\nMissing#M3');
+  await page.getByRole('button', { name: 'Resolve & scan history', exact: true }).click();
+  await expect(page.getByText('failed', { exact: true })).toBeVisible();
+  await expect(page.getByText('partial', { exact: true })).toBeVisible();
+  await expect(page.getByText('1/1 profiles')).toBeVisible();
+  await expect(page.getByText('20/40 relevant games')).toBeVisible();
+  await expect(page.locator('.opponent-profile-grid article')).toHaveCount(1);
 });
 test('M3.1 manual self-entry is explicitly ignored without a history scan', async ({ page }) => {
   await page.goto('/?riot-fixture=1');
@@ -111,20 +146,33 @@ for (const width of [1000, 860])
     );
   });
 for (const width of [1000, 860])
-  test(`M3 scouting layout at ${width}px`, async ({ page }) => {
+  test(`M4 scouting and lobby-fit layout at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/?riot-fixture=1');
     await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
     await expect(
       page.getByRole('heading', { name: 'Riot history & opponent scouting' }),
     ).toBeVisible();
+    await page.getByRole('button', { name: 'Resolve & scan history' }).click();
+    await expect(page.getByText('7/7 profiles')).toBeVisible();
+    await page.locator('.pressure-details summary').click();
+    await page.locator('.unit-evidence-details summary').first().click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
     expect(
       await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
     ).toBe(true);
-    await page.screenshot({ path: `artifacts/m3-scouting-${width}.png`, fullPage: true });
+    await page.screenshot({ path: `artifacts/m4-scouting-${width}.png`, fullPage: true });
+    await page.getByRole('button', { name: 'Your plans', exact: true }).click();
+    await expect(page.getByLabel('Pressured critical units').first()).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    expect(await page.locator('main').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: `artifacts/m4-home-${width}.png`, fullPage: true });
   });
 test('bundled data and all visible art work without external requests', async ({ page }) => {
   await page.route(/^https:\/\//, (route) => route.abort());

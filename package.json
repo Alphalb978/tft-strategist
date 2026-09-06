@@ -15,6 +15,7 @@
     "data:refresh": "tsx scripts/refresh-data.ts",
     "test:ui": "playwright test",
     "benchmark:m3": "tsx scripts/benchmark-scouting.ts",
+    "benchmark:m4": "tsx scripts/benchmark-m4.ts",
     "format": "prettier --write src scripts e2e *.json *.ts *.js data/playbooks data/rules --ignore-unknown",
     "format:check": "prettier --check src scripts e2e *.json *.ts *.js data/playbooks data/rules --ignore-unknown"
   },

@@ -127,6 +127,7 @@ export function DataSettings({
         </section>
         <RiotScouting
           data={state.data}
+          assets={state.assets}
           settings={state.settings}
           provider={riotProvider}
           store={historyStore}

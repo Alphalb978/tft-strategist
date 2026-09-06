@@ -2,6 +2,7 @@ import { ArrowRight, Layers3, Radio, ShieldQuestion, Sparkles } from 'lucide-rea
 import type { LobbyPressure, RecommendationPortfolio } from '../domain/models';
 import type { ApplicationState } from '../services/application';
 import { Art, Portrait } from '../components/Art';
+import { LobbyPressureSummary } from '../components/LobbyPressureSummary';
 export function Home({
   state,
   portfolio,
@@ -119,8 +120,19 @@ export function Home({
                   </div>
                   <div className="contest">
                     <Radio size={13} />
-                    <span>Contest: {c.contest.state.toLowerCase()}</span>
+                    <span>Historical contest: {c.contest.state.toLowerCase()}</span>
                   </div>
+                  {c.contest.pressuredUnits.length > 0 && (
+                    <div className="card-pressure-units" aria-label="Pressured critical units">
+                      {c.contest.pressuredUnits.slice(0, 3).map((unit) => (
+                        <span key={unit.championId}>
+                          {data.champions.find((champion) => champion.id === unit.championId)
+                            ?.name ?? unit.championId}{' '}
+                          · {unit.equivalentHistoricalUsers.toFixed(1)} users
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <button className="open-plan" onClick={() => onOpen(p.id)}>
                     Explore playbook <ArrowRight size={16} />
                   </button>
@@ -183,6 +195,7 @@ export function Home({
               ? `${lobby.profilesCompleted}/${lobby.resolvedOpponents} profiles · ${Math.round(lobby.coverage * 100)}% evidence coverage · ${Math.round(lobby.elapsedMs)} ms.`
               : 'Opponent history evidence is not connected. Recommendations remain unchanged.'}
           </p>
+          {lobby && <LobbyPressureSummary lobby={lobby} data={data} assets={assets} compact />}
           <button className="text-button" onClick={onData}>
             Connection & data setup <ArrowRight size={14} />
           </button>

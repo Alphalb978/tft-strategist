@@ -1,4 +1,5 @@
 import type { CompletedMatch, RiotIdentity, StaticData } from '../domain/models';
+import { loadPlaybooks } from './playbooks';
 import { FixtureRiotProvider } from './riot';
 
 export const PREVIEW_OWN_RIOT_ID = 'Strategist#M3';
@@ -32,7 +33,21 @@ export function createRiotPreviewProvider(data: StaticData): FixtureRiotProvider
     routing: 'EUROPE',
   }));
   const opponents = identities.slice(1);
-  const units = data.champions.filter((unit) => unit.boardEligible).slice(0, 6);
+  const playbooks = loadPlaybooks(data);
+  const eligible = data.champions.filter(
+    (unit) => unit.boardEligible && unit.shopStatus === 'pool',
+  );
+  const units = [
+    ...playbooks
+      .flatMap((playbook) => playbook.family.core)
+      .flatMap((championId) => eligible.filter((unit) => unit.id === championId)),
+    ...playbooks
+      .flatMap((playbook) => playbook.target.units)
+      .flatMap((boardUnit) => eligible.filter((unit) => unit.id === boardUnit.championId)),
+    ...eligible,
+  ]
+    .filter((unit, index, all) => all.findIndex((candidate) => candidate.id === unit.id) === index)
+    .slice(0, 18);
   const matches: CompletedMatch[] = Array.from({ length: 20 }, (_, matchIndex) => {
     const completedAt = new Date(Date.UTC(2026, 8, 5 - matchIndex, 18)).toISOString();
     return {
@@ -56,15 +71,23 @@ export function createRiotPreviewProvider(data: StaticData): FixtureRiotProvider
         riotId: `${identity.gameName}#${identity.tagLine}`,
         placement: ((opponentIndex + matchIndex) % 7) + 1,
         level: 8,
-        units: units.slice(0, 3 + ((opponentIndex + matchIndex) % 3)).map((unit) => ({
-          championId: unit.id,
-          items: [],
-          stars: 1,
-          rarity: unit.cost,
-          rawName: unit.name,
-          unresolvedUnit: false,
-          unresolvedItems: [],
-        })),
+        units: units
+          .filter((_, unitIndex) => {
+            if (unitIndex === 0) return true;
+            if (unitIndex === 1) return matchIndex < 4 || matchIndex === 11;
+            if (unitIndex === 2) return matchIndex >= 5 && matchIndex % 2 === 0;
+            return (unitIndex + opponentIndex + matchIndex) % 4 === 0;
+          })
+          .slice(0, 8)
+          .map((unit, unitIndex) => ({
+            championId: unit.id,
+            items: [],
+            stars: unitIndex === 0 && matchIndex % 5 === 0 ? 2 : 1,
+            rarity: unit.cost,
+            rawName: unit.name,
+            unresolvedUnit: false,
+            unresolvedItems: [],
+          })),
         traits: [],
         augmentIds: [],
         unresolvedAugmentIds: [],

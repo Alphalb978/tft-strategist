@@ -9,7 +9,7 @@ export interface Settings {
 }
 export const defaultSettings: Settings = {
   personalWeight: 0.05,
-  historyWindow: 15,
+  historyWindow: 20,
   riotId: '',
   riotPlatform: 'EUW1',
 };
@@ -25,7 +25,9 @@ export function normalizeSettings(value?: Partial<Settings> | null): Settings {
       0.1,
       Math.max(0.05, Number(value?.personalWeight) || defaultSettings.personalWeight),
     ),
-    historyWindow: Math.min(20, Math.max(10, Number(value?.historyWindow) || 15)),
+    historyWindow: [10, 15, 20].includes(Number(value?.historyWindow))
+      ? Number(value?.historyWindow)
+      : defaultSettings.historyWindow,
     riotId: typeof value?.riotId === 'string' ? value.riotId : '',
     riotPlatform,
   };
