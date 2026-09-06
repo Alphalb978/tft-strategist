@@ -72,7 +72,7 @@ export function createRiotPreviewProvider(data: StaticData): FixtureRiotProvider
       gameTimestampSemantics: 'fixture-completed-at',
       gameDurationSeconds: 2100,
       completedAt,
-      queueId: null,
+      queueId: 1100,
       gameType: 'fixture-standard',
       mapId: null,
       endOfGameResult: 'fixture-complete',

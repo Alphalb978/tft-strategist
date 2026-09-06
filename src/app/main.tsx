@@ -2,6 +2,9 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import '../styles/app.css';
+import '../styles/product.css';
+import { applyAppearance, loadAppearance } from './appearance';
+applyAppearance(loadAppearance());
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />

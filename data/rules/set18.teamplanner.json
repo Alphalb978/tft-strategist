@@ -1,0 +1,476 @@
+{
+  "schemaVersion": 1,
+  "set": 18,
+  "formatVersion": "02",
+  "slots": 10,
+  "slotHexWidth": 3,
+  "suffix": "TFTSet18",
+  "emptySlot": "000",
+  "source": "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/tftchampions-teamplanner.json",
+  "reviewedAt": "2026-09-06T16:06:43.518Z",
+  "sha256": "4045ed79bd1b4b95503752916b9476292e88e86533781ee103e5c451e3cca307",
+  "formatSource": "https://github.com/nkhoit/tftkit#team-planner-codes",
+  "manualPasteVerified": true,
+  "manualPasteEvidence": {
+    "fixture": "set18-teamplanner-human",
+    "verifiedAt": "2026-09-06",
+    "source": "Human confirmation in M10 continuation request; current real TFT client; exact roster and two empty slots observed"
+  },
+  "entries": [
+    {
+      "championId": "DA_Gromp18_AP",
+      "name": "Gromp",
+      "plannerId": 1026,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Murkwolf18",
+      "name": "Murkwolf",
+      "plannerId": 1049,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Sentry",
+      "name": "Pebbles",
+      "plannerId": 1065,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Cinderling18",
+      "name": "Cinderling",
+      "plannerId": 1015,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Scuttlecrab18",
+      "name": "Scuttlecrab",
+      "plannerId": 1062,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Krug18",
+      "name": "Krug",
+      "plannerId": 1039,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Sentinel18",
+      "name": "Sentinel",
+      "plannerId": 1064,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Brambleback18",
+      "name": "Brambleback",
+      "plannerId": 1011,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Xayah",
+      "name": "Xayah",
+      "plannerId": 1081,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Ornn",
+      "name": "Ornn",
+      "plannerId": 1055,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Nidalee18_AP",
+      "name": "Nidalee",
+      "plannerId": 1051,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Hecarim",
+      "name": "Hecarim",
+      "plannerId": 1027,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Ezreal",
+      "name": "Ezreal",
+      "plannerId": 1023,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Azir",
+      "name": "Azir",
+      "plannerId": 1009,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_RekSai",
+      "name": "Rek'Sai",
+      "plannerId": 1059,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Veigar",
+      "name": "Veigar",
+      "plannerId": 1078,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Maokai",
+      "name": "Maokai",
+      "plannerId": 1045,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Malphite",
+      "name": "Malphite",
+      "plannerId": 1044,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Yorick",
+      "name": "Yorick",
+      "plannerId": 1082,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Yunara",
+      "name": "Yunara",
+      "plannerId": 1083,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Sett",
+      "name": "Sett",
+      "plannerId": 1066,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Ahri",
+      "name": "Ahri",
+      "plannerId": 1001,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Ashe",
+      "name": "Ashe",
+      "plannerId": 1008,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Elise",
+      "name": "Elise",
+      "plannerId": 1021,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Caitlyn",
+      "name": "Caitlyn",
+      "plannerId": 1012,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Cassiopeia",
+      "name": "Cassiopeia",
+      "plannerId": 1014,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Morgana",
+      "name": "Morgana",
+      "plannerId": 1048,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Rakan",
+      "name": "Rakan",
+      "plannerId": 1056,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Lillia",
+      "name": "Lillia",
+      "plannerId": 1042,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Kobuko",
+      "name": "Kobuko",
+      "plannerId": 1085,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Teemo",
+      "name": "Teemo",
+      "plannerId": 1073,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Rammus",
+      "name": "Rammus",
+      "plannerId": 1057,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_GnarSmall",
+      "name": "Gnar",
+      "plannerId": 1025,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Tristana",
+      "name": "Tristana",
+      "plannerId": 1075,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Sivir",
+      "name": "Sivir",
+      "plannerId": 1068,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Vi18",
+      "name": "Vi",
+      "plannerId": 1079,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Akali_AD",
+      "name": "Akali",
+      "plannerId": 1002,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Varus",
+      "name": "Varus",
+      "plannerId": 1077,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Amumu18",
+      "name": "Amumu",
+      "plannerId": 1005,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Kennen",
+      "name": "Kennen",
+      "plannerId": 1035,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Aphelios",
+      "name": "Aphelios",
+      "plannerId": 1007,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Diana",
+      "name": "Diana",
+      "plannerId": 1018,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Alune",
+      "name": "Alune",
+      "plannerId": 1004,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Leona",
+      "name": "Leona",
+      "plannerId": 1041,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Kayle",
+      "name": "Kayle",
+      "plannerId": 1034,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Sejuani",
+      "name": "Sejuani",
+      "plannerId": 1063,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_KhaZix",
+      "name": "Kha'Zix",
+      "plannerId": 1036,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Rengar",
+      "name": "Rengar",
+      "plannerId": 1060,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_KogMaw18_AD",
+      "name": "Kog'Maw",
+      "plannerId": 1038,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Zyra",
+      "name": "Zyra",
+      "plannerId": 1084,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Fiddlesticks18",
+      "name": "Fiddlesticks",
+      "plannerId": 1024,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Soraka",
+      "name": "Soraka",
+      "plannerId": 1070,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Taric18",
+      "name": "Taric",
+      "plannerId": 1072,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Ivern",
+      "name": "Ivern",
+      "plannerId": 1029,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Lux18_Base",
+      "name": "Lux",
+      "plannerId": 1043,
+      "boardEligible": false,
+      "shopStatus": "placeholder"
+    },
+    {
+      "championId": "DA_18_Alistar",
+      "name": "Alistar",
+      "plannerId": 1003,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Draven18",
+      "name": "Draven",
+      "plannerId": 1019,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_ElderDragon",
+      "name": "Elder Dragon",
+      "plannerId": 1020,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_Karma18",
+      "name": "Karma",
+      "plannerId": 1031,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_LeBlanc",
+      "name": "LeBlanc",
+      "plannerId": 1040,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_MasterYi_AD",
+      "name": "Master Yi",
+      "plannerId": 1046,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Shen",
+      "name": "Shen",
+      "plannerId": 1067,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Warwick",
+      "name": "Warwick",
+      "plannerId": 1080,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_18_Camille",
+      "name": "Camille",
+      "plannerId": 1013,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    },
+    {
+      "championId": "DA_CrimsonRaptor18",
+      "name": "Mama Beak",
+      "plannerId": 1058,
+      "boardEligible": true,
+      "shopStatus": "pool"
+    }
+  ]
+}

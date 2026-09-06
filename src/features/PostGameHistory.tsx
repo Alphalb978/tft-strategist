@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Clock3, History, Link2, RefreshCw, ShieldCheck } from 'lucide-react';
 import type { PersonalProfile, PlanSession } from '../domain/models';
 import type { RiotProvider } from '../providers/riot';
@@ -13,6 +13,8 @@ import {
   type PostGameHistoryState,
 } from '../services/postGame';
 import { postGameReviewIsCurrent } from '../strategy/postGame';
+import { Portrait } from '../components/Art';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 export function PostGameHistory({
   state,
@@ -30,6 +32,12 @@ export function PostGameHistory({
   const [history, setHistory] = useState<PostGameHistoryState | null>(null);
   const [working, setWorking] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const busy = useRef(false);
+  const [pending, setPending] = useState<{
+    chainId: string;
+    action: 'confirm' | 'reject' | 'unlink';
+    matchId: string | null;
+  } | null>(null);
 
   const reload = async () => {
     const loaded = await loadPostGameHistory(
@@ -41,12 +49,16 @@ export function PostGameHistory({
     onUpdated(loaded.personal, await repository.getActivePlanSession());
   };
   useEffect(() => {
-    void reload();
+    void reload().catch(() =>
+      setMessage('Local history could not be loaded. Your saved sessions have not been changed.'),
+    );
     // Repository is stable for the lifetime of this route.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repository]);
 
   const run = async (chainId: string) => {
+    if (busy.current) return;
+    busy.current = true;
     setWorking(chainId);
     setMessage('');
     try {
@@ -76,6 +88,7 @@ export function PostGameHistory({
           : 'Completed-match checking is unavailable. Session history is unchanged.',
       );
     } finally {
+      busy.current = false;
       setWorking(null);
     }
   };
@@ -85,6 +98,8 @@ export function PostGameHistory({
     action: 'confirm' | 'reject' | 'unlink',
     matchId: string | null,
   ) => {
+    if (busy.current) return;
+    busy.current = true;
     setWorking(chainId);
     try {
       if (action === 'confirm')
@@ -116,10 +131,30 @@ export function PostGameHistory({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'The reconciliation action failed.');
     } finally {
+      busy.current = false;
       setWorking(null);
     }
   };
 
+  if (!history && message)
+    return (
+      <div className="empty-state">
+        <History />
+        <h2>History unavailable</h2>
+        <p>{message}</p>
+        <button
+          className="secondary"
+          onClick={() => {
+            setMessage('');
+            void reload().catch(() =>
+              setMessage('Local history is still unavailable. Please restart Strategist.'),
+            );
+          }}
+        >
+          Retry history
+        </button>
+      </div>
+    );
   if (!history)
     return (
       <div className="loading-state compact-loading">
@@ -132,12 +167,9 @@ export function PostGameHistory({
     <section className="postgame-page" aria-label="Post-game history">
       <header className="page-heading postgame-heading">
         <div>
-          <span className="eyebrow">POST-GAME · LOCAL EVIDENCE</span>
+          <span className="eyebrow">POST-GAME / YOUR PROGRESS</span>
           <h1>Recent games & reviews</h1>
-          <p>
-            Link a saved plan to a completed Riot match, inspect the final board, and keep personal
-            influence deliberately small.
-          </p>
+          <p>Your plan, your result, and what to take into the next game.</p>
         </div>
         <div className="personal-evidence-card" aria-label="Personal evidence summary">
           <ShieldCheck size={18} />
@@ -146,7 +178,7 @@ export function PostGameHistory({
             <span>
               {eligibleGames < (history.personal.minimumEvidenceGames ?? 5)
                 ? 'Sample too small · recommendation adjustment stays neutral'
-                : `${Math.round((history.personal.confidence ?? 0) * 100)}% model confidence · ${Math.round(state.settings.personalWeight * 100)}% score authority`}
+                : `${Math.round((history.personal.confidence ?? 0) * 100)}% evidence confidence · ${Math.round(state.settings.personalWeight * 100)}% personal influence`}
             </span>
           </div>
         </div>
@@ -161,7 +193,10 @@ export function PostGameHistory({
           <article className="empty-history">
             <History size={24} />
             <strong>No saved match-plan sessions yet.</strong>
-            <span>Lock a recommendation before a game; M9 will reuse that immutable history.</span>
+            <span>
+              Lock a plan before your next game. Return here to link the result and review your
+              board.
+            </span>
           </article>
         ) : (
           history.chains.map((chain) => {
@@ -219,7 +254,13 @@ export function PostGameHistory({
                       </button>
                       <button
                         className="text-button"
-                        onClick={() => decide(chain.id, 'unlink', reconciliation.matchId)}
+                        onClick={() =>
+                          setPending({
+                            chainId: chain.id,
+                            action: 'unlink',
+                            matchId: reconciliation.matchId,
+                          })
+                        }
                         disabled={working !== null}
                       >
                         Unlink match
@@ -256,7 +297,13 @@ export function PostGameHistory({
                         </span>
                         <button
                           className="secondary"
-                          onClick={() => decide(chain.id, 'confirm', candidate.matchId)}
+                          onClick={() =>
+                            setPending({
+                              chainId: chain.id,
+                              action: 'confirm',
+                              matchId: candidate.matchId,
+                            })
+                          }
                           disabled={working !== null}
                         >
                           Confirm this match
@@ -266,7 +313,11 @@ export function PostGameHistory({
                     <button
                       className="text-button danger-text"
                       onClick={() =>
-                        decide(chain.id, 'reject', reconciliation.candidates[0]?.matchId ?? null)
+                        setPending({
+                          chainId: chain.id,
+                          action: 'reject',
+                          matchId: reconciliation.candidates[0]?.matchId ?? null,
+                        })
                       }
                       disabled={working !== null}
                     >
@@ -281,15 +332,71 @@ export function PostGameHistory({
                       <strong>#{review.participant.placement}</strong>
                       <span>
                         {review.relation.classification.state === 'classified'
-                          ? review.relation.classification.familyId
+                          ? (state.playbooks.find(
+                              (p) => p.family.id === review.relation.classification.familyId,
+                            )?.title ?? review.relation.classification.familyId)
                           : `final family ${review.relation.classification.state}`}
                       </span>
                     </div>
                     <div className="review-copy">
-                      {review.summary.map((line) => (
-                        <p key={line}>{line}</p>
-                      ))}
-                      <strong>{review.adjustment}</strong>
+                      <div className="review-stats">
+                        <div>
+                          <strong>
+                            {review.relation.similarity
+                              ? `${Math.round(review.relation.similarity.value * 100)}%`
+                              : '—'}
+                          </strong>
+                          <span>Target similarity</span>
+                        </div>
+                        <div>
+                          <strong>
+                            {review.relation.selectedCorePresent.length}/
+                            {review.relation.selectedCorePresent.length +
+                              review.relation.selectedCoreMissing.length}
+                          </strong>
+                          <span>Core present</span>
+                        </div>
+                        <div>
+                          <strong>{review.baseline.expectedPlacement?.toFixed(2) ?? '—'}</strong>
+                          <span>Baseline avg place</span>
+                        </div>
+                      </div>
+                      <div className="review-roster" aria-label="Final board">
+                        {review.relation.canonicalFinal?.units.map((unit) => {
+                          const champion = chain.terminal.snapshot.staticData.champions.find(
+                            (c) => c.id === unit.championId,
+                          );
+                          return (
+                            champion && (
+                              <Portrait
+                                key={unit.championId}
+                                champion={champion}
+                                assets={state.assets}
+                                compact
+                              />
+                            )
+                          );
+                        })}
+                      </div>
+                      <p className="review-core">
+                        <b>Missing core: </b>
+                        {review.relation.selectedCoreMissing
+                          .map(
+                            (id) =>
+                              chain.terminal.snapshot.staticData.champions.find((c) => c.id === id)
+                                ?.name ?? id,
+                          )
+                          .join(', ') || 'None'}
+                      </p>
+                      <div className="review-adjustment">
+                        <strong>{review.adjustment}</strong>
+                      </div>
+                      <details>
+                        <summary>Result details & attribution</summary>
+                        {review.summary.map((line) => (
+                          <p key={line}>{line}</p>
+                        ))}
+                      </details>
                     </div>
                     <details>
                       <summary>{review.evidenceGaps.length} evidence boundary note(s)</summary>
@@ -304,6 +411,36 @@ export function PostGameHistory({
           })
         )}
       </div>
+      {pending && (
+        <ConfirmDialog
+          title={
+            pending.action === 'confirm'
+              ? 'Link this completed match?'
+              : pending.action === 'unlink'
+                ? 'Unlink this match?'
+                : 'Reject these candidates?'
+          }
+          confirmLabel={
+            pending.action === 'confirm'
+              ? 'Confirm link'
+              : pending.action === 'unlink'
+                ? 'Confirm unlink'
+                : 'Reject candidates'
+          }
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            const action = pending;
+            setPending(null);
+            void decide(action.chainId, action.action, action.matchId);
+          }}
+        >
+          <p>
+            {pending.action === 'confirm'
+              ? 'This result will be linked to the final selected plan. Check the placement and date before continuing.'
+              : 'Your saved plan remains in history. Personal evidence will be recalculated without this result.'}
+          </p>
+        </ConfirmDialog>
+      )}
     </section>
   );
 }

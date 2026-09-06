@@ -219,11 +219,12 @@ describe('audited Set 18 rules and validation', () => {
   });
 
   it('keeps Team Planner fail-safe until every acceptance gate is verified', () => {
-    expect(teamPlanner.supportStatus({ set: 18 }).state).toBe('unverified');
+    expect(teamPlanner.supportStatus({ set: 18 }).state).toBe('supported');
     expect(teamPlanner.supportStatus({ set: 17 }).state).toBe('unsupported');
-    expect(teamPlanner.encode(board()).ok).toBe(false);
+    expect(teamPlanner.encode(board()).ok).toBe(true);
     const playbook = structuredClone(playbooks[0]);
     playbook.planner.state = 'supported';
+    playbook.planner.manualPasteVerified = false;
     expect(validatePlaybook(playbook, data).some((issue) => issue.code === 'planner')).toBe(true);
   });
 });

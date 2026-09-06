@@ -1,0 +1,8 @@
+{
+  "id": "human-blitz-set18-2026-09-06",
+  "source": "Independent Blitz code supplied by the human in the M10 request",
+  "code": "023eb3ff3ed40140440b4153fb430000TFTSet18",
+  "slots": [1003, 1023, 1005, 1025, 1028, 1035, 1045, 1019, 1072, 0],
+  "expectedPublicIds": ["DA_18_Alistar", "DA_18_Ezreal", "DA_Amumu18", "DA_18_GnarSmall", null, "DA_18_Kennen", "DA_18_Maokai", "DA_Draven18", "DA_Taric18", null],
+  "note": "Slot 5 (404 / 1028) has no corresponding entry in the inspected current public dataset. Preserve it exactly as an unresolved wire ID. Do not infer a champion. Slot 10 is empty; public format implementation independently documents 000 padding."
+}

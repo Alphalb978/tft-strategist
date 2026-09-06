@@ -653,6 +653,16 @@ export interface FamilyMetaStats {
   quality: 'eligible' | 'insufficient';
 }
 export interface AggregateMetaDataset {
+  scope?: {
+    version: 1;
+    key: string;
+    windowDays: number;
+    collectionStartedAt: string;
+    collectionEndedAt: string;
+    population: string;
+    mode: string;
+    pendingMatches: number;
+  };
   id: ID;
   schemaVersion: 1;
   set: number;

@@ -255,11 +255,14 @@ describe('M8 selected-plan match workflow', () => {
     );
     expect(JSON.stringify(session)).not.toContain('RGAPI-');
     expect(session.accountContext).toEqual({ riotId: 'Strategist#M8', platform: 'EUW1' });
-    expect(session.snapshot.teamPlanner).toBeNull();
-    expect(teamPlanner.supportStatus({ set: 18 })).toMatchObject({
-      state: 'unverified',
-      manualPasteVerified: false,
+    expect(session.snapshot.teamPlanner).toMatchObject({
+      manualPasteVerifiedAt: '2026-09-06',
+      set: 18,
     });
-    expect(teamPlanner.encode(session.snapshot.playbook.target).ok).toBe(false);
+    expect(teamPlanner.supportStatus({ set: 18 })).toMatchObject({
+      state: 'supported',
+      manualPasteVerified: true,
+    });
+    expect(teamPlanner.encode(session.snapshot.playbook.target).ok).toBe(true);
   });
 });

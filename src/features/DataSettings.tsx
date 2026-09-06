@@ -1,3 +1,12 @@
+import { teamPlanner } from '../rules/teamPlanner';
+import { useState } from 'react';
+import {
+  META_BUDGETS,
+  META_COHORTS,
+  type MetaSampleConfig,
+  type MetaProgress,
+} from '../services/metaPipeline';
+import { RIOT_PLATFORMS } from '../providers/riotRouting';
 import { Database, ExternalLink, RefreshCw, SlidersHorizontal } from 'lucide-react';
 import type { LobbyPressure } from '../domain/models';
 import type { RiotProvider } from '../providers/riot';
@@ -6,6 +15,7 @@ import type { HistoryStore } from '../storage/history';
 import type { Settings } from '../storage/repository';
 import { set18Rules } from '../rules/ruleSet';
 import { RiotScouting } from './RiotScouting';
+import { Appearance } from './Appearance';
 export function DataSettings({
   state,
   mode,
@@ -14,6 +24,8 @@ export function DataSettings({
   refreshing,
   onMetaRefresh,
   metaRefreshing,
+  metaProgress,
+  onMetaCancel,
   riotProvider,
   historyStore,
   fixturePreview,
@@ -24,23 +36,43 @@ export function DataSettings({
   onSave: (s: Settings) => void;
   onRefresh: () => void;
   refreshing: boolean;
-  onMetaRefresh: () => void;
+  onMetaRefresh: (
+    selection: Pick<MetaSampleConfig, 'mode' | 'platform' | 'tiers' | 'windowDays'>,
+  ) => void;
+  metaProgress: MetaProgress | null;
+  onMetaCancel: () => void;
   metaRefreshing: boolean;
   riotProvider: RiotProvider;
   historyStore: HistoryStore;
   fixturePreview: boolean;
   onLobby: (lobby: LobbyPressure) => void;
 }) {
+  const [collectionMode, setCollectionMode] = useState<keyof typeof META_BUDGETS>('standard');
+  const [region, setRegion] = useState(state.settings.riotPlatform);
+  const [cohort, setCohort] = useState<keyof typeof META_COHORTS>('Challenger');
+  const [days, setDays] = useState<1 | 3 | 7>(7);
+  const budget = META_BUDGETS[collectionMode];
   return (
     <>
       <div className="page-heading">
         <div>
-          <div className="eyebrow">KNOW YOUR EVIDENCE</div>
+          <div className="eyebrow">PREFERENCES / CONNECTIONS</div>
           <h1>Data & settings</h1>
-          <p>Every recommendation should be as honest as its inputs.</p>
+          <p>Make Strategist yours. Manage your account and data.</p>
         </div>
       </div>
-      <div className="detail-grid">
+      <Appearance />
+      <div className="settings-layout">
+        <RiotScouting
+          data={state.data}
+          assets={state.assets}
+          settings={state.settings}
+          provider={riotProvider}
+          store={historyStore}
+          fixturePreview={fixturePreview}
+          onSave={onSave}
+          onLobby={onLobby}
+        />
         <section className="panel">
           <div className="panel-heading">
             <Database size={18} />
@@ -84,9 +116,24 @@ export function DataSettings({
         <section className="panel discovery-status" aria-label="Comp discovery refresh status">
           <div className="panel-heading">
             <RefreshCw size={18} className={metaRefreshing ? 'spin' : ''} />
-            <h2>Comp discovery</h2>
-            <span className="badge muted">M6</span>
+            <h2>Current meta</h2>
           </div>
+          {state.meta && (
+            <p className="meta-scope-summary">
+              <strong>
+                {state.meta.sourceType === 'fixture' ? 'Fixture sample' : 'Riot self-collected'} ·{' '}
+                {state.meta.platform} · {state.meta.rankCohort.join(' / ')}
+              </strong>
+              <br />
+              {state.meta.currentSetBoards.toLocaleString()} boards ·{' '}
+              {Math.round(state.meta.coverage * 100)}% classified ·{' '}
+              {state.meta.scope
+                ? `Recent ${state.meta.scope.windowDays}d`
+                : 'Legacy bounded sample'}
+              <br />
+              Updated {new Date(state.meta.collectedAt).toLocaleString()} · {state.meta.state}
+            </p>
+          )}
           {state.discovery ? (
             <>
               <p>
@@ -110,24 +157,133 @@ export function DataSettings({
               <p className="fine-print">
                 Last refresh {new Date(state.discovery.generatedAt).toLocaleString()}
                 <br />
-                Dataset {state.discovery.id} · {state.discovery.state}
-                <br />
                 Patch relevance unavailable; set membership and recency only.
               </p>
             </>
           ) : (
             <p className="fine-print">
-              No compatible discovery dataset is loaded. Experimental and noise states remain
-              explicit after refresh.
+              No discovery evidence yet. Refresh to find repeated boards in a ranked regional
+              sample.
             </p>
           )}
-          <button className="secondary" onClick={onMetaRefresh} disabled={metaRefreshing}>
+          <div className="meta-refresh-controls">
+            <label>
+              Region
+              <select
+                aria-label="Meta region"
+                disabled={metaRefreshing}
+                value={region}
+                onChange={(e) => setRegion(e.target.value as typeof region)}
+              >
+                {RIOT_PLATFORMS.filter((p) => !['PH2', 'TH2'].includes(p)).map((p) => (
+                  <option key={p}>{p}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Ranked cohort
+              <select
+                aria-label="Meta rank"
+                disabled={metaRefreshing}
+                value={cohort}
+                onChange={(e) => setCohort(e.target.value as typeof cohort)}
+              >
+                {Object.keys(META_COHORTS).map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
+                <option disabled>Diamond+ · unavailable</option>
+                <option disabled>Emerald+ · unavailable</option>
+                <option disabled>Platinum+ · unavailable</option>
+              </select>
+            </label>
+            <label>
+              Match window
+              <select
+                aria-label="Meta window"
+                disabled={metaRefreshing}
+                value={days}
+                onChange={(e) => setDays(Number(e.target.value) as typeof days)}
+              >
+                {[1, 3, 7].map((d) => (
+                  <option key={d} value={d}>
+                    Recent {d}d
+                  </option>
+                ))}
+                <option disabled>Current patch · mapping unavailable</option>
+              </select>
+            </label>
+            <label>
+              Collection
+              <select
+                aria-label="Meta collection mode"
+                disabled={metaRefreshing}
+                value={collectionMode}
+                onChange={(e) => setCollectionMode(e.target.value as typeof collectionMode)}
+              >
+                {Object.keys(META_BUDGETS).map((m) => (
+                  <option key={m}>{m}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="fine-print">
+            Up to {budget.playersPerTier * META_COHORTS[cohort].length} players ·{' '}
+            {budget.matchesPerPlayer} recent matches each · {budget.newMatches} new match requests.
+            Maximum {Math.round(budget.deadlineMs / 60_000)} minutes; Riot limits may slow
+            collection. Retries may add requests.
+          </p>
+          {metaProgress && (
+            <div className="meta-progress" role="status" aria-live="polite">
+              <strong>
+                {metaRefreshing ? 'Meta refresh' : 'Last refresh'} · {metaProgress.phase}
+              </strong>
+              <progress
+                value={
+                  metaProgress.phase === 'players'
+                    ? metaProgress.players
+                    : metaProgress.cachedMatches + metaProgress.newMatches
+                }
+                max={Math.max(
+                  1,
+                  metaProgress.phase === 'players'
+                    ? metaProgress.playerTarget
+                    : metaProgress.uniqueMatches,
+                )}
+              />
+              <p>
+                Players {metaProgress.players} / {metaProgress.playerTarget} · Unique matches{' '}
+                {metaProgress.uniqueMatches}
+                <br />
+                New {metaProgress.newMatches} · Cached {metaProgress.cachedMatches}
+                <br />
+                Boards {metaProgress.boards} · Classified {metaProgress.classified} · Ambiguous{' '}
+                {metaProgress.ambiguous} · Unclassified {metaProgress.unclassified}
+              </p>
+            </div>
+          )}
+          <button
+            className="secondary"
+            onClick={() =>
+              onMetaRefresh({
+                mode: collectionMode,
+                platform: region,
+                tiers: [...META_COHORTS[cohort]],
+                windowDays: days,
+              })
+            }
+            disabled={metaRefreshing}
+          >
             <RefreshCw size={15} className={metaRefreshing ? 'spin' : ''} />
             {metaRefreshing ? 'Refreshing meta…' : 'Refresh meta & discovery'}
           </button>
+          {metaRefreshing && (
+            <button className="secondary" onClick={onMetaCancel}>
+              Cancel meta refresh
+            </button>
+          )}
           <p className="fine-print">
-            Bounded Challenger sample through the native Riot boundary. Completed matches stay
-            immutable; derived evidence is version-invalidated.
+            Ranked lobbies containing sampled ladder players; other player ranks unverified.
+            Requires Riot API access. Existing evidence stays available during refresh.
           </p>
         </section>
         <section className="panel">
@@ -151,7 +307,7 @@ export function DataSettings({
             }
           />
           <p className="fine-print">
-            Default 5%. Small samples shrink toward neutral. No personal games are connected yet.
+            Default 5%. Small samples stay neutral; established evidence has a modest influence.
           </p>
           <label className="setting-label" htmlFor="window">
             Opponent history target
@@ -165,54 +321,49 @@ export function DataSettings({
             <option value="15">15 recent games</option>
             <option value="20">20 recent games</option>
           </select>
-          <p className="fine-print">
-            Saved locally. Scouting uses bounded concurrency, recency weighting, shared-match
-            deduplication, and partial results.
-          </p>
+          <p className="fine-print">Cached matches are reused. Partial results remain usable.</p>
         </section>
-        <RiotScouting
-          data={state.data}
-          assets={state.assets}
-          settings={state.settings}
-          provider={riotProvider}
-          store={historyStore}
-          fixturePreview={fixturePreview}
-          onSave={onSave}
-          onLobby={onLobby}
-        />
-        <section className="panel">
-          <div className="panel-heading">
-            <Database size={18} />
-            <h2>Verification ledger</h2>
-          </div>
-          {[
-            ['Board & capacity', set18Rules.board.status],
-            ['Trait counting', set18Rules.traits.status],
-            ['Shop odds & pools', set18Rules.shop.status],
-            ['XP', set18Rules.experience.status],
-            ['Interest', set18Rules.economy.status],
-            ['Team Planner', set18Rules.mechanics.teamPlanner.status],
-          ].map(([label, status]) => (
-            <p className="ledger-row" key={label}>
-              <span>{status === 'verified' ? '●' : '○'}</span>
-              {label}: {status}
+        <details>
+          <summary>Advanced diagnostics · verification & storage</summary>
+          <section className="panel">
+            <div className="panel-heading">
+              <Database size={18} />
+              <h2>Verification ledger</h2>
+            </div>
+            {[
+              ['Board & capacity', set18Rules.board.status],
+              ['Trait counting', set18Rules.traits.status],
+              ['Shop odds & pools', set18Rules.shop.status],
+              ['XP', set18Rules.experience.status],
+              ['Interest', set18Rules.economy.status],
+              [
+                'Team Planner',
+                teamPlanner.supportStatus(state.data.version).state === 'supported'
+                  ? 'verified'
+                  : 'unverified',
+              ],
+            ].map(([label, status]) => (
+              <p className="ledger-row" key={label}>
+                <span>{status === 'verified' ? '●' : '○'}</span>
+                {label}: {status}
+              </p>
+            ))}
+            {state.data.warnings.map((w) => (
+              <p className="ledger-row" key={w}>
+                <span>○</span>
+                {w}
+              </p>
+            ))}
+            <p className="ledger-row">
+              <span>○</span>Scores, risk estimates and optimizer weights are seeded. Boards and item
+              directions are public-guide curation.
             </p>
-          ))}
-          {state.data.warnings.map((w) => (
-            <p className="ledger-row" key={w}>
-              <span>○</span>
-              {w}
+            <p className="ledger-row">
+              <span>○</span>Team Planner mapping and wire fixture are audited. Copy remains disabled
+              until a generated roster is manually verified in the current TFT client.
             </p>
-          ))}
-          <p className="ledger-row">
-            <span>○</span>Scores, risk estimates and optimizer weights are seeded. Boards and item
-            directions are public-guide curation.
-          </p>
-          <p className="ledger-row">
-            <span>○</span>Team Planner remains disabled pending ID mapping, fixture and manual
-            client paste verification.
-          </p>
-        </section>
+          </section>
+        </details>
       </div>
     </>
   );

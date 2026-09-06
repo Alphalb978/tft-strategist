@@ -1,11 +1,10 @@
+import { capture } from './capture';
 import { expect, test } from '@playwright/test';
 test('three plans, real art, readable detail and safe planner status', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Three plans. More possibilities.' })).toBeVisible(
-    { timeout: 15_000 },
-  );
+  await expect(page.getByRole('heading', { name: 'Your plans' })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('button', { name: 'Explore playbook' })).toHaveCount(3);
   await page
     .locator('.card-art img')
@@ -15,11 +14,11 @@ test('three plans, real art, readable detail and safe planner status', async ({ 
       .locator('.card-art img')
       .evaluateAll((images) => images.every((i) => (i as HTMLImageElement).naturalWidth > 0)),
   ).toBe(true);
-  await page.screenshot({ path: 'artifacts/home-1440.png', fullPage: true });
+  await capture(page, { path: 'artifacts/home-1440.png', fullPage: true });
   await page.getByRole('button', { name: 'Explore playbook' }).first().click();
-  await expect(page.getByRole('button', { name: /Copy Team Code/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Copy Team Code/ })).toBeEnabled();
   await expect(page.getByRole('heading', { name: 'Build toward this board' })).toBeVisible();
-  await page.screenshot({ path: 'artifacts/playbook-1440.png', fullPage: true });
+  await capture(page, { path: 'artifacts/playbook-1440.png', fullPage: true });
   await page.getByRole('tab', { name: /Level 7 roll/ }).click();
   await expect(page.getByText('Exact board unavailable')).toBeVisible();
   await page.getByRole('button', { name: 'Lock this plan' }).click();
@@ -30,19 +29,19 @@ test('three plans, real art, readable detail and safe planner status', async ({ 
   await page.getByRole('button', { name: 'Resume', exact: true }).click();
   await expect(page.getByText('ACTIVE MATCH PLAN', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'End session', exact: true }).click();
+  await page.getByRole('button', { name: 'End session & save', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Active plan', exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 test('refresh failure keeps usable plans and settings persist', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Three plans. More possibilities.' })).toBeVisible(
-    {
-      timeout: 15_000,
-    },
-  );
+  await expect(page.getByRole('heading', { name: 'Your plans' })).toBeVisible({
+    timeout: 15_000,
+  });
   await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Data & settings', exact: true })).toBeVisible();
   await expect(page.getByText('known-stale', { exact: true })).toBeVisible();
+  await page.getByText('Advanced diagnostics · verification & storage', { exact: true }).click();
   await expect(page.getByText(/Board & capacity: verified/)).toBeVisible();
   await page.getByLabel('Opponent history target').selectOption('20');
   await expect(page.getByRole('status')).toContainText('Settings saved');
@@ -59,34 +58,36 @@ test('M4 unit-history, lobby pressure, and recommendation fit are inspectable', 
   page,
 }) => {
   await page.goto('/?riot-fixture=1');
-  await expect(page.getByRole('heading', { name: 'Three plans. More possibilities.' })).toBeVisible(
-    {
-      timeout: 15_000,
-    },
-  );
+  await expect(page.getByRole('heading', { name: 'Your plans' })).toBeVisible({
+    timeout: 15_000,
+  });
   await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
   await expect(page.getByText('Fixture preview', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Riot ID', { exact: true })).toHaveValue('Strategist#M3');
   await page.getByRole('button', { name: 'Resolve', exact: true }).click();
-  await expect(page.getByText('Account resolved through the native Riot boundary.')).toBeVisible();
+  await expect(
+    page.getByText('Account connected. Ready to scan your current lobby.'),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Resolve & scan history' }).click();
   await expect(page.getByText('7/7 profiles')).toBeVisible();
   await expect(page.getByText('140/140 relevant games')).toBeVisible();
   await expect(page.locator('.opponent-profile-grid article')).toHaveCount(7);
   await expect(page.getByText('Historical unit pressure', { exact: true })).toBeVisible();
+  await page.getByText('Opponent evidence · 7 profiles', { exact: true }).click();
   const firstProfile = page.locator('.opponent-profile-grid article').first();
   await firstProfile.getByText(/Inspect \d+ unit signals/).click();
   expect(await firstProfile.locator('[data-unit-signal]').count()).toBeGreaterThan(3);
   await expect(firstProfile.getByText('last 5', { exact: true }).first()).toBeVisible();
   await expect(firstProfile.getByText(/rising|falling|stable/).first()).toBeVisible();
-  await page.screenshot({ path: 'artifacts/m4-scouting-1440.png', fullPage: true });
+  await capture(page, { path: 'artifacts/m4-scouting-1440.png', fullPage: true });
   await page.getByRole('button', { name: 'Your plans', exact: true }).click();
   await expect(page.getByText(/Historical contest:/).first()).toBeVisible();
   await expect(page.getByLabel('Pressured critical units').first()).toBeVisible();
   await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+  await page.locator('.why-panel > summary').click();
   await expect(page.locator('.contest-explanation').getByText('Lobby / contest fit')).toBeVisible();
   await expect(page.getByText(/equivalent historical users/).first()).toBeVisible();
-  await page.screenshot({ path: 'artifacts/m4-playbook-1440.png', fullPage: true });
+  await capture(page, { path: 'artifacts/m4-playbook-1440.png', fullPage: true });
 });
 test('M4 partial identity resolution renders without fabricated opponent evidence', async ({
   page,
@@ -105,14 +106,14 @@ test('M4 partial identity resolution renders without fabricated opponent evidenc
 });
 test('M3.1 manual self-entry is explicitly ignored without a history scan', async ({ page }) => {
   await page.goto('/?riot-fixture=1');
-  await expect(page.getByRole('heading', { name: 'Three plans. More possibilities.' })).toBeVisible(
-    {
-      timeout: 15_000,
-    },
-  );
+  await expect(page.getByRole('heading', { name: 'Your plans' })).toBeVisible({
+    timeout: 15_000,
+  });
   await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
   await page.getByRole('button', { name: 'Resolve', exact: true }).click();
-  await expect(page.getByText('Account resolved through the native Riot boundary.')).toBeVisible();
+  await expect(
+    page.getByText('Account connected. Ready to scan your current lobby.'),
+  ).toBeVisible();
   await page
     .getByLabel('One Riot ID per line, or comma-separated', { exact: true })
     .fill('Strategist#M3');
@@ -140,7 +141,7 @@ test('M5 Comp Library searches, filters, sorts, and opens attributed evidence', 
   await page.getByRole('button', { name: 'Comps', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Comp Library' })).toBeVisible();
   await expect(page.locator('.library-card')).toHaveCount(13);
-  await page.screenshot({ path: 'artifacts/m5-comps-1440.png', fullPage: true });
+  await capture(page, { path: 'artifacts/m5-comps-1440.png', fullPage: true });
   await page.getByLabel('Search comps, units, or traits').fill('Elder Dragon');
   await expect(page.locator('.library-card')).toHaveCount(1);
   await page.getByLabel('Search comps, units, or traits').fill('');
@@ -150,6 +151,7 @@ test('M5 Comp Library searches, filters, sorts, and opens attributed evidence', 
   await page.getByLabel('Sort comps').selectOption('strength');
   await expect(page.getByText(/Outcome statistics are unavailable/)).toBeVisible();
   await page.locator('.library-card').first().click();
+  await page.locator('.why-panel > summary').click();
   await expect(page.getByText('Aggregate meta evidence', { exact: true })).toBeVisible();
   await expect(page.getByText(/Unavailable · recommendation outcome inputs/)).toBeVisible();
   expect(errors).toEqual([]);
@@ -160,18 +162,18 @@ for (const width of [1440, 1000, 860])
     page.on('pageerror', (error) => errors.push(error.message));
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/?riot-fixture=1');
-    await expect(
-      page.getByRole('heading', { name: 'Three plans. More possibilities.' }),
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Your plans' })).toBeVisible({
+      timeout: 15_000,
+    });
     await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Comp discovery', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Current meta', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Refresh meta & discovery', exact: true }).click();
     await expect(page.getByText(/boards analyzed across/)).toBeVisible();
-    await expect(page.getByLabel('Comp discovery refresh status')).toContainText('21 boards');
+    await expect(page.getByLabel('Comp discovery refresh status')).toContainText('51 boards');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
-    await page.screenshot({ path: `artifacts/m6-data-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/m6-data-${width}.png`, fullPage: true });
     await page.getByRole('button', { name: 'Comps', exact: true }).click();
     await page.getByLabel('Evidence filter').selectOption('Curated');
     await expect(page.locator('.library-card')).toHaveCount(13);
@@ -188,7 +190,7 @@ for (const width of [1440, 1000, 860])
     expect(
       await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
     ).toBe(true);
-    await page.screenshot({ path: `artifacts/m6-detail-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/m6-detail-${width}.png`, fullPage: true });
     expect(errors).toEqual([]);
   });
 
@@ -200,20 +202,20 @@ for (const width of [1440, 1000, 860])
     page.on('pageerror', (error) => errors.push(error.message));
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/');
-    await expect(
-      page.getByRole('heading', { name: 'Three plans. More possibilities.' }),
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Your plans' })).toBeVisible({
+      timeout: 15_000,
+    });
     await page.getByRole('button', { name: 'Explore playbook' }).first().click();
-    await expect(page.getByRole('button', { name: /Copy Team Code/ })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /Copy Team Code/ })).toBeEnabled();
     await expect(page.getByRole('button', { name: /Copy Team Code/ })).toHaveAttribute(
       'title',
-      /no audited planner-ID mapping, independent known-good fixture, or manual TFT-client paste verification/i,
+      /Client paste verified/i,
     );
     await page.getByRole('button', { name: 'Lock this plan' }).click();
     await expect(page.getByText('ACTIVE MATCH PLAN', { exact: true })).toBeVisible();
     await expect(page.getByText(/Local snapshot · safe to resume offline/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Active plan', exact: true })).toBeVisible();
-    await page.screenshot({ path: `artifacts/m8-active-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/m8-active-${width}.png`, fullPage: true });
 
     const firstStage = page.getByRole('tab').first();
     const firstStageLabel = await firstStage.textContent();
@@ -231,6 +233,7 @@ for (const width of [1440, 1000, 860])
     await page.locator('.pivot-edges > button').first().click();
     await expect(page.getByRole('button', { name: 'Switch to this plan' })).toBeVisible();
     await page.getByRole('button', { name: 'Switch to this plan' }).click();
+    await page.getByRole('button', { name: 'Confirm switch', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('previous session remains in history');
     await expect(page.getByText('ACTIVE MATCH PLAN', { exact: true })).toBeVisible();
     expect(
@@ -269,8 +272,9 @@ for (const width of [1440, 1000, 860])
     expect(
       await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
     ).toBe(true);
-    await page.screenshot({ path: `artifacts/m8-stale-active-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/m8-stale-active-${width}.png`, fullPage: true });
     await page.getByRole('button', { name: 'End session', exact: true }).click();
+    await page.getByRole('button', { name: 'End session & save', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Active plan', exact: true })).toHaveCount(0);
     expect(
       await page.evaluate(() => {
@@ -280,7 +284,7 @@ for (const width of [1440, 1000, 860])
         return sessions.every((session) => session.state === 'ended');
       }),
     ).toBe(true);
-    await page.screenshot({ path: `artifacts/m8-ended-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/m8-ended-${width}.png`, fullPage: true });
     expect(errors).toEqual([]);
   });
 
@@ -292,24 +296,26 @@ for (const width of [1440, 1000, 860])
     page.on('pageerror', (error) => errors.push(error.message));
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/?riot-fixture=1');
-    await expect(
-      page.getByRole('heading', { name: 'Three plans. More possibilities.' }),
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Your plans' })).toBeVisible({
+      timeout: 15_000,
+    });
     await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
     await page.getByRole('button', { name: 'Resolve', exact: true }).click();
     await expect(
-      page.getByText('Account resolved through the native Riot boundary.'),
+      page.getByText('Account connected. Ready to scan your current lobby.'),
     ).toBeVisible();
     await page.getByRole('button', { name: 'Your plans', exact: true }).click();
     await page.getByRole('button', { name: 'Explore playbook' }).first().click();
     await page.getByRole('button', { name: 'Lock this plan' }).click();
     await page.locator('.pivot-edges > button').first().click();
     await page.getByRole('button', { name: 'Switch to this plan' }).click();
+    await page.getByRole('button', { name: 'Confirm switch', exact: true }).click();
     await page.getByRole('button', { name: 'Post-game', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Recent games & reviews' })).toBeVisible();
     await expect(page.getByText(/Sample too small/)).toBeVisible();
     await page.getByRole('button', { name: 'Check completed match', exact: true }).click();
     await expect(page.locator('[data-history-state="matched"]')).toBeVisible();
+    await page.getByText('Result details & attribution', { exact: true }).click();
     await expect(page.getByText(/terminal plan/).first()).toBeVisible();
     await expect(page.getByText(/Result attribution uses only the terminal route/)).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -318,7 +324,7 @@ for (const width of [1440, 1000, 860])
     expect(
       await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
     ).toBe(true);
-    await page.screenshot({ path: `artifacts/m9-matched-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/m9-matched-${width}.png`, fullPage: true });
 
     await page.evaluate(() => {
       const key = 'strategist:v1:postgame-reconciliations';
@@ -349,8 +355,9 @@ for (const width of [1440, 1000, 860])
     await page.getByRole('button', { name: 'Post-game', exact: true }).click();
     await expect(page.getByText('Manual confirmation required')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Confirm this match' })).toHaveCount(2);
-    await page.screenshot({ path: `artifacts/m9-ambiguous-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/m9-ambiguous-${width}.png`, fullPage: true });
     await page.getByRole('button', { name: 'Confirm this match' }).first().click();
+    await page.getByRole('button', { name: 'Confirm link', exact: true }).click();
     await expect(page.locator('[data-history-state="matched"]')).toBeVisible();
 
     await page.evaluate(() => {
@@ -429,7 +436,7 @@ for (const width of [1440, 1000, 860])
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
-    await page.screenshot({ path: `artifacts/m9-mature-stale-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/m9-mature-stale-${width}.png`, fullPage: true });
     expect(errors).toEqual([]);
   });
 
@@ -439,15 +446,18 @@ for (const width of [1440, 1000, 860])
     page.on('pageerror', (error) => errors.push(error.message));
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/');
-    await expect(
-      page.getByRole('heading', { name: 'Three plans. More possibilities.' }),
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Your plans' })).toBeVisible({
+      timeout: 15_000,
+    });
     await page.getByRole('button', { name: 'Comps', exact: true }).click();
     await page.getByLabel('Search comps, units, or traits').fill('Adaptors');
     await page.locator('.library-card').click();
     await expect(page.getByRole('heading', { name: 'Build toward this board' })).toBeVisible();
-    await expect(page.getByLabel('TFT board visualization')).toBeVisible();
-    await expect(page.locator('.tft-hex')).toHaveCount(28);
+    await expect(page.getByLabel('Unpositioned target roster')).toBeVisible();
+    await expect(
+      page.getByLabel('Unpositioned target roster').locator('.unplaced-unit'),
+    ).toHaveCount(8);
+    await expect(page.locator('.tft-hex')).toHaveCount(0);
     await expect(page.getByText('Positioning not verified', { exact: true })).toBeVisible();
     await expect(page.getByLabel('What am I looking for?')).toContainText('Slow roll at level 7');
     await page.getByRole('tab', { name: /Opener/ }).click();
@@ -458,7 +468,7 @@ for (const width of [1440, 1000, 860])
     ).toBeVisible();
     await page.getByRole('button', { name: 'Reset Decision Map' }).click();
     await expect(page.getByText('Natural Adaptors or reroll/artifact support?')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Portfolio pivot graph' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Pivot options' })).toBeVisible();
     expect(await page.locator('.pivot-nodes button').count()).toBe(3);
     expect(await page.locator('.pivot-edges > button').count()).toBeGreaterThan(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -467,7 +477,7 @@ for (const width of [1440, 1000, 860])
     expect(
       await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
     ).toBe(true);
-    await page.screenshot({ path: `artifacts/m7-covered-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/m7-covered-${width}.png`, fullPage: true });
 
     await page.getByRole('button', { name: 'Comps', exact: true }).click();
     await page.getByLabel('Search comps, units, or traits').fill('Apex Predator');
@@ -479,7 +489,7 @@ for (const width of [1440, 1000, 860])
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
-    await page.screenshot({ path: `artifacts/m7-partial-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/m7-partial-${width}.png`, fullPage: true });
     expect(errors).toEqual([]);
   });
 for (const width of [1000, 860])
@@ -493,7 +503,7 @@ for (const width of [1000, 860])
     expect(await page.locator('main').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
       true,
     );
-    await page.screenshot({ path: `artifacts/home-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/home-${width}.png`, fullPage: true });
     await page.getByRole('button', { name: 'Explore playbook' }).first().click();
     expect(await page.locator('main').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
       true,
@@ -514,19 +524,18 @@ for (const width of [1000, 860])
     await page.getByLabel('Search comps, units, or traits').fill('Invoker');
     expect(await page.locator('.library-card').count()).toBeGreaterThan(0);
     await page.getByLabel('Sort comps').selectOption('sample');
-    await page.screenshot({ path: `artifacts/m5-comps-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/m5-comps-${width}.png`, fullPage: true });
   });
 for (const width of [1000, 860])
   test(`M4 scouting and lobby-fit layout at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/?riot-fixture=1');
     await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
-    await expect(
-      page.getByRole('heading', { name: 'Riot history & opponent scouting' }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Riot account & lobby' })).toBeVisible();
     await page.getByRole('button', { name: 'Resolve & scan history' }).click();
     await expect(page.getByText('7/7 profiles')).toBeVisible();
     await page.locator('.pressure-details summary').click();
+    await page.getByText('Opponent evidence · 7 profiles', { exact: true }).click();
     await page.locator('.unit-evidence-details summary').first().click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
@@ -534,7 +543,7 @@ for (const width of [1000, 860])
     expect(
       await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
     ).toBe(true);
-    await page.screenshot({ path: `artifacts/m4-scouting-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/m4-scouting-${width}.png`, fullPage: true });
     await page.getByRole('button', { name: 'Your plans', exact: true }).click();
     await expect(page.getByLabel('Pressured critical units').first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -543,7 +552,7 @@ for (const width of [1000, 860])
     expect(await page.locator('main').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
       true,
     );
-    await page.screenshot({ path: `artifacts/m4-home-${width}.png`, fullPage: true });
+    await capture(page, { path: `artifacts/m4-home-${width}.png`, fullPage: true });
   });
 test('bundled data and all visible art work without external requests', async ({ page }) => {
   await page.route(/^https:\/\//, (route) => route.abort());
@@ -570,7 +579,7 @@ test('loading and failed bundled-load recovery are coherent', async ({ page }) =
   await page.goto('/');
   await expect(page.getByText('Preparing your plans')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry local load' })).toBeVisible();
-  await page.screenshot({ path: 'artifacts/error-state.png' });
+  await capture(page, { path: 'artifacts/error-state.png' });
   await page.unroute('**/data/static-set18.json');
   await page.getByRole('button', { name: 'Retry local load' }).click();
   await expect(page.locator('.plan-card')).toHaveCount(3);

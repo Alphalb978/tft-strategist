@@ -1,0 +1,244 @@
+{
+  "source": "Read-only local M10 aggregate audit, 2026-09-06. No personal identifiers retained.",
+  "cluster": {
+    "id": "cluster-0c0bd2fa",
+    "memberFingerprints": [
+      "fnv1a-04816cde",
+      "fnv1a-187d76bc",
+      "fnv1a-79692108",
+      "fnv1a-93e244e7",
+      "fnv1a-a5cf8397",
+      "fnv1a-da657bc7"
+    ],
+    "representative": {
+      "schemaVersion": 1,
+      "modelVersion": "canonical-board-v1",
+      "set": 18,
+      "capacity": 8,
+      "boardSize": 8,
+      "units": [
+        {
+          "championId": "DA_18_Azir",
+          "cost": 3,
+          "traitIds": [
+            "DA_18_Blackthorn",
+            "DA_18_Executioner",
+            "DA_18_Summoner"
+          ],
+          "stars": 2,
+          "ordinaryCopies": 3
+        },
+        {
+          "championId": "DA_18_Ezreal",
+          "cost": 4,
+          "traitIds": [
+            "DA_18_Elderwood",
+            "DA_18_Executioner"
+          ],
+          "stars": 2,
+          "ordinaryCopies": 3
+        },
+        {
+          "championId": "DA_18_Malphite",
+          "cost": 4,
+          "traitIds": [
+            "DA_18_Battlemage",
+            "DA_18_Blackthorn"
+          ],
+          "stars": 2,
+          "ordinaryCopies": 3
+        },
+        {
+          "championId": "DA_18_Soraka",
+          "cost": 4,
+          "traitIds": [
+            "DA_18_Executioner",
+            "DA_FloraFatalis18"
+          ],
+          "stars": 1,
+          "ordinaryCopies": 1
+        },
+        {
+          "championId": "DA_18_Yorick",
+          "cost": 1,
+          "traitIds": [
+            "DA_18_Blossom",
+            "DA_18_Summoner",
+            "DA_Juggernaut18"
+          ],
+          "stars": 1,
+          "ordinaryCopies": 1
+        },
+        {
+          "championId": "DA_18_Zyra",
+          "cost": 4,
+          "traitIds": [
+            "DA_18_Summoner",
+            "DA_18_ZyraUniqueTrait"
+          ],
+          "stars": 2,
+          "ordinaryCopies": 3
+        },
+        {
+          "championId": "DA_Amumu18",
+          "cost": 4,
+          "traitIds": [
+            "DA_18_Inferno",
+            "DA_Juggernaut18"
+          ],
+          "stars": 2,
+          "ordinaryCopies": 3
+        },
+        {
+          "championId": "DA_Fiddlesticks18",
+          "cost": 3,
+          "traitIds": [
+            "DA_18_Defender",
+            "DA_18_Spellweaver",
+            "DA_FloraFatalis18"
+          ],
+          "stars": 2,
+          "ordinaryCopies": 3
+        }
+      ],
+      "traitIds": [
+        "DA_18_Battlemage",
+        "DA_18_Blackthorn",
+        "DA_18_Blossom",
+        "DA_18_Defender",
+        "DA_18_Elderwood",
+        "DA_18_Executioner",
+        "DA_18_Inferno",
+        "DA_18_Spellweaver",
+        "DA_18_Summoner",
+        "DA_18_ZyraUniqueTrait",
+        "DA_FloraFatalis18",
+        "DA_Juggernaut18"
+      ],
+      "fingerprint": "fnv1a-04816cde"
+    },
+    "unitPrevalence": [
+      {
+        "championId": "DA_18_Azir",
+        "observations": 6,
+        "prevalence": 1
+      },
+      {
+        "championId": "DA_18_Malphite",
+        "observations": 6,
+        "prevalence": 1
+      },
+      {
+        "championId": "DA_18_Soraka",
+        "observations": 6,
+        "prevalence": 1
+      },
+      {
+        "championId": "DA_18_Yorick",
+        "observations": 6,
+        "prevalence": 1
+      },
+      {
+        "championId": "DA_18_Zyra",
+        "observations": 6,
+        "prevalence": 1
+      },
+      {
+        "championId": "DA_Amumu18",
+        "observations": 6,
+        "prevalence": 1
+      },
+      {
+        "championId": "DA_Fiddlesticks18",
+        "observations": 6,
+        "prevalence": 1
+      },
+      {
+        "championId": "DA_18_Ezreal",
+        "observations": 3,
+        "prevalence": 0.5
+      },
+      {
+        "championId": "DA_18_Kennen",
+        "observations": 2,
+        "prevalence": 0.3333333333333333
+      },
+      {
+        "championId": "DA_18_Lillia",
+        "observations": 2,
+        "prevalence": 0.3333333333333333
+      }
+    ],
+    "stats": {
+      "games": 6,
+      "uniqueMatches": 6,
+      "effectiveSample": 5.951961854927067,
+      "averagePlacement": 4.333333333333333,
+      "topFour": {
+        "raw": 0.5,
+        "shrunk": 0.5,
+        "lower": 0.1876128068994087,
+        "upper": 0.8123871931005913
+      },
+      "wins": {
+        "raw": 0.16666666666666666,
+        "shrunk": 0.4090909090909091,
+        "lower": 0.030052585871730285,
+        "upper": 0.563509436563646
+      },
+      "freshestGameAt": "2026-09-06T16:30:00.654Z",
+      "ageDays": 0.02687599537037037,
+      "cohesion": 0.8769181025659337,
+      "separation": 1,
+      "confidence": 0.5613786527534672,
+      "adoption": {
+        "recentFrequency": 0.13636363636363635,
+        "priorFrequency": 0,
+        "delta": 0.13636363636363635,
+        "recentBoards": 44,
+        "priorBoards": 0,
+        "recentClusterBoards": 6,
+        "priorClusterBoards": 0,
+        "mature": false
+      }
+    },
+    "relation": {
+      "state": "variant-candidate",
+      "familyId": "flora-executioners",
+      "similarity": 0.7813468634686347,
+      "runnerUpFamilyId": "ap-summoners",
+      "runnerUpSimilarity": 0.6966092314118629,
+      "margin": 0.08473763205677176,
+      "certainty": 0.6740492525132018,
+      "diff": {
+        "sharedCore": [
+          "DA_18_Zyra",
+          "DA_Fiddlesticks18"
+        ],
+        "consistentlyAdded": [],
+        "consistentlyOmitted": [],
+        "structuralDistance": 0.2186531365313653,
+        "capacityDelta": 0
+      },
+      "modelVersion": "anchor-relation-v1"
+    },
+    "lifecycle": "Experimental",
+    "transitions": [
+      {
+        "previousState": null,
+        "newState": "Experimental",
+        "at": "2026-09-06T17:08:34.748Z",
+        "evidenceModelVersion": "discovery-lifecycle-v1",
+        "drivers": [
+          "Candidate remains Experimental until every support, freshness, structure, and outcome gate clears."
+        ]
+      }
+    ],
+    "recommendationEligible": false,
+    "recommendationGateReasons": [
+      "support 6/20",
+      "relation certainty 0.67/0.72",
+      "top-four lower bound 0.19/0.25"
+    ]
+  }
+}

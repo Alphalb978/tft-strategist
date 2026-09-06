@@ -1,13 +1,17 @@
-import { useMemo, useState } from 'react';
+import { familyRepresentation, familyTrend, metaCohortLabel } from '../strategy/metaCatalog';
+import { openRepository } from '../storage/repository';
+import type { MetaBundle } from '../services/discoveryRefresh';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronRight, Search, SlidersHorizontal } from 'lucide-react';
 import type {
   AggregateMetaDataset,
   CompRegistryEntry,
+  DiscoveryDataset,
   Playbook,
   StaticData,
 } from '../domain/models';
 import type { ApplicationState } from '../services/application';
-import { Art } from '../components/Art';
+import { Art, Portrait } from '../components/Art';
 
 export type CompSort =
   | 'name'
@@ -16,7 +20,9 @@ export type CompSort =
   | 'top4'
   | 'wins'
   | 'confidence'
-  | 'sample';
+  | 'sample'
+  | 'popularity'
+  | 'trend';
 
 export interface CompLibraryQuery {
   search: string;
@@ -31,8 +37,10 @@ export function filterAndSortComps(
   meta: AggregateMetaDataset | null,
   query: CompLibraryQuery,
   registry: CompRegistryEntry[] = [],
+  discovery: DiscoveryDataset | null = null,
 ) {
   const stats = new Map(meta?.familyStats.map((value) => [value.familyId, value]) ?? []);
+  const clusters = new Map(discovery?.clusters.map((c) => [c.id, c]) ?? []);
   const needle = query.search.trim().toLocaleLowerCase('en-US');
   const value = (playbook: Playbook) => stats.get(playbook.family.id);
   const entries = new Map(registry.map((entry) => [entry.playbook.id, entry]));
@@ -52,17 +60,52 @@ export function filterAndSortComps(
   const compare = (a: Playbook, b: Playbook) => {
     const left = value(a);
     const right = value(b);
-    const metric = (stat: typeof left) => {
+    const metric = (stat: typeof left, playbook: Playbook) => {
+      const cluster = clusters.get(entries.get(playbook.id)?.clusterId ?? '');
+      if (!stat && cluster) {
+        if (
+          ['strength', 'placement', 'top4', 'wins'].includes(query.sort) &&
+          !cluster.recommendationEligible
+        )
+          return null;
+        switch (query.sort) {
+          case 'sample':
+            return cluster.stats.games;
+          case 'confidence':
+            return cluster.stats.confidence;
+          case 'placement':
+            return -cluster.stats.averagePlacement;
+          case 'top4':
+            return cluster.stats.topFour.raw;
+          case 'wins':
+            return cluster.stats.wins.raw;
+          case 'popularity':
+            return meta?.currentSetBoards ? cluster.stats.games / meta.currentSetBoards : null;
+          case 'trend':
+            return cluster.stats.adoption.mature ? cluster.stats.adoption.delta : null;
+          default:
+            return null;
+        }
+      }
       if (!stat) return null;
+      if (
+        ['strength', 'placement', 'top4', 'wins'].includes(query.sort) &&
+        stat.quality !== 'eligible'
+      )
+        return null;
       switch (query.sort) {
+        case 'popularity':
+          return meta?.currentSetBoards ? stat.games / meta.currentSetBoards : null;
+        case 'trend':
+          return meta ? (familyTrend(stat.familyId, meta)?.delta ?? null) : null;
         case 'strength':
           return stat.measuredStrength;
         case 'placement':
-          return -stat.shrunkAveragePlacement;
+          return -stat.averagePlacement;
         case 'top4':
-          return stat.topFour.shrunk;
+          return stat.topFour.raw;
         case 'wins':
-          return stat.wins.shrunk;
+          return stat.wins.raw;
         case 'confidence':
           return stat.confidence;
         case 'sample':
@@ -71,8 +114,8 @@ export function filterAndSortComps(
           return null;
       }
     };
-    const aMetric = metric(left);
-    const bMetric = metric(right);
+    const aMetric = metric(left, a);
+    const bMetric = metric(right, b);
     if (aMetric !== null || bMetric !== null) {
       if (aMetric === null) return 1;
       if (bMetric === null) return -1;
@@ -97,10 +140,25 @@ const percent = (value: number) => `${Math.round(value * 100)}%`;
 export function CompLibrary({
   state,
   onOpen,
+  onSelectMeta,
 }: {
   state: ApplicationState;
+  onSelectMeta?: (bundle: MetaBundle) => void;
   onOpen: (id: string) => void;
 }) {
+  const [bundles, setBundles] = useState<MetaBundle[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const repo = await openRepository();
+      const keys = (await repo.get<string[]>('meta-catalog-index:v1')) ?? [];
+      const values = await Promise.all(keys.map((key) => repo.get<MetaBundle>(key)));
+      if (alive) setBundles(values.filter((b): b is MetaBundle => b?.version === 1));
+    })().catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [state.meta]);
   const [query, setQuery] = useState<CompLibraryQuery>({
     search: '',
     evidence: 'all',
@@ -108,7 +166,15 @@ export function CompLibrary({
     sort: 'name',
   });
   const filtered = useMemo(
-    () => filterAndSortComps(state.playbooks, state.data, state.meta, query, state.registry),
+    () =>
+      filterAndSortComps(
+        state.playbooks,
+        state.data,
+        state.meta,
+        query,
+        state.registry,
+        state.discovery,
+      ),
     [query, state],
   );
   const stats = new Map(state.meta?.familyStats.map((value) => [value.familyId, value]) ?? []);
@@ -118,17 +184,84 @@ export function CompLibrary({
     <>
       <div className="page-heading comps-heading">
         <div>
-          <div className="eyebrow">CURRENT SET · ATTRIBUTED BOARDS</div>
+          <div className="eyebrow">CURRENT META & PLAYBOOKS / SET {state.data.version.set}</div>
           <h1>Comp Library</h1>
-          <p>
-            {state.playbooks.length} legal Set {state.data.version.set} curated and discovered
-            structures with evidence limits.
-          </p>
+          <p>{state.playbooks.length} comps. Search a champion, trait, or route.</p>
         </div>
         <div className="library-count">
           <strong>{filtered.length}</strong>
           <span>shown</span>
         </div>
+      </div>
+      <div className="meta-catalog-scope">
+        <strong>
+          {state.meta
+            ? `${state.meta.sourceType === 'fixture' ? 'Fixture sample' : 'Riot self-collected'} · ${state.meta.platform} · ${metaCohortLabel(state.meta.rankCohort)}`
+            : 'No collected meta'}
+        </strong>
+        {state.meta && (
+          <span>
+            {state.meta.currentSetBoards.toLocaleString()} boards ·{' '}
+            {state.meta.classifiedBoards.toLocaleString()} classified (
+            {percent(state.meta.coverage)}) ·{' '}
+            {state.meta.scope
+              ? `${state.meta.scope.windowDays}d ending ${new Date(state.meta.collectedAt).toLocaleDateString()}`
+              : 'Legacy bounded sample'}{' '}
+            · Updated {new Date(state.meta.collectedAt).toLocaleString()}
+          </span>
+        )}
+        <div className="meta-scope-selectors">
+          {(['platform', 'rankCohort', 'windowDays'] as const).map((field) => {
+            const display = (b: MetaBundle) =>
+              field === 'platform'
+                ? b.meta.platform
+                : field === 'rankCohort'
+                  ? b.meta.rankCohort.join(' / ')
+                  : String(b.meta.scope?.windowDays ?? 'Legacy');
+            const current = state.meta
+              ? display({ version: 1, meta: state.meta, discovery: state.discovery! })
+              : '';
+            return (
+              <label key={field}>
+                {field === 'platform' ? 'Region' : field === 'rankCohort' ? 'Rank' : 'Window'}
+                <select
+                  aria-label={`Catalog ${field}`}
+                  value={current}
+                  onChange={(e) => {
+                    const selected = bundles.find((b) => display(b) === e.target.value);
+                    if (selected) onSelectMeta?.(selected);
+                  }}
+                >
+                  <option value={current}>
+                    {current
+                      ? field === 'rankCohort'
+                        ? metaCohortLabel(current.split(' / '))
+                        : field === 'windowDays' && current !== 'Legacy'
+                          ? `${current}d`
+                          : current
+                      : 'No sample'}
+                  </option>
+                  {[...new Set(bundles.map(display))]
+                    .filter((v) => v !== current)
+                    .map((v) => (
+                      <option key={v} value={v}>
+                        {field === 'rankCohort'
+                          ? metaCohortLabel(v.split(' / '))
+                          : field === 'windowDays' && v !== 'Legacy'
+                            ? `${v}d`
+                            : v}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            );
+          })}
+        </div>
+        <small>
+          Collect another region, rank or rolling window in Data & settings. Patch mapping
+          unavailable. Play rate is among classified boards; popularity sorting uses share of all
+          sampled boards; co-participant ranks are unverified.
+        </small>
       </div>
       <div className="comp-controls" aria-label="Comp library controls">
         <label className="comp-search">
@@ -185,14 +318,14 @@ export function CompLibrary({
             <option value="wins">Win rate</option>
             <option value="confidence">Confidence</option>
             <option value="sample">Sample size</option>
+            <option value="popularity">Popularity / board share</option>
+            <option value="trend">Trend</option>
           </select>
         </label>
       </div>
       {!state.meta && (
         <div className="meta-unavailable">
-          Outcome statistics are unavailable until a compatible Riot aggregate sample clears the M5
-          quality gates. Board definitions remain source-backed; outcome sorting places missing
-          values last.
+          Outcome statistics are unavailable. Curated playbooks are ready to explore.
         </div>
       )}
       <div className="library-grid expanded-library">
@@ -201,7 +334,11 @@ export function CompLibrary({
           const entry = entries.get(playbook.id);
           const cluster = entry?.clusterId ? clusters.get(entry.clusterId) : undefined;
           return (
-            <button className="library-card" key={playbook.id} onClick={() => onOpen(playbook.id)}>
+            <button
+              className={`library-card ${entry?.sourceKind === 'discovered' ? 'discovered-card' : ''}`}
+              key={playbook.id}
+              onClick={() => onOpen(playbook.id)}
+            >
               <Art
                 url={state.data.champions.find((champion) => champion.id === playbook.hero)!.splash}
                 alt={playbook.title}
@@ -210,45 +347,84 @@ export function CompLibrary({
               <div className="library-card-copy">
                 <span className="eyebrow">{playbook.features.style}</span>
                 <h2>{playbook.title}</h2>
-                <p>{playbook.subtitle}</p>
-                {cluster ? (
+                <div className="catalog-roster">
+                  {playbook.target.units.map((unit) => {
+                    const champion = state.data.champions.find((c) => c.id === unit.championId);
+                    return (
+                      champion && (
+                        <div key={unit.championId}>
+                          <Portrait champion={champion} assets={state.assets} compact />
+                          <span>{champion.name}</span>
+                        </div>
+                      )
+                    );
+                  })}
+                </div>
+                {(cluster && (cluster.lifecycle === 'Experimental' || cluster.stats.games < 20)) ||
+                (stat && stat.quality !== 'eligible') ? (
+                  <div className="library-metrics insufficient">
+                    <strong>
+                      {cluster?.stats.games ?? stat?.games}{' '}
+                      {(cluster?.stats.games ?? stat?.games) === 1 ? 'game' : 'games'} ·
+                      Insufficient sample
+                    </strong>
+                    <span>Outcomes need more evidence</span>
+                  </div>
+                ) : cluster ? (
                   <div className="library-metrics">
-                    <span>
-                      <b>{cluster.stats.averagePlacement.toFixed(2)}</b> avg
-                    </span>
-                    <span>
-                      <b>{percent(cluster.stats.topFour.shrunk)}</b> top 4
-                    </span>
                     <span>
                       <b>{cluster.stats.games}</b> boards
                     </span>
                     <span>
+                      <b>{cluster.stats.averagePlacement.toFixed(2)}</b> avg
+                    </span>
+                    <span>
+                      <b>{percent(cluster.stats.topFour.raw)}</b> top 4
+                    </span>
+                    <span>
+                      <b>{percent(cluster.stats.wins.raw)}</b> win
+                    </span>
+                    <span>
                       <b>
-                        {cluster.stats.adoption.mature
-                          ? `${cluster.stats.adoption.delta >= 0 ? '+' : ''}${percent(cluster.stats.adoption.delta)}`
+                        {state.discovery?.boardsAnalyzed
+                          ? percent(cluster.stats.games / state.discovery.boardsAnalyzed)
                           : '—'}
                       </b>{' '}
-                      trend
+                      of analyzed boards
                     </span>
                   </div>
-                ) : stat ? (
-                  <div className="library-metrics">
-                    <span>
-                      <b>{stat.shrunkAveragePlacement.toFixed(2)}</b> avg
-                    </span>
-                    <span>
-                      <b>{percent(stat.topFour.shrunk)}</b> top 4
-                    </span>
-                    <span>
-                      <b>{percent(stat.wins.shrunk)}</b> win
-                    </span>
+                ) : stat && state.meta ? (
+                  <div
+                    className="library-metrics"
+                    title={`Adjusted avg ${stat.shrunkAveragePlacement.toFixed(2)} · ${percent(stat.confidence)} confidence · Play rate confidence ${percent(familyRepresentation(stat, state.meta).confidence)} · Play rate denominator ${state.meta.classifiedBoards} classified boards`}
+                  >
                     <span>
                       <b>{stat.games}</b> games
                     </span>
+                    <span>
+                      <b>{percent(familyRepresentation(stat, state.meta).rate)}</b> play rate
+                    </span>
+                    <span>
+                      <b>{stat.averagePlacement.toFixed(2)}</b> avg
+                    </span>
+                    <span>
+                      <b>{percent(stat.topFour.raw)}</b> top 4
+                    </span>
+                    <span>
+                      <b>{percent(stat.wins.raw)}</b> win
+                    </span>
+                    <span>{familyTrend(stat.familyId, state.meta)?.direction ?? 'Trend —'}</span>
                   </div>
                 ) : (
                   <div className="library-metrics unavailable">Measured outcomes unavailable</div>
                 )}
+                <small className="guidance-label">
+                  {entry?.sourceKind === 'discovered'
+                    ? 'Partial / inherited guidance'
+                    : playbook.strategy.coverage.supported === playbook.strategy.coverage.total
+                      ? 'Full playbook'
+                      : 'Sourced playbook · partial coverage'}
+                </small>
                 <span className="badge">
                   {entry?.sourceKind === 'discovered' ? 'Discovered' : 'Curated'} ·{' '}
                   {entry?.lifecycle ?? playbook.evidence}
@@ -259,7 +435,19 @@ export function CompLibrary({
           );
         })}
       </div>
-      {!filtered.length && <div className="empty-state">No comps match these filters.</div>}
+      {!filtered.length && (
+        <div className="empty-state">
+          <Search />
+          <h2>No comps match these filters.</h2>
+          <p>Try another champion or clear your filters.</p>
+          <button
+            className="secondary"
+            onClick={() => setQuery({ search: '', evidence: 'all', style: 'all', sort: 'name' })}
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
     </>
   );
 }

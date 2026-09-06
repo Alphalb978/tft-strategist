@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
-  Check,
+  Info,
   ChevronRight,
   Compass,
   Database,
@@ -10,6 +10,7 @@ import {
   LockKeyhole,
   Play,
   RefreshCw,
+  Radio,
 } from 'lucide-react';
 import { openRepository, type Repository, type Settings } from '../storage/repository';
 import {
@@ -25,17 +26,27 @@ import {
 import { scoreCandidate } from '../strategy/scoring';
 import { optimizePortfolio } from '../strategy/portfolio';
 import { Home } from '../features/Home';
-import { Playbook } from '../features/Playbook';
-import { DataSettings } from '../features/DataSettings';
+const Playbook = lazy(() =>
+  import('../features/Playbook').then((module) => ({ default: module.Playbook })),
+);
+const DataSettings = lazy(() =>
+  import('../features/DataSettings').then((module) => ({ default: module.DataSettings })),
+);
 import type { LobbyPressure } from '../domain/models';
 import { NativeRiotProvider } from '../providers/riot';
 import { createRiotPreviewProvider } from '../providers/riotPreview';
 import { openHistoryStore, type HistoryStore } from '../storage/history';
-import { CompLibrary } from '../features/CompLibrary';
-import { refreshMetaDiscovery } from '../services/discoveryRefresh';
+const CompLibrary = lazy(() =>
+  import('../features/CompLibrary').then((module) => ({ default: module.CompLibrary })),
+);
+import { META_BUDGETS, type MetaSampleConfig, type MetaProgress } from '../services/metaPipeline';
+import { RiotProviderError } from '../providers/riot';
 import { regionalRouteFor } from '../providers/riotRouting';
-import { PostGameHistory } from '../features/PostGameHistory';
-type Page = 'home' | 'active' | 'library' | 'history' | 'data';
+const PostGameHistory = lazy(() =>
+  import('../features/PostGameHistory').then((module) => ({ default: module.PostGameHistory })),
+);
+import { RiotScouting } from '../features/RiotScouting';
+type Page = 'home' | 'scout' | 'active' | 'library' | 'history' | 'data';
 type DetailContext = 'current' | 'session';
 export function App() {
   const [state, setState] = useState<ApplicationState | null>(null),
@@ -51,6 +62,9 @@ export function App() {
     [lobby, setLobby] = useState<LobbyPressure | null>(null);
   const repository = useRef<Repository | null>(null),
     main = useRef<HTMLElement | null>(null);
+  const operation = useRef(false);
+  const metaController = useRef<AbortController | null>(null);
+  const [metaProgress, setMetaProgress] = useState<MetaProgress | null>(null);
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -92,18 +106,22 @@ export function App() {
     return () => clearTimeout(timer);
   }, [toast]);
   const navigate = (next: Page) => {
-    setPage(next);
-    setDetail(null);
-    setDetailContext(next === 'active' ? 'session' : 'current');
+    startTransition(() => {
+      setPage(next);
+      setDetail(null);
+      setDetailContext(next === 'active' ? 'session' : 'current');
+    });
     main.current?.scrollTo(0, 0);
   };
   const open = (id: string, context: DetailContext = 'current') => {
-    setDetail(id);
-    setDetailContext(context);
+    startTransition(() => {
+      setDetail(id);
+      setDetailContext(context);
+    });
     main.current?.scrollTo(0, 0);
   };
   const refresh = async () => {
-    if (!state || !repository.current) return;
+    if (!state || !repository.current || refreshing || metaRefreshing) return;
     setRefreshing(true);
     try {
       setState(await refreshApplication(state, repository.current));
@@ -141,12 +159,34 @@ export function App() {
       setToast('Settings could not be saved. Your previous settings are unchanged.');
     }
   };
-  const refreshMeta = async () => {
-    if (!state || !repository.current || !historyStore || !riotProvider) return;
+  const refreshMeta = async (
+    selection: Pick<MetaSampleConfig, 'mode' | 'platform' | 'tiers' | 'windowDays'>,
+  ) => {
+    if (
+      !state ||
+      !repository.current ||
+      !historyStore ||
+      !riotProvider ||
+      metaRefreshing ||
+      metaController.current ||
+      refreshing
+    )
+      return;
+    const controller = new AbortController();
+    metaController.current = controller;
+    setMetaProgress(null);
     setMetaRefreshing(true);
     try {
+      const { refreshMetaDiscovery } = await import('../services/discoveryRefresh');
       const refreshed = await refreshMetaDiscovery(
-        riotProvider,
+        fixturePreview
+          ? riotProvider
+          : new NativeRiotProvider(selection.platform, {
+              unitIds: new Set(state.data.champions.map((x) => x.id)),
+              itemIds: new Set(state.data.items.map((x) => x.id)),
+              traitIds: new Set(state.data.traits.map((x) => x.id)),
+              augmentIds: new Set(state.data.augments.map((x) => x.id)),
+            }),
         historyStore,
         repository.current,
         state.data,
@@ -154,34 +194,51 @@ export function App() {
           .filter((entry) => entry.sourceKind === 'curated')
           .map((entry) => entry.playbook),
         {
-          platform: state.settings.riotPlatform,
-          regionalRoute: regionalRouteFor(state.settings.riotPlatform),
-          tiers: ['CHALLENGER'],
-          playersPerTier: 3,
-          matchesPerPlayer: 3,
+          ...selection,
+          regionalRoute: regionalRouteFor(selection.platform),
+          playersPerTier: META_BUDGETS[selection.mode ?? 'standard'].playersPerTier,
+          matchesPerPlayer: META_BUDGETS[selection.mode ?? 'standard'].matchesPerPlayer,
           set: state.data.version.set,
+          sourceType: fixturePreview ? 'fixture' : 'riot-api',
         },
+        new Date().toISOString(),
+        undefined,
+        { signal: controller.signal, onProgress: setMetaProgress },
       );
-      setState({
-        ...state,
-        ...createRecommendations(
-          state.data,
-          state.settings,
-          refreshed.discovery.generatedAt,
-          refreshed.meta,
-          refreshed.discovery,
-          state.personal,
-        ),
-      });
+      setState((current) =>
+        current
+          ? {
+              ...current,
+              ...createRecommendations(
+                current.data,
+                current.settings,
+                refreshed.discovery.generatedAt,
+                refreshed.meta,
+                refreshed.discovery,
+                current.personal,
+              ),
+            }
+          : current,
+      );
+      setMetaProgress((current) => (current ? { ...current, phase: 'complete' } : null));
       setToast(refreshed.status.message);
-    } catch {
-      setToast('Meta refresh unavailable. Existing cached evidence remains active.');
+    } catch (error) {
+      setToast(
+        controller.signal.aborted
+          ? 'Meta refresh cancelled. Cached evidence retained.'
+          : error instanceof RiotProviderError
+            ? error.message
+            : 'Meta refresh unavailable. Existing cached evidence remains active.',
+      );
     } finally {
+      metaController.current = null;
       setMetaRefreshing(false);
     }
   };
   const lockOrSwitch = async () => {
-    if (!state || !viewedPortfolio || !repository.current || !candidate) return;
+    if (!state || !viewedPortfolio || !repository.current || !candidate || operation.current)
+      return;
+    operation.current = true;
     try {
       const activeSession = state.activeSession
         ? await switchPlanSession(
@@ -212,10 +269,13 @@ export function App() {
           ? caught.message
           : 'This plan could not be locked from the current portfolio.',
       );
+    } finally {
+      operation.current = false;
     }
   };
   const end = async () => {
-    if (!state?.activeSession || !repository.current) return;
+    if (!state?.activeSession || !repository.current || operation.current) return;
+    operation.current = true;
     try {
       await endPlanSession(state, repository.current);
       setState({ ...state, activeSession: null });
@@ -225,6 +285,8 @@ export function App() {
       setToast('Session ended without a result. Its snapshot remains in history.');
     } catch {
       setToast('Unable to end the active session.');
+    } finally {
+      operation.current = false;
     }
   };
   const saveManual = async (change: Parameters<typeof savePlanSessionManualState>[2]) => {
@@ -238,6 +300,7 @@ export function App() {
   };
   const livePortfolio = useMemo(() => {
     if (!state) return null;
+    if (!lobby) return state.portfolio;
     const now = new Date().toISOString();
     return optimizePortfolio(
       state.playbooks.map((playbook) =>
@@ -298,11 +361,12 @@ export function App() {
         <div className="brand-name">
           STRATEGIST<span>TEAMFIGHT TACTICS</span>
         </div>
-        <div className="nav-label">WORKSPACE</div>
+        <div className="nav-label">PREPARE</div>
         <nav aria-label="Primary navigation">
           {(
             [
               { id: 'home', label: 'Your plans', icon: Compass },
+              { id: 'scout', label: 'Scouting', icon: Radio },
               ...(state?.activeSession
                 ? ([{ id: 'active', label: 'Active plan', icon: Play }] as const)
                 : []),
@@ -314,10 +378,12 @@ export function App() {
             <button
               key={n.id}
               className={page === n.id ? 'active' : ''}
+              aria-current={page === n.id ? 'page' : undefined}
+              title={n.label}
               onClick={() => navigate(n.id)}
             >
               <n.icon size={18} />
-              {n.label}
+              <span className="nav-text">{n.label}</span>
               {n.id === 'active' && <span className="active-plan-dot" aria-hidden="true" />}
               {page === n.id && <span className="nav-indicator" />}
             </button>
@@ -327,18 +393,13 @@ export function App() {
           <div className="local-badge">
             <span /> LOCAL FIRST
           </div>
-          <p>
-            Your plans stay with you.
-            <br />
-            No runtime AI required.
-          </p>
-          <span className="version-label">FOUNDATION / 0.1</span>
+          <span className="version-label">V1 · RELEASE CANDIDATE</span>
         </div>
       </aside>
       <div className="main-shell">
         <header className="topbar">
           <div className="breadcrumb">
-            Workspace <ChevronRight size={13} />
+            Strategist <ChevronRight size={13} />
             <strong>
               {detail
                 ? 'Comp'
@@ -346,151 +407,205 @@ export function App() {
                   ? 'Active plan'
                   : page === 'home'
                     ? 'Your plans'
-                    : page === 'library'
-                      ? 'Comps'
-                      : page === 'history'
-                        ? 'Post-game'
-                        : 'Data & settings'}
+                    : page === 'scout'
+                      ? 'Scouting'
+                      : page === 'library'
+                        ? 'Comps'
+                        : page === 'history'
+                          ? 'Post-game'
+                          : 'Data & settings'}
             </strong>
           </div>
           <div className="topbar-right">
             <span className="patch-dot" />
             <span>
-              Patch 18.1 <small>Combat parity known stale</small>
+              Set {state?.data.version.set ?? '18'} · {state?.data.version.patch ?? '18.1'}{' '}
+              <small>Combat data: known stale</small>
             </span>
             <span className="top-divider" />
             <span className="profile-avatar">S</span>
           </div>
         </header>
         <main ref={main} id="main-content">
-          {!state ? (
-            <div className="loading-state">
-              {error ? (
-                <>
-                  <Database size={36} />
-                  <h1>Let’s get your data ready.</h1>
-                  <p>{error}</p>
-                  <button
-                    className="primary"
-                    onClick={() => {
-                      setError('');
-                      setAttempt((a) => a + 1);
+          <Suspense
+            fallback={
+              <div className="loading-state" role="status">
+                Opening view…
+              </div>
+            }
+          >
+            {!state ? (
+              <div className="loading-state">
+                {error ? (
+                  <>
+                    <Database size={36} />
+                    <h1>Let’s get your data ready.</h1>
+                    <p>{error}</p>
+                    <button
+                      className="primary"
+                      onClick={() => {
+                        setError('');
+                        setAttempt((a) => a + 1);
+                      }}
+                    >
+                      Retry local load
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Hexagon className="spin" size={38} />
+                    <h1>Preparing your plans</h1>
+                    <p>Loading the active set and validating source playbooks…</p>
+                  </>
+                )}
+              </div>
+            ) : (
+              <>
+                {state.activeSession && page !== 'active' && (
+                  <div className={`lock-banner ${state.activeSession.compatibility.state}`}>
+                    <LockKeyhole size={15} />
+                    <span>
+                      Active · {state.activeSession.snapshot.playbook.title}
+                      {state.activeSession.compatibility.state === 'stale'
+                        ? ' · historical snapshot'
+                        : ''}
+                    </span>
+                    <button onClick={() => navigate('active')}>Resume</button>
+                  </div>
+                )}
+                {state.notices.length > 0 && (
+                  <div className="validation-notice" role="status">
+                    {state.notices.join(' ')}
+                  </div>
+                )}
+                {candidate ? (
+                  <Playbook
+                    key={`${state.activeSession?.id ?? 'preview'}-${candidate.playbook.id}`}
+                    plan={candidate.playbook}
+                    candidate={candidate}
+                    state={playbookState!}
+                    session={state.activeSession}
+                    snapshotContext={page === 'active' || detailContext === 'session'}
+                    activeMode={page === 'active' && !detail}
+                    onBack={() => {
+                      if (page === 'active' && detail) setDetail(null);
+                      else if (page === 'active') navigate('home');
+                      else setDetail(null);
                     }}
-                  >
-                    Retry local load
-                  </button>
-                </>
-              ) : (
-                <>
-                  <Hexagon className="spin" size={38} />
-                  <h1>Preparing your plans</h1>
-                  <p>Loading the active set and validating source playbooks…</p>
-                </>
-              )}
-            </div>
-          ) : (
-            <>
-              {state.activeSession && page !== 'active' && (
-                <div className={`lock-banner ${state.activeSession.compatibility.state}`}>
-                  <LockKeyhole size={15} />
+                    onLock={lockOrSwitch}
+                    onEnd={end}
+                    onManualState={saveManual}
+                    onOpen={(id) =>
+                      open(
+                        id,
+                        page === 'active' || detailContext === 'session' ? 'session' : 'current',
+                      )
+                    }
+                  />
+                ) : page === 'home' ? (
+                  <Home
+                    state={state}
+                    portfolio={currentPortfolio!}
+                    onOpen={open}
+                    onData={() => navigate('data')}
+                    onScout={() => navigate('scout')}
+                    lobby={lobby}
+                  />
+                ) : page === 'scout' && riotProvider && historyStore ? (
+                  <>
+                    <div className="page-heading">
+                      <div>
+                        <div className="eyebrow">LOBBY / RECENT HISTORY</div>
+                        <h1>Scouting</h1>
+                        <p>Discover opponents. Compare historical unit pressure.</p>
+                      </div>
+                    </div>
+                    <RiotScouting
+                      data={state.data}
+                      assets={state.assets}
+                      settings={state.settings}
+                      provider={riotProvider}
+                      store={historyStore}
+                      fixturePreview={fixturePreview}
+                      onSave={saveSettings}
+                      onLobby={setLobby}
+                    />
+                  </>
+                ) : page === 'data' && riotProvider && historyStore ? (
+                  <DataSettings
+                    state={state}
+                    mode={repository.current?.mode ?? 'Unavailable'}
+                    onSave={saveSettings}
+                    onRefresh={refresh}
+                    refreshing={refreshing}
+                    onMetaRefresh={refreshMeta}
+                    metaRefreshing={metaRefreshing}
+                    metaProgress={metaProgress}
+                    onMetaCancel={() => metaController.current?.abort()}
+                    riotProvider={riotProvider}
+                    historyStore={historyStore}
+                    fixturePreview={fixturePreview}
+                    onLobby={setLobby}
+                  />
+                ) : page === 'history' && riotProvider && historyStore && repository.current ? (
+                  <PostGameHistory
+                    state={state}
+                    repository={repository.current}
+                    provider={riotProvider}
+                    historyStore={historyStore}
+                    onUpdated={(personal, activeSession) => {
+                      const next = createRecommendations(
+                        state.data,
+                        state.settings,
+                        new Date().toISOString(),
+                        state.meta,
+                        state.discovery,
+                        personal,
+                      );
+                      setState({ ...state, ...next, personal, activeSession });
+                    }}
+                  />
+                ) : (
+                  <CompLibrary
+                    state={state}
+                    onOpen={(id) => open(id, 'current')}
+                    onSelectMeta={(bundle) =>
+                      setState((current) =>
+                        current
+                          ? {
+                              ...current,
+                              ...createRecommendations(
+                                current.data,
+                                current.settings,
+                                new Date().toISOString(),
+                                bundle.meta,
+                                bundle.discovery,
+                                current.personal,
+                              ),
+                            }
+                          : current,
+                      )
+                    }
+                  />
+                )}
+                <footer>
                   <span>
-                    Active · {state.activeSession.snapshot.playbook.title}
-                    {state.activeSession.compatibility.state === 'stale'
-                      ? ' · historical snapshot'
-                      : ''}
+                    Independent companion. Riot Games assets via CommunityDragon. Not endorsed by
+                    Riot Games.
                   </span>
-                  <button onClick={() => navigate('active')}>Resume</button>
-                </div>
-              )}
-              {state.notices.length > 0 && (
-                <div className="validation-notice" role="status">
-                  {state.notices.join(' ')}
-                </div>
-              )}
-              {candidate ? (
-                <Playbook
-                  key={`${state.activeSession?.id ?? 'preview'}-${candidate.playbook.id}`}
-                  plan={candidate.playbook}
-                  candidate={candidate}
-                  state={playbookState!}
-                  session={state.activeSession}
-                  snapshotContext={page === 'active' || detailContext === 'session'}
-                  activeMode={page === 'active' && !detail}
-                  onBack={() => {
-                    if (page === 'active' && detail) setDetail(null);
-                    else if (page === 'active') navigate('home');
-                    else setDetail(null);
-                  }}
-                  onLock={lockOrSwitch}
-                  onEnd={end}
-                  onManualState={saveManual}
-                  onOpen={(id) =>
-                    open(
-                      id,
-                      page === 'active' || detailContext === 'session' ? 'session' : 'current',
-                    )
-                  }
-                />
-              ) : page === 'home' ? (
-                <Home
-                  state={state}
-                  portfolio={currentPortfolio!}
-                  onOpen={open}
-                  onData={() => navigate('data')}
-                  lobby={lobby}
-                />
-              ) : page === 'data' && riotProvider && historyStore ? (
-                <DataSettings
-                  state={state}
-                  mode={repository.current?.mode ?? 'Unavailable'}
-                  onSave={saveSettings}
-                  onRefresh={refresh}
-                  refreshing={refreshing}
-                  onMetaRefresh={refreshMeta}
-                  metaRefreshing={metaRefreshing}
-                  riotProvider={riotProvider}
-                  historyStore={historyStore}
-                  fixturePreview={fixturePreview}
-                  onLobby={setLobby}
-                />
-              ) : page === 'history' && riotProvider && historyStore && repository.current ? (
-                <PostGameHistory
-                  state={state}
-                  repository={repository.current}
-                  provider={riotProvider}
-                  historyStore={historyStore}
-                  onUpdated={(personal, activeSession) => {
-                    const next = createRecommendations(
-                      state.data,
-                      state.settings,
-                      new Date().toISOString(),
-                      state.meta,
-                      state.discovery,
-                      personal,
-                    );
-                    setState({ ...state, ...next, personal, activeSession });
-                  }}
-                />
-              ) : (
-                <CompLibrary state={state} onOpen={(id) => open(id, 'current')} />
-              )}
-              <footer>
-                <span>
-                  Independent companion. Riot Games assets via CommunityDragon. Not endorsed by Riot
-                  Games.
-                </span>
-                <button onClick={refresh} disabled={refreshing}>
-                  <RefreshCw size={12} />
-                  {state.source}
-                </button>
-              </footer>
-            </>
-          )}
+                  <button onClick={refresh} disabled={refreshing}>
+                    <RefreshCw size={12} />
+                    {state.source}
+                  </button>
+                </footer>
+              </>
+            )}
+          </Suspense>
         </main>
       </div>
       {toast && (
         <div className="toast" role="status">
-          <Check size={16} />
+          <Info size={16} />
           {toast}
         </div>
       )}

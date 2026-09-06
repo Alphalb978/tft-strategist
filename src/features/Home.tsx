@@ -1,4 +1,4 @@
-import { ArrowRight, Layers3, Radio, ShieldQuestion, Sparkles } from 'lucide-react';
+import { ArrowRight, Layers3, Radio, ShieldQuestion } from 'lucide-react';
 import type { LobbyPressure, RecommendationPortfolio } from '../domain/models';
 import type { ApplicationState } from '../services/application';
 import { Art, Portrait } from '../components/Art';
@@ -8,12 +8,14 @@ export function Home({
   portfolio,
   onOpen,
   onData,
+  onScout,
   lobby,
 }: {
   state: ApplicationState;
   portfolio: RecommendationPortfolio;
   onOpen: (id: string) => void;
   onData: () => void;
+  onScout: () => void;
   lobby: LobbyPressure | null;
 }) {
   const { data, assets } = state;
@@ -21,164 +23,154 @@ export function Home({
     <>
       <div className="page-heading">
         <div>
-          <div className="eyebrow">YOUR PRE-GAME FIELD GUIDE</div>
-          <h1>Three plans. More possibilities.</h1>
-          <p>A complementary set of openings, with room to adapt.</p>
+          <div className="eyebrow">PRE-GAME / SET {data.version.set}</div>
+          <h1>Your plans</h1>
+          <p>Three complementary routes, selected together.</p>
         </div>
-        <div className="set-seal">
-          <Sparkles size={18} />
-          <span>
-            SET 18<strong>Enchanted Wilds</strong>
-          </span>
-        </div>
-      </div>
-      <div className="evidence-banner">
-        <ShieldQuestion size={19} />
-        <span>
-          <strong>
-            Curated boards. Measured outcomes {state.meta ? 'connected' : 'unavailable'}.
-          </strong>{' '}
-          {state.meta
-            ? `${state.meta.uniqueMatches} ${state.meta.platform} matches · ${state.meta.rankCohort.join(' + ')} cohort.`
-            : 'Outcome components use an explicit neutral fallback; they are not live meta statistics.'}
-        </span>
-        <button onClick={onData}>
-          View evidence <ArrowRight size={14} />
+        <button className="secondary" onClick={onScout}>
+          <Radio size={16} />
+          Scan current lobby
         </button>
       </div>
+      {!state.settings.riotId && (
+        <div className="setup-strip">
+          <span className="setup-number">01</span>
+          <div>
+            <strong>Ready to plan. Connect your Riot account for scouting.</strong>
+            <span>Bundled TFT data and playbooks work offline. Riot features need an API key.</span>
+          </div>
+          <button onClick={onData}>
+            Set up account <ArrowRight size={15} />
+          </button>
+        </div>
+      )}
       <div className="section-line">
         <h2>Your three-plan portfolio</h2>
-        <span>
-          {state.activeSession
-            ? `Active: ${state.activeSession.snapshot.playbook.title} · current plans remain live`
-            : `${state.playbooks.length} source comps · optimized together`}
-        </span>
+        <span>{state.playbooks.length} comps · optimized together</span>
       </div>
-      {!portfolio.plans.length ? (
+      <div className="plan-grid">
+        {portfolio.plans.map(({ candidate: c, role }, index) => {
+          const p = c.playbook,
+            hero = data.champions.find((u) => u.id === p.hero)!;
+          const measured = state.meta?.familyStats.find((s) => s.familyId === p.family.id);
+          return (
+            <article className={`plan-card ${index === 0 ? 'primary-plan' : ''}`} key={p.id}>
+              <div className="card-art">
+                <Art url={hero.splash} alt={`${hero.name} · Set 18 artwork`} assets={assets} />
+                <div className="art-shade" />
+                <span className="rank">0{index + 1}</span>
+              </div>
+              <div className="plan-identity">
+                <div className="plan-role">
+                  {role}
+                  <span>{p.features.style}</span>
+                </div>
+                <h2>{p.title}</h2>
+                <span className="plan-evidence">
+                  {p.discovery ? 'Discovered' : 'Curated'} · {p.evidence}
+                </span>
+              </div>
+              <div className="plan-lineup">
+                {p.target.units.map((unit) => {
+                  const champion = data.champions.find((u) => u.id === unit.championId);
+                  return (
+                    champion && (
+                      <div key={unit.championId} className={unit.slot === 'core' ? 'is-core' : ''}>
+                        <Portrait champion={champion} assets={assets} compact />
+                        <span>{champion.name}</span>
+                      </div>
+                    )
+                  );
+                })}
+              </div>
+              <div className="plan-stat">
+                <strong>
+                  {Math.round(c.score)}
+                  <small>/100</small>
+                </strong>
+                <span>Plan score</span>
+                <b>{c.confidence.level} confidence</b>
+              </div>
+              <div className="plan-outcomes">
+                {measured ? (
+                  <>
+                    <div>
+                      <strong>{measured.averagePlacement.toFixed(2)}</strong>
+                      <span>Avg place</span>
+                    </div>
+                    <div>
+                      <strong>{Math.round(measured.topFour.raw * 100)}%</strong>
+                      <span>Top 4</span>
+                    </div>
+                    <div>
+                      <strong>{Math.round(measured.wins.raw * 100)}%</strong>
+                      <span>Win</span>
+                    </div>
+                    <small>
+                      {measured.games} games · {measured.quality}
+                    </small>
+                  </>
+                ) : (
+                  <>
+                    <span>Measured strength</span>
+                    <strong>Unavailable</strong>
+                    <small>Outcomes stay neutral</small>
+                  </>
+                )}
+              </div>
+              <div className="plan-decision">
+                <span className="contest">
+                  <Radio size={13} />
+                  Historical contest: {c.contest.state.toLowerCase()}
+                </span>
+                <p className="card-reason">{c.reasons[0]}</p>
+                {c.contest.pressuredUnits.length > 0 && (
+                  <div className="card-pressure-units" aria-label="Pressured critical units">
+                    {c.contest.pressuredUnits.slice(0, 3).map((u) => (
+                      <span key={u.championId}>
+                        {data.champions.find((c) => c.id === u.championId)?.name} ·{' '}
+                        {u.equivalentHistoricalUsers.toFixed(1)} users
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button className="open-plan" onClick={() => onOpen(p.id)}>
+                Explore playbook <ArrowRight size={16} />
+              </button>
+            </article>
+          );
+        })}
+      </div>
+      {!portfolio.plans.length && (
         <div className="empty-state">
           <Layers3 />
           <h2>No eligible plans</h2>
-          <p>Review data validation issues, then refresh the source.</p>
+          <p>Review data status, then refresh the source.</p>
           <button onClick={onData}>Review data</button>
         </div>
-      ) : (
-        <div className="plan-grid">
-          {portfolio.plans.map(({ candidate: c, role }, index) => {
-            const p = c.playbook,
-              hero = data.champions.find((u) => u.id === p.hero)!,
-              measured = state.meta?.familyStats.find((stat) => stat.familyId === p.family.id);
-            return (
-              <article className={`plan-card accent-${index}`} key={p.id}>
-                <div className="card-art">
-                  <Art url={hero.splash} alt={`${hero.name} · Set 18 artwork`} assets={assets} />
-                  <div className="art-shade" />
-                  <div className="card-top">
-                    <span className="rank">0{index + 1}</span>
-                    <span className="portfolio-role">{role}</span>
-                  </div>
-                  <div className="card-title">
-                    <span className="style-tag">{p.features.style}</span>
-                    <h2>{p.title}</h2>
-                    <p>{p.subtitle}</p>
-                  </div>
-                </div>
-                <div className="card-body">
-                  <div className="score-row">
-                    <div className="score">
-                      <strong>{Math.round(c.score)}</strong>
-                      <span>
-                        /100
-                        <small>
-                          {measured?.quality === 'eligible' ? 'Measured calibrated' : 'Mixed score'}
-                        </small>
-                      </span>
-                    </div>
-                    <div className="confidence">
-                      <span className="confidence-bars">
-                        <i />
-                        <i />
-                        <i />
-                      </span>
-                      <strong>{c.confidence.level} confidence</strong>
-                      <small>{p.evidence}</small>
-                    </div>
-                  </div>
-                  <div className="core-portraits">
-                    {p.family.core.map((id) => (
-                      <Portrait
-                        key={id}
-                        champion={data.champions.find((u) => u.id === id)!}
-                        assets={assets}
-                        compact
-                      />
-                    ))}
-                    <span>
-                      Core
-                      <br />
-                      units
-                    </span>
-                  </div>
-                  <p className="card-reason">{c.reasons[0]}</p>
-                  {measured ? (
-                    <div className="risk-cues measured-cues">
-                      <span>
-                        Avg <strong>{measured.shrunkAveragePlacement.toFixed(2)}</strong>
-                      </span>
-                      <span>
-                        Top 4 <strong>{Math.round(measured.topFour.shrunk * 100)}%</strong>
-                      </span>
-                      <span>
-                        Win <strong>{Math.round(measured.wins.shrunk * 100)}%</strong>
-                      </span>
-                      <small>
-                        {measured.games} classified · {Math.round(measured.confidence * 100)}% meta
-                        confidence
-                      </small>
-                    </div>
-                  ) : (
-                    <div className="risk-cues unavailable-cues">
-                      <span>Measured strength</span>
-                      <strong>Unavailable</strong>
-                      <small>
-                        Neutral outcome fallback · curated strategy metadata remains separate
-                      </small>
-                    </div>
-                  )}
-                  <div className="contest">
-                    <Radio size={13} />
-                    <span>Historical contest: {c.contest.state.toLowerCase()}</span>
-                  </div>
-                  {c.contest.pressuredUnits.length > 0 && (
-                    <div className="card-pressure-units" aria-label="Pressured critical units">
-                      {c.contest.pressuredUnits.slice(0, 3).map((unit) => (
-                        <span key={unit.championId}>
-                          {data.champions.find((champion) => champion.id === unit.championId)
-                            ?.name ?? unit.championId}{' '}
-                          · {unit.equivalentHistoricalUsers.toFixed(1)} users
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <button className="open-plan" onClick={() => onOpen(p.id)}>
-                    Explore playbook <ArrowRight size={16} />
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
       )}
+      <div className="evidence-banner">
+        <ShieldQuestion size={17} />
+        <span>
+          {state.meta
+            ? `${state.meta.uniqueMatches} ${state.meta.platform} matches · ${state.meta.rankCohort.join(' + ')} cohort`
+            : 'No measured meta yet. Curated guidance remains available.'}
+        </span>
+        <button onClick={onData}>
+          Data status <ArrowRight size={14} />
+        </button>
+      </div>
       <div className="home-bottom">
         <section className="panel portfolio-panel">
           <div className="panel-heading">
             <Layers3 size={18} />
-            <h2>Built to complement each other</h2>
+            <h2>Opening coverage</h2>
           </div>
-          <p>Coverage and shared dependencies affect which three plans make the cut.</p>
           <div className="coverage-line">
             {portfolio.plans.map(({ candidate: c }, i) => (
               <div key={c.playbook.id}>
-                <span className={`mini-rank accent-${i}`}>0{i + 1}</span>
+                <span className="mini-rank">0{i + 1}</span>
                 <strong>{c.playbook.features.itemCoverage.join(' + ')}</strong>
                 <small>{c.playbook.features.style}</small>
               </div>
@@ -198,36 +190,32 @@ export function Home({
               ))}
             </div>
             <p className="fine-print">
-              Optimizer weights and coverage tags are initial, uncalibrated inputs. Actionable
-              cross-plan pivots are not yet verified.
+              Coverage weights are curated, not measured outcomes. Supported pivots are in each
+              playbook.
             </p>
           </details>
         </section>
         <section className="panel lobby-panel">
           <div className="panel-heading">
             <Radio size={18} />
-            <h2>Lobby intelligence</h2>
-            <span className={`badge ${lobby?.state === 'complete' ? 'success' : 'muted'}`}>
-              {lobby?.state ?? 'Unavailable'}
-            </span>
+            <h2>Lobby pressure</h2>
+            <span className="badge muted">{lobby?.state ?? 'Not scanned'}</span>
           </div>
           <div className="opponent-dots">
             {Array.from({ length: 7 }, (_, i) => (
-              <span key={i}>{lobby?.profiles[i] ? '✓' : '?'}</span>
+              <span key={i}>{lobby?.profiles[i] ? '✓' : '—'}</span>
             ))}
           </div>
           <p>
             {lobby
-              ? `${lobby.profilesCompleted}/${lobby.resolvedOpponents} profiles · ${Math.round(lobby.coverage * 100)}% evidence coverage · ${Math.round(lobby.elapsedMs)} ms.`
-              : 'Opponent history evidence is not connected. Recommendations remain unchanged.'}
+              ? `${lobby.profilesCompleted}/${lobby.resolvedOpponents} profiles · ${Math.round(lobby.coverage * 100)}% coverage`
+              : 'Scan recent opponent history to compare contest across your plans.'}
           </p>
           {lobby && <LobbyPressureSummary lobby={lobby} data={data} assets={assets} compact />}
-          <button className="text-button" onClick={onData}>
-            Connection & data setup <ArrowRight size={14} />
+          <button className="text-button" onClick={onScout}>
+            Open scouting <ArrowRight size={14} />
           </button>
-          <small>
-            {state.settings.historyWindow} relevant games per opponent · cache first · evidence only
-          </small>
+          <small>Historical tendencies · {state.settings.historyWindow} games per opponent</small>
         </section>
       </div>
     </>

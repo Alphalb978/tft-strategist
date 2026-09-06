@@ -14,6 +14,7 @@ import type {
 import { CommunityDragonProvider } from '../providers/communityDragon';
 import { loadPlaybooks } from '../providers/playbooks';
 import { validatePlaybook } from '../rules/validation';
+import type { MetaBundle } from './discoveryRefresh';
 import type { Repository, Settings } from '../storage/repository';
 import { normalizeSettings } from '../storage/repository';
 import { scoreCandidate } from '../strategy/scoring';
@@ -73,7 +74,7 @@ export function createRecommendations(
       notices.push(`${p.title} excluded: ${errors.map((e) => e.message).join(' ')}`);
     return !errors.length;
   });
-  const usableMeta = compatibleMetaDataset(meta, {
+  let usableMeta = compatibleMetaDataset(meta, {
     classifierVersion: COMP_CLASSIFIER.version,
     statisticsVersion: META_STATISTICS.version,
     familyDefinitionsFingerprint: familyDefinitionsFingerprint(playbooks),
@@ -81,10 +82,23 @@ export function createRecommendations(
   })
     ? meta
     : null;
+  if (
+    usableMeta?.scope &&
+    Date.parse(now) - Date.parse(usableMeta.collectedAt) > usableMeta.scope.windowDays * 86400000
+  ) {
+    usableMeta = {
+      ...usableMeta,
+      familyStats: usableMeta.familyStats.map((stat) => ({
+        ...stat,
+        quality: 'insufficient' as const,
+      })),
+    };
+    notices.push('Cached meta window has expired. Refresh before using it as current evidence.');
+  }
   if (meta && !usableMeta)
     notices.push('Incompatible aggregate-meta cache ignored and queued for recomputation.');
   const familyFingerprint = familyDefinitionsFingerprint(playbooks);
-  const usableDiscovery = compatibleDiscoveryDataset(discovery, {
+  let usableDiscovery = compatibleDiscoveryDataset(discovery, {
     set: data.version.set,
     staticSourceVersion: data.version.sourceVersion,
     familyDefinitionsFingerprint: familyFingerprint,
@@ -92,6 +106,20 @@ export function createRecommendations(
   })
     ? discovery
     : null;
+  if (
+    usableDiscovery &&
+    usableMeta?.scope &&
+    Date.parse(now) - Date.parse(usableMeta.collectedAt) > usableMeta.scope.windowDays * 86400000
+  ) {
+    usableDiscovery = {
+      ...usableDiscovery,
+      clusters: usableDiscovery.clusters.map((cluster) => ({
+        ...cluster,
+        lifecycle: 'Stale' as const,
+        recommendationEligible: false,
+      })),
+    };
+  }
   if (discovery && !usableDiscovery)
     notices.push('Incompatible discovery cache ignored and queued for recomputation.');
   const registry = buildCompRegistry(playbooks, data, usableDiscovery);
@@ -139,6 +167,7 @@ export async function loadApplication(repository: Repository): Promise<Applicati
     repository.getActivePlanSession(),
     fetch('/data/asset-manifest.json').catch(() => null),
   ]);
+  const bundle = await repository.get<MetaBundle>('meta-current:v1');
   const settings = normalizeSettings(savedSettings);
   let cacheUsable = isStaticData(cached);
   if (cacheUsable) {
@@ -170,8 +199,8 @@ export async function loadApplication(repository: Repository): Promise<Applicati
     data,
     settings,
     new Date().toISOString(),
-    savedMeta,
-    savedDiscovery,
+    bundle?.version === 1 ? bundle.meta : savedMeta,
+    bundle?.version === 1 ? bundle.discovery : savedDiscovery,
     await repository.getPersonalProfile(data.version.set),
   );
   let activeSession =

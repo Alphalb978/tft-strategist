@@ -1,0 +1,30 @@
+{
+  "id": "set18-teamplanner-human",
+  "code": "0241b40e41642443742a40f43a000000TFTSet18",
+  "names": [
+    "Nidalee",
+    "Kog’Maw",
+    "Master Yi",
+    "Rengar",
+    "Vi",
+    "Sett",
+    "Krug",
+    "Yorick",
+    null,
+    null
+  ],
+  "slots": [
+    1051,
+    1038,
+    1046,
+    1060,
+    1079,
+    1066,
+    1039,
+    1082,
+    0,
+    0
+  ],
+  "verifiedAt": "2026-09-06",
+  "verification": "Human pasted into current real TFT client and observed this roster, including two empty slots."
+}

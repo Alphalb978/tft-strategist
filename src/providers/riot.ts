@@ -446,7 +446,7 @@ export class NativeRiotProvider implements RiotProvider {
     if (!parsed.success) throw new RiotProviderError('malformed-response');
     return parsed.data.entries
       .sort((a, b) => b.leaguePoints - a.leaguePoints || a.puuid.localeCompare(b.puuid))
-      .slice(0, Math.max(0, Math.min(50, limit)))
+      .slice(0, Math.max(0, Math.min(500, limit)))
       .map((entry) => ({ ...entry, tier: parsed.data.tier }));
   }
 

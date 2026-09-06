@@ -1,3 +1,4 @@
+import { teamPlanner } from '../rules/teamPlanner';
 import type {
   CompRegistryEntry,
   DiscoveryCluster,
@@ -167,16 +168,7 @@ function discoveredPlaybook(
         cluster.unitPrevalence.map((unit) => [unit.championId, unit.prevalence]),
       ),
     },
-    planner: {
-      state: 'unsupported',
-      contractVersion: 'team-planner-support-v2',
-      formatVersion: null,
-      reason: 'Discovered boards do not bypass Team Planner verification.',
-      mappingVerified: false,
-      fixtureVerified: false,
-      manualPasteVerified: false,
-      knownGoodFixtureIds: [],
-    },
+    planner: teamPlanner.supportStatus(data.version),
     strategy: undefined as unknown as StrategyGuidance,
     discovery: { clusterId: cluster.id, parentFamilyId: parent },
   } satisfies Playbook;

@@ -1,4 +1,9 @@
 import {
+  candidatePlannerCode,
+  teamPlanner,
+  TEAM_PLANNER_CONTRACT_VERSION,
+} from '../rules/teamPlanner';
+import {
   planSessionSnapshotFingerprint,
   staticSetCompatibilityFingerprint,
 } from '../domain/fingerprint';
@@ -178,8 +183,19 @@ export function createPlanSession(
           }
         : null,
     },
-    // M8 cannot populate this until every fixture and real-client acceptance gate is verified.
-    teamPlanner: null,
+    teamPlanner: (() => {
+      const code = candidatePlannerCode(candidate.playbook.target, state.data);
+      const support = teamPlanner.supportStatus(state.data.version);
+      return code.ok && support.state === 'supported'
+        ? {
+            codecVersion: TEAM_PLANNER_CONTRACT_VERSION,
+            set: state.data.version.set,
+            code: code.value,
+            fixtureIds: support.knownGoodFixtureIds,
+            manualPasteVerifiedAt: '2026-09-06',
+          }
+        : null;
+    })(),
   });
   const partial = {
     schemaVersion: PLAN_SESSION_SCHEMA_VERSION,

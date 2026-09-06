@@ -23,6 +23,8 @@ import type {
 } from '../domain/models';
 import type { ApplicationState } from '../services/application';
 import { Art, Portrait } from '../components/Art';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { candidatePlannerCode, teamPlanner } from '../rules/teamPlanner';
 import { boardTraitCounts, validatePlaybook } from '../rules/validation';
 import { usedBoardSlots } from '../rules/ruleSet';
 import {
@@ -79,48 +81,50 @@ function TftBoard({ plan, state }: { plan: PlaybookModel; state: ApplicationStat
   const unplaced = plan.target.units.filter((unit) => !assigned.has(unit.championId));
   return (
     <div className="tft-board-wrap">
-      <div className="tft-board" aria-label="TFT board visualization">
-        {Array.from({ length: 4 }, (_, row) => (
-          <div className={`hex-row row-${row}`} key={row}>
-            {Array.from({ length: 7 }, (_, column) => {
-              const position = byHex.get(`${row}:${column}`);
-              const unit = position
-                ? plan.target.units.find((entry) => entry.championId === position.championId)
-                : undefined;
-              const name = unit
-                ? state.data.champions.find((champion) => champion.id === unit.championId)?.name
-                : null;
-              return (
-                <div
-                  className={`tft-hex ${unit ? `slot-${unit.slot}` : ''}`}
-                  key={`${row}-${column}`}
-                  aria-label={
-                    unit
-                      ? `${name} at row ${row + 1}, column ${column + 1}`
-                      : `Empty hex row ${row + 1}, column ${column + 1}`
-                  }
-                >
-                  {unit && (
-                    <BoardPortrait
-                      championId={unit.championId}
-                      plan={plan}
-                      state={state}
-                      slot={unit.slot}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ))}
-        {!exact.length && (
-          <div className="positioning-watermark">
-            <ShieldQuestion size={20} />
-            <strong>Positioning not verified</strong>
-            <span>No exact hexes assigned</span>
-          </div>
-        )}
-      </div>
+      {exact.length > 0 && (
+        <div className="tft-board" aria-label="TFT board visualization">
+          {Array.from({ length: 4 }, (_, row) => (
+            <div className={`hex-row row-${row}`} key={row}>
+              {Array.from({ length: 7 }, (_, column) => {
+                const position = byHex.get(`${row}:${column}`);
+                const unit = position
+                  ? plan.target.units.find((entry) => entry.championId === position.championId)
+                  : undefined;
+                const name = unit
+                  ? state.data.champions.find((champion) => champion.id === unit.championId)?.name
+                  : null;
+                return (
+                  <div
+                    className={`tft-hex ${unit ? `slot-${unit.slot}` : ''}`}
+                    key={`${row}-${column}`}
+                    aria-label={
+                      unit
+                        ? `${name} at row ${row + 1}, column ${column + 1}`
+                        : `Empty hex row ${row + 1}, column ${column + 1}`
+                    }
+                  >
+                    {unit && (
+                      <BoardPortrait
+                        championId={unit.championId}
+                        plan={plan}
+                        state={state}
+                        slot={unit.slot}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+          {!exact.length && (
+            <div className="positioning-watermark">
+              <ShieldQuestion size={20} />
+              <strong>Positioning not verified</strong>
+              <span>No exact hexes assigned</span>
+            </div>
+          )}
+        </div>
+      )}
       {unplaced.length > 0 && (
         <div className="unplaced-roster" aria-label="Unpositioned target roster">
           {unplaced.map((unit) => (
@@ -137,6 +141,12 @@ function TftBoard({ plan, state }: { plan: PlaybookModel; state: ApplicationStat
               <small>{unit.slot}</small>
             </div>
           ))}
+        </div>
+      )}
+      {!exact.length && (
+        <div className="positioning-note">
+          <ShieldQuestion size={14} />
+          Positioning not verified
         </div>
       )}
     </div>
@@ -215,6 +225,8 @@ export function Playbook({
   activeMode: boolean;
 }) {
   const isActivePlan = session?.selectedPlaybookId === plan.id;
+  const [confirmation, setConfirmation] = useState<'end' | 'switch' | null>(null);
+  const [copyMessage, setCopyMessage] = useState('');
   const [stageId, setStageId] = useState(
     (isActivePlan ? session.manualState.stageId : null) ?? plan.strategy.stages.at(-1)?.id ?? '',
   );
@@ -227,6 +239,13 @@ export function Playbook({
     isActivePlan ? session.manualState.decisionPathEdgeIds : [],
   );
   const { data, assets } = state;
+  const plannerCandidate = candidatePlannerCode(plan.target, data);
+  const [augmentSearch, setAugmentSearch] = useState('');
+  const plannerSupport = teamPlanner.supportStatus(data.version);
+  const canCopy =
+    plannerSupport.state === 'supported' &&
+    plannerCandidate.ok &&
+    !(snapshotContext && session?.compatibility.state === 'stale');
   const stage = plan.strategy.stages.find((item) => item.id === stageId) ?? plan.strategy.stages[0];
   const locked = isActivePlan;
   const eligible = state.portfolio.plans.some((item) => item.candidate.playbook.id === plan.id);
@@ -269,7 +288,7 @@ export function Playbook({
       });
   };
   return (
-    <>
+    <div className={activeMode ? 'playbook-page match-mode' : 'playbook-page'}>
       <button className="back-button" onClick={onBack}>
         <ArrowLeft size={16} /> {activeMode ? 'Back to current plans' : 'Back to plans'}
       </button>
@@ -278,12 +297,7 @@ export function Playbook({
           <div>
             <span className="section-kicker">ACTIVE MATCH PLAN</span>
             <strong>
-              Locked{' '}
-              {new Date(session.lockedAt).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-              {' · '}snapshot #{session.snapshot.selectedRank}
+              {plan.title} · {stage?.label ?? 'Target roster'}
             </strong>
             <small>
               {session.compatibility.state === 'current'
@@ -291,7 +305,7 @@ export function Playbook({
                 : 'Historical snapshot · current data is incompatible'}
             </small>
           </div>
-          <button className="end-session" onClick={onEnd}>
+          <button className="end-session" onClick={() => setConfirmation('end')}>
             <Square size={14} /> End session
           </button>
         </div>
@@ -320,12 +334,33 @@ export function Playbook({
           </p>
         </div>
         <div className="detail-actions">
-          <button className="secondary" disabled title={plan.planner.reason}>
-            <Copy size={16} /> Copy Team Code <span>Unverified</span>
+          <button
+            className="secondary"
+            disabled={!canCopy}
+            title={
+              !plannerCandidate.ok
+                ? plannerCandidate.error
+                : snapshotContext && session?.compatibility.state === 'stale'
+                  ? 'Locked data is stale. Open a current playbook to export.'
+                  : plannerSupport.reason
+            }
+            onClick={async () => {
+              if (!canCopy || !plannerCandidate.ok) return;
+              try {
+                await navigator.clipboard.writeText(plannerCandidate.value);
+                setCopyMessage('Team code copied. Roster only; positioning not verified.');
+              } catch {
+                setCopyMessage(
+                  'Clipboard unavailable. Select the verified code below to copy manually.',
+                );
+              }
+            }}
+          >
+            <Copy size={16} /> Copy Team Code <span>{canCopy ? 'Roster' : 'Unavailable'}</span>
           </button>
           <button
             className="primary"
-            onClick={onLock}
+            onClick={() => (session ? setConfirmation('switch') : onLock())}
             disabled={
               locked ||
               !eligible ||
@@ -346,6 +381,25 @@ export function Playbook({
           </button>
         </div>
       </div>
+
+      {activeMode && (
+        <div className="match-now">
+          <div>
+            <span>RIGHT NOW · MANUAL STAGE</span>
+            <strong>
+              {stage?.instruction.value ?? stage?.instruction.note ?? 'Review the target roster'}
+            </strong>
+            <br />
+            <a href="#stages">Change stage →</a>
+          </div>
+          <div>
+            <span>CURRENT DECISION</span>
+            <strong>{decisionNode?.label ?? 'No sourced Decision Map'}</strong>
+            <br />
+            <a href="#decision-map">Continue Decision Map →</a>
+          </div>
+        </div>
+      )}
 
       <nav className="playbook-nav" aria-label="Playbook sections">
         {[
@@ -372,7 +426,7 @@ export function Playbook({
             <h2>Build toward this board</h2>
           </div>
           <span>
-            {usedBoardSlots(plan.target)} / {plan.target.capacity} audited slots
+            {usedBoardSlots(plan.target)} / {plan.target.capacity} slots
           </span>
         </div>
         <TftBoard plan={plan} state={state} />
@@ -538,17 +592,68 @@ export function Playbook({
           </div>
           {plan.strategy.augmentBranches.map((branch) => (
             <div className="augment-branch" key={branch.id}>
-              <span className="branch-icon">◇</span>
+              <span className="branch-icon">
+                <WandSparkles size={24} />
+              </span>
               <div>
                 <div className="holder-title">
                   <strong>{branch.category}</strong>
                   <FactBadge status={branch.signal.status} />
+                </div>
+                <div className="augment-tiles">
+                  {branch.augmentIds.map((id) => {
+                    const augment = data.augments.find((a) => a.id === id);
+                    return augment ? (
+                      <div className="augment-tile" key={id}>
+                        <Art url={augment.icon} alt={augment.name} assets={assets} />
+                        <div>
+                          <strong>{augment.name}</strong>
+                          <small>
+                            {augment.tier ?? 'Augment'} ·{' '}
+                            {augment.liveStatus === 'unverified'
+                              ? 'Live availability unverified'
+                              : augment.liveStatus}
+                          </small>
+                        </div>
+                      </div>
+                    ) : null;
+                  })}
                 </div>
                 <p>{branch.signal.value}</p>
                 <small>{branch.consequence.value}</small>
               </div>
             </div>
           ))}
+          <details className="augment-reference">
+            <summary>Augment reference</summary>
+            <p className="fine-print">
+              Browse augment names and artwork. These are not recommendations; live availability
+              remains unverified.
+            </p>
+            <input
+              aria-label="Find augment"
+              placeholder="Find augment by name"
+              value={augmentSearch}
+              onChange={(e) => setAugmentSearch(e.target.value)}
+            />
+            <div className="augment-tiles">
+              {data.augments
+                .filter((a) => a.name.toLowerCase().includes(augmentSearch.toLowerCase()))
+                .slice(0, 6)
+                .map((a) => (
+                  <div className="augment-tile" key={a.id}>
+                    <Art url={a.icon} alt={a.name} assets={assets} />
+                    <div>
+                      <strong>{a.name}</strong>
+                      <small>
+                        {a.tier ?? 'Augment'} ·{' '}
+                        {a.liveStatus === 'unverified' ? 'Availability unverified' : a.liveStatus}
+                      </small>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </details>
           {!plan.strategy.augmentBranches.length && (
             <Unavailable
               title="No sourced augment branch"
@@ -630,8 +735,8 @@ export function Playbook({
       <section className="panel pivot-graph-panel" id="pivots">
         <div className="panel-heading">
           <GitBranch size={18} />
-          <h2>Portfolio pivot graph</h2>
-          <span className="badge muted">Local · deterministic</span>
+          <h2>Pivot options</h2>
+          <span className="badge muted">Your three plans</span>
         </div>
         <div className="pivot-nodes">
           {pivotGraph.nodes.map((node) => (
@@ -724,7 +829,8 @@ export function Playbook({
         </section>
       )}
 
-      <section className="panel why-panel">
+      <details className="panel why-panel">
+        <summary>Why this plan? · score & evidence</summary>
         <div className="panel-heading">
           <ShieldQuestion size={18} />
           <h2>Why this plan?</h2>
@@ -745,8 +851,10 @@ export function Playbook({
             </span>
           ) : measured ? (
             <span>
-              {measured.games} classified games · {measured.shrunkAveragePlacement.toFixed(2)} avg ·{' '}
-              {Math.round(measured.topFour.shrunk * 100)}% top 4
+              {measured.games} classified games ·{' '}
+              {measured.quality === 'eligible'
+                ? `${measured.averagePlacement.toFixed(2)} avg · ${Math.round(measured.topFour.raw * 100)}% top 4`
+                : 'Insufficient sample'}
             </span>
           ) : (
             <span>Unavailable · recommendation outcome inputs fall back to neutral.</span>
@@ -809,8 +917,35 @@ export function Playbook({
             M4 historical pressure remains independent of strategy guidance and discovery.
           </small>
         </div>
-      </section>
+      </details>
 
+      <details className="planner-verification">
+        <summary>
+          Team Planner ·{' '}
+          {plannerCandidate.ok ? 'Client verified · roster only' : 'Unavailable for this roster'}
+        </summary>
+        <p>{plannerSupport.reason}</p>
+        {plannerCandidate.ok ? (
+          <>
+            <label className="setting-label" htmlFor="planner-candidate">
+              Verified roster code
+            </label>
+            <input
+              id="planner-candidate"
+              readOnly
+              value={plannerCandidate.value}
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            <p>
+              {plan.target.units.map((unit) => championName(unit.championId)).join(' · ')} ·{' '}
+              {plan.target.units.length} filled slots
+            </p>
+          </>
+        ) : (
+          <p>{plannerCandidate.error}</p>
+        )}
+      </details>
+      {copyMessage && <p role="status">{copyMessage}</p>}
       <details className="source-details">
         <summary>Sources, freshness & validation</summary>
         <p>
@@ -834,6 +969,24 @@ export function Playbook({
         ))}
         <p>Team Planner: {plan.planner.reason}</p>
       </details>
-    </>
+      {confirmation && (
+        <ConfirmDialog
+          title={confirmation === 'end' ? 'End this session?' : `Switch to ${plan.title}?`}
+          confirmLabel={confirmation === 'end' ? 'End session & save' : 'Confirm switch'}
+          onCancel={() => setConfirmation(null)}
+          onConfirm={() => {
+            setConfirmation(null);
+            if (confirmation === 'end') onEnd();
+            else onLock();
+          }}
+        >
+          <p>
+            {confirmation === 'end'
+              ? 'Your plan and progress stay in Post-game. You can link a completed match later.'
+              : 'The previous plan stays in history. This starts the selected route with fresh stage and decision progress.'}
+          </p>
+        </ConfirmDialog>
+      )}
+    </div>
   );
 }
