@@ -7,6 +7,7 @@ import {
   Database,
   Hexagon,
   LockKeyhole,
+  Play,
   RefreshCw,
 } from 'lucide-react';
 import { openRepository, type Repository, type Settings } from '../storage/repository';
@@ -14,7 +15,10 @@ import {
   createRecommendations,
   loadApplication,
   refreshApplication,
-  selectPlan,
+  endPlanSession,
+  lockPlanSession,
+  savePlanSessionManualState,
+  switchPlanSession,
   type ApplicationState,
 } from '../services/application';
 import { scoreCandidate } from '../strategy/scoring';
@@ -29,11 +33,13 @@ import { openHistoryStore, type HistoryStore } from '../storage/history';
 import { CompLibrary } from '../features/CompLibrary';
 import { refreshMetaDiscovery } from '../services/discoveryRefresh';
 import { regionalRouteFor } from '../providers/riotRouting';
-type Page = 'home' | 'library' | 'data';
+type Page = 'home' | 'active' | 'library' | 'data';
+type DetailContext = 'current' | 'session';
 export function App() {
   const [state, setState] = useState<ApplicationState | null>(null),
     [page, setPage] = useState<Page>('home'),
     [detail, setDetail] = useState<string | null>(null),
+    [detailContext, setDetailContext] = useState<DetailContext>('current'),
     [error, setError] = useState(''),
     [toast, setToast] = useState(''),
     [refreshing, setRefreshing] = useState(false),
@@ -86,14 +92,16 @@ export function App() {
   const navigate = (next: Page) => {
     setPage(next);
     setDetail(null);
+    setDetailContext(next === 'active' ? 'session' : 'current');
     main.current?.scrollTo(0, 0);
   };
-  const open = (id: string) => {
+  const open = (id: string, context: DetailContext = 'current') => {
     setDetail(id);
+    setDetailContext(context);
     main.current?.scrollTo(0, 0);
   };
   const refresh = async () => {
-    if (!state || !repository.current || state.selection) return;
+    if (!state || !repository.current) return;
     setRefreshing(true);
     try {
       setState(await refreshApplication(state, repository.current));
@@ -131,7 +139,7 @@ export function App() {
     }
   };
   const refreshMeta = async () => {
-    if (!state || !repository.current || !historyStore || !riotProvider || state.selection) return;
+    if (!state || !repository.current || !historyStore || !riotProvider) return;
     setMetaRefreshing(true);
     try {
       const refreshed = await refreshMetaDiscovery(
@@ -168,26 +176,60 @@ export function App() {
       setMetaRefreshing(false);
     }
   };
-  const lock = async () => {
-    if (!state || !portfolio || !repository.current || !detail) return;
+  const lockOrSwitch = async () => {
+    if (!state || !viewedPortfolio || !repository.current || !candidate) return;
     try {
-      const selection = await selectPlan(detail, { ...state, portfolio }, repository.current);
-      setState({ ...state, selection });
-      setToast('Plan locked. Recommendations are frozen for this game.');
-    } catch {
+      const activeSession = state.activeSession
+        ? await switchPlanSession(
+            candidate.playbook.id,
+            state,
+            viewedPortfolio,
+            repository.current,
+            detailContext === 'current' ? lobby : null,
+          )
+        : await lockPlanSession(
+            candidate.playbook.id,
+            { ...state, portfolio: viewedPortfolio },
+            repository.current,
+            lobby,
+          );
+      setState({ ...state, activeSession });
+      setPage('active');
+      setDetail(null);
+      setDetailContext('session');
       setToast(
-        'This plan is outside the current three-plan portfolio. Choose a portfolio plan to lock.',
+        activeSession.replacesSessionId
+          ? 'Plan switched. The previous session remains in history.'
+          : 'Plan locked. The exact plan and evidence are saved locally.',
+      );
+    } catch (caught) {
+      setToast(
+        caught instanceof Error
+          ? caught.message
+          : 'This plan could not be locked from the current portfolio.',
       );
     }
   };
-  const unlock = async () => {
-    if (!state || !repository.current) return;
+  const end = async () => {
+    if (!state?.activeSession || !repository.current) return;
     try {
-      await repository.current.set('selection', null);
-      setState({ ...state, selection: null });
-      setToast('Portfolio unlocked.');
+      await endPlanSession(state, repository.current);
+      setState({ ...state, activeSession: null });
+      setPage('home');
+      setDetail(null);
+      setDetailContext('current');
+      setToast('Session ended without a result. Its snapshot remains in history.');
     } catch {
-      setToast('Unable to update the saved plan.');
+      setToast('Unable to end the active session.');
+    }
+  };
+  const saveManual = async (change: Parameters<typeof savePlanSessionManualState>[2]) => {
+    if (!state?.activeSession || !repository.current) return;
+    try {
+      const activeSession = await savePlanSessionManualState(state, repository.current, change);
+      setState((current) => (current ? { ...current, activeSession } : current));
+    } catch {
+      setToast('Match notes could not be saved.');
     }
   };
   const livePortfolio = useMemo(() => {
@@ -207,13 +249,19 @@ export function App() {
       now,
     );
   }, [lobby, state]);
-  const portfolio = state?.selection?.snapshot ?? livePortfolio ?? state?.portfolio;
-  const displayState = state && portfolio ? { ...state, portfolio } : state;
+  const currentPortfolio = livePortfolio ?? state?.portfolio;
+  const sessionPortfolio = state?.activeSession?.snapshot.portfolio ?? null;
+  const viewedPortfolio =
+    page === 'active' || detailContext === 'session' ? sessionPortfolio : currentPortfolio;
+  const displayState = state && viewedPortfolio ? { ...state, portfolio: viewedPortfolio } : state;
+  const requestedPlanId =
+    page === 'active' ? (detail ?? state?.activeSession?.selectedPlaybookId) : detail;
   const candidate =
-    detail && state
-      ? (portfolio?.plans.find((p) => p.candidate.playbook.id === detail)?.candidate ??
+    requestedPlanId && state
+      ? (viewedPortfolio?.plans.find((p) => p.candidate.playbook.id === requestedPlanId)
+          ?.candidate ??
         (() => {
-          const p = state.playbooks.find((p) => p.id === detail);
+          const p = state.playbooks.find((p) => p.id === requestedPlanId);
           return p
             ? scoreCandidate(p, {
                 version: state.data.version,
@@ -226,6 +274,14 @@ export function App() {
             : undefined;
         })())
       : undefined;
+  const playbookState =
+    state?.activeSession && (page === 'active' || detailContext === 'session')
+      ? {
+          ...displayState!,
+          data: state.activeSession.snapshot.staticData,
+          assets: state.assets,
+        }
+      : displayState;
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -241,6 +297,9 @@ export function App() {
           {(
             [
               { id: 'home', label: 'Your plans', icon: Compass },
+              ...(state?.activeSession
+                ? ([{ id: 'active', label: 'Active plan', icon: Play }] as const)
+                : []),
               { id: 'library', label: 'Comps', icon: BookOpen },
               { id: 'data', label: 'Data & settings', icon: Database },
             ] as const
@@ -252,6 +311,7 @@ export function App() {
             >
               <n.icon size={18} />
               {n.label}
+              {n.id === 'active' && <span className="active-plan-dot" aria-hidden="true" />}
               {page === n.id && <span className="nav-indicator" />}
             </button>
           ))}
@@ -275,11 +335,13 @@ export function App() {
             <strong>
               {detail
                 ? 'Comp'
-                : page === 'home'
-                  ? 'Your plans'
-                  : page === 'library'
-                    ? 'Comps'
-                    : 'Data & settings'}
+                : page === 'active'
+                  ? 'Active plan'
+                  : page === 'home'
+                    ? 'Your plans'
+                    : page === 'library'
+                      ? 'Comps'
+                      : 'Data & settings'}
             </strong>
           </div>
           <div className="topbar-right">
@@ -319,14 +381,16 @@ export function App() {
             </div>
           ) : (
             <>
-              {state.selection && (
-                <div className="lock-banner">
+              {state.activeSession && page !== 'active' && (
+                <div className={`lock-banner ${state.activeSession.compatibility.state}`}>
                   <LockKeyhole size={15} />
                   <span>
-                    Portfolio locked ·{' '}
-                    {state.playbooks.find((p) => p.id === state.selection?.playbookId)?.title}
+                    Active · {state.activeSession.snapshot.playbook.title}
+                    {state.activeSession.compatibility.state === 'stale'
+                      ? ' · historical snapshot'
+                      : ''}
                   </span>
-                  <button onClick={unlock}>Unlock</button>
+                  <button onClick={() => navigate('active')}>Resume</button>
                 </div>
               )}
               {state.notices.length > 0 && (
@@ -336,18 +400,32 @@ export function App() {
               )}
               {candidate ? (
                 <Playbook
-                  key={candidate.playbook.id}
+                  key={`${state.activeSession?.id ?? 'preview'}-${candidate.playbook.id}`}
                   plan={candidate.playbook}
                   candidate={candidate}
-                  state={displayState!}
-                  onBack={() => setDetail(null)}
-                  onLock={lock}
-                  onOpen={open}
+                  state={playbookState!}
+                  session={state.activeSession}
+                  snapshotContext={page === 'active' || detailContext === 'session'}
+                  activeMode={page === 'active' && !detail}
+                  onBack={() => {
+                    if (page === 'active' && detail) setDetail(null);
+                    else if (page === 'active') navigate('home');
+                    else setDetail(null);
+                  }}
+                  onLock={lockOrSwitch}
+                  onEnd={end}
+                  onManualState={saveManual}
+                  onOpen={(id) =>
+                    open(
+                      id,
+                      page === 'active' || detailContext === 'session' ? 'session' : 'current',
+                    )
+                  }
                 />
               ) : page === 'home' ? (
                 <Home
-                  state={displayState!}
-                  portfolio={portfolio!}
+                  state={state}
+                  portfolio={currentPortfolio!}
                   onOpen={open}
                   onData={() => navigate('data')}
                   lobby={lobby}
@@ -367,14 +445,14 @@ export function App() {
                   onLobby={setLobby}
                 />
               ) : (
-                <CompLibrary state={displayState!} onOpen={open} />
+                <CompLibrary state={state} onOpen={(id) => open(id, 'current')} />
               )}
               <footer>
                 <span>
                   Independent companion. Riot Games assets via CommunityDragon. Not endorsed by Riot
                   Games.
                 </span>
-                <button onClick={refresh} disabled={refreshing || !!state.selection}>
+                <button onClick={refresh} disabled={refreshing}>
                   <RefreshCw size={12} />
                   {state.source}
                 </button>

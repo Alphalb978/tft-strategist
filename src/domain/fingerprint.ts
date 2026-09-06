@@ -1,4 +1,4 @@
-import type { Playbook, StaticData } from './models';
+import type { PlanSessionSnapshot, Playbook, StaticData } from './models';
 
 /** Deterministic, non-cryptographic fingerprint for versioned derived data. */
 export function stableFingerprint(value: unknown): string {
@@ -91,4 +91,8 @@ export function staticSetCompatibilityFingerprint(data: StaticData) {
       }))
       .sort(byId),
   });
+}
+
+export function planSessionSnapshotFingerprint(snapshot: PlanSessionSnapshot) {
+  return stableFingerprint({ version: 'match-plan-session-v1', snapshot });
 }

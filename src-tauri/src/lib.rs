@@ -22,6 +22,12 @@ pub fn run() {
                             sql: include_str!("../../src/storage/schema_m3.sql"),
                             kind: MigrationKind::Up,
                         },
+                        Migration {
+                            version: 3,
+                            description: "versioned active plan sessions",
+                            sql: include_str!("../../src/storage/schema_m8.sql"),
+                            kind: MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

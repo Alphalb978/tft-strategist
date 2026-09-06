@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createRecommendations,
+  lockPlanSession,
   loadApplication,
   refreshApplication,
-  selectPlan,
   type ApplicationState,
 } from '../services/application';
 import { defaultSettings, MemoryRepository } from '../storage/repository';
@@ -13,7 +13,7 @@ const state = (): ApplicationState => ({
   data,
   ...createRecommendations(data, defaultSettings, NOW),
   settings: defaultSettings,
-  selection: null,
+  activeSession: null,
   source: 'Bundled snapshot',
   assets: {},
 });
@@ -32,7 +32,7 @@ describe('application persistence and refresh', () => {
     );
     const result = await loadApplication(repo);
     expect(result.source).toBe('Bundled snapshot');
-    expect(result.selection).toBeNull();
+    expect(result.activeSession).toBeNull();
     expect(result.notices.join()).toContain('cache ignored');
   });
   it('loads warm cache and clamps settings', async () => {
@@ -65,16 +65,16 @@ describe('application persistence and refresh', () => {
     expect(result.portfolio.plans).toHaveLength(3);
     expect(result.assets).toEqual({});
   });
-  it('stores immutable selected-plan snapshot', async () => {
+  it('stores immutable selected-plan session snapshot', async () => {
     const repo = new MemoryRepository();
     const s = state();
-    const selection = await selectPlan(s.portfolio.plans[0].candidate.playbook.id, s, repo);
-    expect(selection.playbookId).toBe(s.portfolio.plans[0].candidate.playbook.id);
+    const session = await lockPlanSession(s.portfolio.plans[0].candidate.playbook.id, s, repo);
+    expect(session.selectedPlaybookId).toBe(s.portfolio.plans[0].candidate.playbook.id);
     s.portfolio.plans = [];
-    expect((await repo.get<typeof selection>('selection'))?.snapshot.plans).toHaveLength(3);
+    expect((await repo.getActivePlanSession())?.snapshot.portfolio.plans).toHaveLength(3);
   });
   it('refuses to lock a plan outside the portfolio', async () => {
-    await expect(selectPlan('missing', state(), new MemoryRepository())).rejects.toThrow(
+    await expect(lockPlanSession('missing', state(), new MemoryRepository())).rejects.toThrow(
       'not in this portfolio',
     );
   });

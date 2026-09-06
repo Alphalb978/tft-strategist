@@ -71,17 +71,9 @@ export function DataSettings({
             <br />
             Storage: {mode}
           </p>
-          <button
-            className="secondary"
-            onClick={onRefresh}
-            disabled={refreshing || !!state.selection}
-          >
+          <button className="secondary" onClick={onRefresh} disabled={refreshing}>
             <RefreshCw size={15} className={refreshing ? 'spin' : ''} />
-            {refreshing
-              ? 'Refreshing…'
-              : state.selection
-                ? 'Unlock plan to refresh'
-                : 'Refresh static source'}
+            {refreshing ? 'Refreshing…' : 'Refresh static source'}
           </button>
           <p>
             <a href={state.data.version.provenance.source} target="_blank" rel="noreferrer">
@@ -129,17 +121,9 @@ export function DataSettings({
               explicit after refresh.
             </p>
           )}
-          <button
-            className="secondary"
-            onClick={onMetaRefresh}
-            disabled={metaRefreshing || !!state.selection}
-          >
+          <button className="secondary" onClick={onMetaRefresh} disabled={metaRefreshing}>
             <RefreshCw size={15} className={metaRefreshing ? 'spin' : ''} />
-            {metaRefreshing
-              ? 'Refreshing meta…'
-              : state.selection
-                ? 'Unlock plan to refresh'
-                : 'Refresh meta & discovery'}
+            {metaRefreshing ? 'Refreshing meta…' : 'Refresh meta & discovery'}
           </button>
           <p className="fine-print">
             Bounded Challenger sample through the native Riot boundary. Completed matches stay

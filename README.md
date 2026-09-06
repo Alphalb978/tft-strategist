@@ -1,6 +1,6 @@
 # TFT Strategist
 
-A private TFT pre-game desktop companion. The current build includes four attributed and re-audited Set 18 playbooks, a deterministic three-plan portfolio, visible confidence, playbook detail, local persistence, and read-only history/scouting extension points. No runtime LLM or protected game-process access.
+A private TFT pre-game desktop companion. The current build includes attributed Set 18 playbooks, a deterministic three-plan portfolio, visible confidence, local Riot/meta/discovery evidence, source-backed match playbooks, and a durable selected-plan session workflow. No runtime LLM or protected game-process access.
 
 ## Run
 
@@ -56,13 +56,14 @@ npm run data:refresh
 npm run data:refresh -- --download
 ```
 
-The UI's **Refresh static source** validates and caches a successful fetch. Failure retains prior data. Locking a plan freezes the portfolio; unlock before refreshing. Incompatible saved selections are discarded.
+The UI's **Refresh static source** validates and caches a successful fetch. Failure retains prior data. Locking a plan creates one immutable local session snapshot; current data may refresh independently without rewriting it. Incompatible sessions remain visible as historical/stale snapshots until explicitly switched or ended.
 
 ## Current support
 
 - **Playbooks:** four public Mobalytics guide examples, labeled Experimental because the app has no measured outcomes. Boards, stages, role/item directions and broad routes are attributed curation.
 - **Scoring:** inputs, risk estimates, contest elasticity, core criticality and optimizer weights are seeded and labeled. Personal influence defaults to 5%, bounded to 5–10%; no history currently means zero adjustment.
-- **Team Planner:** disabled / Unverified. Mapping, fixture, round-trip tests and human client paste remain outstanding. No speculative codes are emitted.
+- **Match workflow:** one explicit active plan survives navigation and restart, reuses the M7 playbook, persists lightweight stage/Decision Map state, and preserves replaced/ended records for future match reconciliation.
+- **Team Planner:** disabled / Unverified. Public candidate format evidence exists, but the audited Set 18 mapping, independent fixture and human client paste remain outstanding. No speculative codes are emitted.
 - **Riot:** contracts and a fixture-backed scanner exist. No authenticated provider or live account/lobby connection. No environment variables or API keys are consumed by M1.
 - **Rules:** board capacity, occupied slots, Riftbeast 10 capacity, Lux/Elder Dragon counting, normal duplicate counting, shop odds, pools, XP, interest, star copies, item recipes, and current-set references are fixture-backed and validated. Emblems, other conditional capacity exceptions, most live augment statuses, and Team Planner remain unverified.
 - **Guidance:** missing stabilization boards, alternatives, substitutes, actionable pivots, precise timing and positioning are explicitly unavailable.

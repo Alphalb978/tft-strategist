@@ -9,11 +9,14 @@ import {
   Radio,
   RotateCcw,
   ShieldQuestion,
+  Square,
   Swords,
   WandSparkles,
 } from 'lucide-react';
 import type {
   Playbook as PlaybookModel,
+  PlanSession,
+  PlanSessionManualState,
   RecommendationCandidate,
   StrategyFactStatus,
   StrategyStageUnit,
@@ -185,28 +188,61 @@ export function Playbook({
   state,
   onBack,
   onLock,
+  onEnd,
+  onManualState,
   onOpen,
+  session,
+  snapshotContext,
+  activeMode,
 }: {
   plan: PlaybookModel;
   candidate: RecommendationCandidate;
   state: ApplicationState;
   onBack: () => void;
   onLock: () => void;
+  onEnd: () => void;
+  onManualState: (
+    change: Partial<
+      Pick<
+        PlanSessionManualState,
+        'stageId' | 'decisionNodeId' | 'decisionPathEdgeIds' | 'pivotTargetId'
+      >
+    >,
+  ) => void;
   onOpen: (id: string) => void;
+  session: PlanSession | null;
+  snapshotContext: boolean;
+  activeMode: boolean;
 }) {
-  const [stageId, setStageId] = useState(plan.strategy.stages.at(-1)?.id ?? '');
-  const [decisionNodeId, setDecisionNodeId] = useState(plan.strategy.decisionMap.rootNodeId ?? '');
-  const [decisionPath, setDecisionPath] = useState<string[]>([]);
+  const isActivePlan = session?.selectedPlaybookId === plan.id;
+  const [stageId, setStageId] = useState(
+    (isActivePlan ? session.manualState.stageId : null) ?? plan.strategy.stages.at(-1)?.id ?? '',
+  );
+  const [decisionNodeId, setDecisionNodeId] = useState(
+    (isActivePlan ? session.manualState.decisionNodeId : null) ??
+      plan.strategy.decisionMap.rootNodeId ??
+      '',
+  );
+  const [decisionPath, setDecisionPath] = useState<string[]>(
+    isActivePlan ? session.manualState.decisionPathEdgeIds : [],
+  );
   const { data, assets } = state;
   const stage = plan.strategy.stages.find((item) => item.id === stageId) ?? plan.strategy.stages[0];
-  const locked = state.selection?.playbookId === plan.id;
+  const locked = isActivePlan;
   const eligible = state.portfolio.plans.some((item) => item.candidate.playbook.id === plan.id);
   const warnings = validatePlaybook(plan, data);
   const itemName = (id: string) => data.items.find((item) => item.id === id)?.name ?? id;
   const championName = (id: string) => data.champions.find((unit) => unit.id === id)?.name ?? id;
-  const measured = state.meta?.familyStats.find((stat) => stat.familyId === plan.family.id);
+  const measured =
+    session && snapshotContext
+      ? session.snapshot.evidence.metaFamilyStats.find((stat) => stat.familyId === plan.family.id)
+      : state.meta?.familyStats.find((stat) => stat.familyId === plan.family.id);
   const discovered = plan.discovery
-    ? state.discovery?.clusters.find((cluster) => cluster.id === plan.discovery?.clusterId)
+    ? session && snapshotContext
+      ? session.snapshot.evidence.discoveryClusters.find(
+          (cluster) => cluster.id === plan.discovery?.clusterId,
+        )
+      : state.discovery?.clusters.find((cluster) => cluster.id === plan.discovery?.clusterId)
     : undefined;
   const quickStrip = buildQuickStrip(plan, state.portfolio, championName, itemName);
   const pivotGraph = buildPivotGraph(state.portfolio);
@@ -217,16 +253,58 @@ export function Playbook({
     if (!next) return;
     setDecisionPath((path) => [...path, edgeId]);
     setDecisionNodeId(next.id);
+    if (isActivePlan)
+      onManualState({
+        decisionNodeId: next.id,
+        decisionPathEdgeIds: [...decisionPath, edgeId],
+      });
   };
   const resetDecision = () => {
     setDecisionPath([]);
     setDecisionNodeId(plan.strategy.decisionMap.rootNodeId ?? '');
+    if (isActivePlan)
+      onManualState({
+        decisionNodeId: plan.strategy.decisionMap.rootNodeId,
+        decisionPathEdgeIds: [],
+      });
   };
   return (
     <>
       <button className="back-button" onClick={onBack}>
-        <ArrowLeft size={16} /> Back to plans
+        <ArrowLeft size={16} /> {activeMode ? 'Back to current plans' : 'Back to plans'}
       </button>
+      {activeMode && session && (
+        <div className={`active-match-header ${session.compatibility.state}`}>
+          <div>
+            <span className="section-kicker">ACTIVE MATCH PLAN</span>
+            <strong>
+              Locked{' '}
+              {new Date(session.lockedAt).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+              {' · '}snapshot #{session.snapshot.selectedRank}
+            </strong>
+            <small>
+              {session.compatibility.state === 'current'
+                ? 'Local snapshot · safe to resume offline'
+                : 'Historical snapshot · current data is incompatible'}
+            </small>
+          </div>
+          <button className="end-session" onClick={onEnd}>
+            <Square size={14} /> End session
+          </button>
+        </div>
+      )}
+      {session?.compatibility.state === 'stale' && snapshotContext && (
+        <div className="stale-session-notice" role="status">
+          <ShieldQuestion size={17} />
+          <span>
+            <strong>Showing the exact historical snapshot.</strong>{' '}
+            {session.compatibility.reasons.join(' ')} Team Planner copying stays disabled.
+          </span>
+        </div>
+      )}
       <div className="detail-heading">
         <div>
           <div className="eyebrow">
@@ -248,13 +326,23 @@ export function Playbook({
           <button
             className="primary"
             onClick={onLock}
-            disabled={locked || !eligible || Boolean(state.selection)}
+            disabled={
+              locked ||
+              !eligible ||
+              Boolean(session && snapshotContext && session.compatibility.state === 'stale')
+            }
             title={
               !eligible ? 'Only a plan in your three-plan portfolio can be locked.' : undefined
             }
           >
             <span>{locked ? <Check size={16} /> : <Bookmark size={16} />}</span>
-            {locked ? 'Plan locked' : !eligible ? 'Library preview' : 'Lock this plan'}
+            {locked
+              ? 'Plan active'
+              : !eligible
+                ? 'Library preview'
+                : session
+                  ? 'Switch to this plan'
+                  : 'Lock this plan'}
           </button>
         </div>
       </div>
@@ -331,7 +419,10 @@ export function Playbook({
               role="tab"
               aria-selected={stage?.id === item.id}
               className={stage?.id === item.id ? 'active' : ''}
-              onClick={() => setStageId(item.id)}
+              onClick={() => {
+                setStageId(item.id);
+                if (isActivePlan) onManualState({ stageId: item.id });
+              }}
             >
               <strong>{item.label}</strong>
               <span>
@@ -547,7 +638,11 @@ export function Playbook({
             <button
               key={node.id}
               className={node.id === plan.id ? 'active' : ''}
-              onClick={() => node.id !== plan.id && onOpen(node.id)}
+              onClick={() => {
+                if (node.id === plan.id) return;
+                if (isActivePlan) onManualState({ pivotTargetId: node.id });
+                onOpen(node.id);
+              }}
             >
               <span>{node.role}</span>
               <strong>{node.title}</strong>
@@ -560,7 +655,13 @@ export function Playbook({
             .map((edge) => {
               const destination = pivotGraph.nodes.find((node) => node.id === edge.to);
               return (
-                <button key={edge.id} onClick={() => onOpen(edge.to)}>
+                <button
+                  key={edge.id}
+                  onClick={() => {
+                    if (isActivePlan) onManualState({ pivotTargetId: edge.to });
+                    onOpen(edge.to);
+                  }}
+                >
                   <span className="pivot-arrow">→</span>
                   <div>
                     <strong>{destination?.title}</strong>

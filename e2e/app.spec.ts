@@ -23,11 +23,14 @@ test('three plans, real art, readable detail and safe planner status', async ({ 
   await page.getByRole('tab', { name: /Level 7 roll/ }).click();
   await expect(page.getByText('Exact board unavailable')).toBeVisible();
   await page.getByRole('button', { name: 'Lock this plan' }).click();
-  await expect(page.getByRole('button', { name: 'Plan locked', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Plan active', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Active plan', exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByText(/Portfolio locked ·/)).toBeVisible();
-  await page.getByRole('button', { name: 'Unlock', exact: true }).click();
-  await expect(page.getByText(/Portfolio locked ·/)).toHaveCount(0);
+  await expect(page.getByText(/Active ·/)).toBeVisible();
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  await expect(page.getByText('ACTIVE MATCH PLAN', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'End session', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Active plan', exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 test('refresh failure keeps usable plans and settings persist', async ({ page }) => {
@@ -186,6 +189,98 @@ for (const width of [1440, 1000, 860])
       await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
     ).toBe(true);
     await page.screenshot({ path: `artifacts/m6-detail-${width}.png`, fullPage: true });
+    expect(errors).toEqual([]);
+  });
+
+for (const width of [1440, 1000, 860])
+  test(`M8 lock, resume, switch, stale history, and end workflow at ${width}px`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/');
+    await expect(
+      page.getByRole('heading', { name: 'Three plans. More possibilities.' }),
+    ).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+    await expect(page.getByRole('button', { name: /Copy Team Code/ })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /Copy Team Code/ })).toHaveAttribute(
+      'title',
+      /no audited planner-ID mapping, independent known-good fixture, or manual TFT-client paste verification/i,
+    );
+    await page.getByRole('button', { name: 'Lock this plan' }).click();
+    await expect(page.getByText('ACTIVE MATCH PLAN', { exact: true })).toBeVisible();
+    await expect(page.getByText(/Local snapshot · safe to resume offline/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Active plan', exact: true })).toBeVisible();
+    await page.screenshot({ path: `artifacts/m8-active-${width}.png`, fullPage: true });
+
+    const firstStage = page.getByRole('tab').first();
+    const firstStageLabel = await firstStage.textContent();
+    await firstStage.click();
+    await page.getByRole('button', { name: 'Comps', exact: true }).click();
+    await expect(page.getByText(/Active ·/)).toBeVisible();
+    await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    await expect(page.getByRole('tab').first()).toHaveAttribute('aria-selected', 'true');
+    expect(await page.getByRole('tab').first().textContent()).toBe(firstStageLabel);
+
+    await page.reload();
+    await expect(page.getByText(/Active ·/)).toBeVisible();
+    await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    await expect(page.getByRole('tab').first()).toHaveAttribute('aria-selected', 'true');
+    await page.locator('.pivot-edges > button').first().click();
+    await expect(page.getByRole('button', { name: 'Switch to this plan' })).toBeVisible();
+    await page.getByRole('button', { name: 'Switch to this plan' }).click();
+    await expect(page.getByRole('status')).toContainText('previous session remains in history');
+    await expect(page.getByText('ACTIVE MATCH PLAN', { exact: true })).toBeVisible();
+    expect(
+      await page.evaluate(() => {
+        const sessions = JSON.parse(
+          localStorage.getItem('strategist:v1:plan-sessions') ?? '[]',
+        ) as { state: string; endReason: string | null }[];
+        return {
+          total: sessions.length,
+          active: sessions.filter((session) => session.state === 'active').length,
+          replaced: sessions.filter((session) => session.endReason === 'replaced').length,
+        };
+      }),
+    ).toEqual({ total: 2, active: 1, replaced: 1 });
+
+    await page.getByRole('button', { name: 'Your plans', exact: true }).click();
+    await page.evaluate(() => {
+      const sessions = JSON.parse(localStorage.getItem('strategist:v1:plan-sessions') ?? '[]') as {
+        state: string;
+        snapshot: { staticData: { items: { name: string }[] } };
+      }[];
+      const active = sessions.find((session) => session.state === 'active');
+      if (!active) throw new Error('Missing active M8 fixture session');
+      const changed = structuredClone(active.snapshot.staticData);
+      changed.items[0].name = `${changed.items[0].name} changed`;
+      localStorage.setItem('strategist:v1:static', JSON.stringify(changed));
+    });
+    await page.reload();
+    await expect(page.getByText(/historical snapshot/)).toBeVisible();
+    await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    await expect(page.getByText('Showing the exact historical snapshot.')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Copy Team Code/ })).toBeDisabled();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    expect(
+      await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    await page.screenshot({ path: `artifacts/m8-stale-active-${width}.png`, fullPage: true });
+    await page.getByRole('button', { name: 'End session', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Active plan', exact: true })).toHaveCount(0);
+    expect(
+      await page.evaluate(() => {
+        const sessions = JSON.parse(
+          localStorage.getItem('strategist:v1:plan-sessions') ?? '[]',
+        ) as { state: string }[];
+        return sessions.every((session) => session.state === 'ended');
+      }),
+    ).toBe(true);
+    await page.screenshot({ path: `artifacts/m8-ended-${width}.png`, fullPage: true });
     expect(errors).toEqual([]);
   });
 

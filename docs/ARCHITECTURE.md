@@ -247,6 +247,12 @@ The generic registry entry now carries a versioned strategy attachment loaded fr
 
 The hot playbook path is local: deterministic quick-strip derivation, acyclic manual Decision Map traversal, TFT-board rendering data and three-plan pivot construction make no network request. Discovered final boards begin with sparse guidance. A mature Variant can inherit only retained holder/item directions after explicit core/capacity compatibility checks; recommendation eligibility and M4 lobby pressure remain independent.
 
+### M8 selected-plan session boundary
+
+The existing selected-plan snapshot is extended into a versioned `PlanSession`; no parallel live-match tracker exists. One active session is enforced by repository operations and a SQLite unique partial index. SQLite replacement is one atomic insert: triggers require the named active predecessor, end its persisted payload as `replaced`, and then admit the successor. Ending retains the record for later completed-match reconciliation.
+
+The lock snapshot includes the selected playbook/candidate, all three portfolio candidates, relevant evidence identities/summaries, and the static display data needed for offline resume. Its fingerprint and payload are immutable after creation. Mutable session state is restricted to stage, Decision Map path/current node, inspected pivot target, current compatibility, end metadata and future match association. Compatibility is evaluated against current static/registry/guidance inputs without rewriting the historical snapshot.
+
 ## Testing
 
 Critical unit/integration tests should cover:

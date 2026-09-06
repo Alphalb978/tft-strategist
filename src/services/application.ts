@@ -2,6 +2,9 @@ import type {
   AggregateMetaDataset,
   CompRegistryEntry,
   DiscoveryDataset,
+  LobbyPressure,
+  PlanSession,
+  PlanSessionManualState,
   Playbook,
   RecommendationPortfolio,
   SelectedPlan,
@@ -25,13 +28,22 @@ import {
   DEFAULT_DISCOVERY_CONFIG,
   discoveryConfigurationFingerprint,
 } from '../strategy/compDiscovery';
+import {
+  createPlanSession,
+  endSessionRecord,
+  evaluatePlanSessionCompatibility,
+  isPlanSession,
+  persistCompatibility,
+  updateManualState,
+  upgradeLegacySelection,
+} from './planSession';
 export interface ApplicationState {
   data: StaticData;
   playbooks: Playbook[];
   portfolio: RecommendationPortfolio;
-  source: 'Bundled snapshot' | 'Local cache' | 'Network';
+  source: 'Bundled snapshot' | 'Local cache' | 'Locked snapshot' | 'Network';
   settings: Settings;
-  selection: SelectedPlan | null;
+  activeSession: PlanSession | null;
   notices: string[];
   assets: Record<string, string>;
   meta: AggregateMetaDataset | null;
@@ -105,15 +117,23 @@ export function createRecommendations(
   };
 }
 export async function loadApplication(repository: Repository): Promise<ApplicationState> {
-  const [cached, savedSettings, selection, savedMeta, savedDiscovery, assetResponse] =
-    await Promise.all([
-      repository.get<StaticData>('static'),
-      repository.get<Settings>('settings'),
-      repository.get<SelectedPlan>('selection'),
-      repository.get<AggregateMetaDataset>('aggregate-meta'),
-      repository.get<DiscoveryDataset>('comp-discovery'),
-      fetch('/data/asset-manifest.json').catch(() => null),
-    ]);
+  const [
+    cached,
+    savedSettings,
+    legacySelection,
+    savedMeta,
+    savedDiscovery,
+    storedSession,
+    assetResponse,
+  ] = await Promise.all([
+    repository.get<StaticData>('static'),
+    repository.get<Settings>('settings'),
+    repository.get<SelectedPlan>('selection'),
+    repository.get<AggregateMetaDataset>('aggregate-meta'),
+    repository.get<DiscoveryDataset>('comp-discovery'),
+    repository.getActivePlanSession(),
+    fetch('/data/asset-manifest.json').catch(() => null),
+  ]);
   const settings = normalizeSettings(savedSettings);
   let cacheUsable = isStaticData(cached);
   if (cacheUsable) {
@@ -123,9 +143,19 @@ export async function loadApplication(repository: Repository): Promise<Applicati
       cacheUsable = false;
     }
   }
-  const response = !cacheUsable ? await fetch('/data/static-set18.json') : null;
-  if (response && !response.ok) throw new Error('The bundled static snapshot could not be loaded.');
-  const data: unknown = cacheUsable ? cached : await response!.json();
+  let response: Response | null = null;
+  if (!cacheUsable) response = await fetch('/data/static-set18.json').catch(() => null);
+  let data: unknown = cached;
+  let source: ApplicationState['source'] = 'Local cache';
+  if (!cacheUsable) {
+    if (response?.ok) {
+      data = await response.json();
+      source = 'Bundled snapshot';
+    } else if (isPlanSession(storedSession) && isStaticData(storedSession.snapshot.staticData)) {
+      data = storedSession.snapshot.staticData;
+      source = 'Locked snapshot';
+    } else throw new Error('The bundled static snapshot could not be loaded.');
+  }
   if (!isStaticData(data))
     throw new Error('Static snapshot schema is unsupported. Refresh the application data.');
   const assets: Record<string, string> = assetResponse?.ok
@@ -138,35 +168,40 @@ export async function loadApplication(repository: Repository): Promise<Applicati
     savedMeta,
     savedDiscovery,
   );
-  let usableSelection: SelectedPlan | null = null;
-  try {
+  let activeSession =
+    isPlanSession(storedSession) && storedSession.state === 'active' ? storedSession : null;
+  const baseState: ApplicationState = {
+    data,
+    ...result,
+    source,
+    settings,
+    activeSession,
+    notices: result.notices,
+    assets,
+  };
+  if (!activeSession && legacySelection) {
+    activeSession = upgradeLegacySelection(legacySelection, baseState);
+    if (activeSession) await repository.createPlanSession(activeSession);
+    // The legacy pointer is one-shot. Its SQLite history row remains intact, but clearing the
+    // settings value prevents an ended M8 session from being silently resurrected on restart.
+    await repository.set('selection', null);
+  }
+  if (activeSession) {
+    const compatibility = evaluatePlanSessionCompatibility(activeSession, data, result);
     if (
-      selection?.set === data.version.set &&
-      selection.patch === data.version.patch &&
-      selection.sourceVersion === data.version.sourceVersion &&
-      Array.isArray(selection.snapshot?.plans) &&
-      selection.snapshot.plans.length === 3 &&
-      selection.snapshot.version === 'portfolio-v4-m6-discovery' &&
-      selection.snapshot.plans.some((p) => p.candidate.playbook.id === selection.playbookId) &&
-      selection.snapshot.plans.every(
-        (p) =>
-          Number.isFinite(p.candidate.score) &&
-          p.candidate.confidence &&
-          validatePlaybook(p.candidate.playbook, data).every((i) => i.severity !== 'error'),
-      )
+      compatibility.state !== activeSession.compatibility.state ||
+      compatibility.reasons.join('\n') !== activeSession.compatibility.reasons.join('\n')
     )
-      usableSelection = selection;
-  } catch {
-    /* Invalid snapshots are discarded; the fresh validated portfolio remains usable. */
+      activeSession = await persistCompatibility(repository, activeSession, compatibility);
   }
   if (cached && !cacheUsable)
     result.notices.push('Incompatible cache ignored; using the bundled snapshot.');
   return {
     data,
     ...result,
-    source: cacheUsable ? 'Local cache' : 'Bundled snapshot',
+    source,
     settings,
-    selection: usableSelection,
+    activeSession,
     assets,
   };
 }
@@ -185,24 +220,75 @@ export async function refreshApplication(
   if (!result.playbooks.length)
     throw new Error('Refreshed roster failed playbook validation; previous cache retained.');
   await repository.set('static', data);
-  return { ...current, data, ...result, source: 'Network' };
+  let activeSession = current.activeSession;
+  if (activeSession) {
+    const compatibility = evaluatePlanSessionCompatibility(activeSession, data, result);
+    activeSession = await persistCompatibility(repository, activeSession, compatibility);
+  }
+  return { ...current, data, ...result, activeSession, source: 'Network' };
 }
-export async function selectPlan(
+export async function lockPlanSession(
   playbookId: string,
   state: ApplicationState,
   repository: Repository,
-): Promise<SelectedPlan> {
-  if (!state.portfolio.plans.some((p) => p.candidate.playbook.id === playbookId))
-    throw new Error('Plan is not in this portfolio.');
-  const selection: SelectedPlan = {
-    id: crypto.randomUUID(),
+  lobby: LobbyPressure | null = null,
+  now = new Date().toISOString(),
+): Promise<PlanSession> {
+  if (state.activeSession) throw new Error('An active plan session already exists.');
+  const session = createPlanSession(playbookId, state, state.portfolio, lobby, now);
+  await repository.createPlanSession(session);
+  return session;
+}
+
+export async function switchPlanSession(
+  playbookId: string,
+  state: ApplicationState,
+  portfolio: RecommendationPortfolio,
+  repository: Repository,
+  lobby: LobbyPressure | null = null,
+  now = new Date().toISOString(),
+): Promise<PlanSession> {
+  const current = state.activeSession;
+  if (!current) throw new Error('There is no active plan session to replace.');
+  if (current.selectedPlaybookId === playbookId) throw new Error('This plan is already active.');
+  const next = createPlanSession(
     playbookId,
-    set: state.data.version.set,
-    patch: state.data.version.patch,
-    sourceVersion: state.data.version.sourceVersion,
-    selectedAt: new Date().toISOString(),
-    snapshot: state.portfolio,
-  };
-  await repository.set('selection', selection);
-  return selection;
+    state,
+    portfolio,
+    lobby,
+    now,
+    crypto.randomUUID(),
+    current.id,
+  );
+  const previous = endSessionRecord(current, 'replaced', now, next.id);
+  await repository.replacePlanSession(previous, next);
+  return next;
+}
+
+export async function endPlanSession(
+  state: ApplicationState,
+  repository: Repository,
+  now = new Date().toISOString(),
+) {
+  if (!state.activeSession) throw new Error('There is no active plan session to end.');
+  const ended = endSessionRecord(state.activeSession, 'ended-without-result', now);
+  await repository.updatePlanSession(ended);
+  return ended;
+}
+
+export async function savePlanSessionManualState(
+  state: ApplicationState,
+  repository: Repository,
+  change: Partial<
+    Pick<
+      PlanSessionManualState,
+      'stageId' | 'decisionNodeId' | 'decisionPathEdgeIds' | 'pivotTargetId'
+    >
+  >,
+  now = new Date().toISOString(),
+) {
+  if (!state.activeSession) throw new Error('There is no active plan session to update.');
+  const updated = updateManualState(state.activeSession, change, now);
+  await repository.updatePlanSession(updated);
+  return updated;
 }

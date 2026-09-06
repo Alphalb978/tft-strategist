@@ -942,6 +942,97 @@ export interface SelectedPlan {
   matchId?: ID;
   snapshot: RecommendationPortfolio;
 }
+export const PLAN_SESSION_SCHEMA_VERSION = 1 as const;
+export type PlanSessionState = 'active' | 'ended';
+export type PlanSessionEndReason = 'ended-without-result' | 'replaced';
+export interface PlanSessionCompatibility {
+  state: 'current' | 'stale';
+  evaluatedAt: string;
+  reasons: string[];
+}
+export interface PlanSessionManualState {
+  stageId: ID | null;
+  decisionNodeId: ID | null;
+  decisionPathEdgeIds: ID[];
+  pivotTargetId: ID | null;
+  updatedAt: string;
+}
+export interface PlanSessionEvidenceSnapshot {
+  aggregateMeta: {
+    datasetId: ID;
+    derivationFingerprint: string;
+    sampleDefinitionFingerprint: string;
+    collectedAt: string;
+  } | null;
+  metaFamilyStats: FamilyMetaStats[];
+  discovery: {
+    datasetId: ID;
+    derivationFingerprint: string;
+    sampleDefinitionFingerprint: string;
+    generatedAt: string;
+  } | null;
+  discoveryClusters: DiscoveryCluster[];
+  lobby: {
+    state: LobbyPressure['state'];
+    coverage: number;
+    expectedOpponents: number;
+    resolvedOpponents: number;
+    relevantGamesAvailable: number;
+    relevantGamesTarget: number;
+    unitPressureVersion: string;
+    fetchedAt: string;
+  } | null;
+}
+export interface VerifiedTeamPlannerSnapshot {
+  codecVersion: string;
+  set: number;
+  code: string;
+  fixtureIds: ID[];
+  manualPasteVerifiedAt: string;
+}
+export interface PlanSessionSnapshot {
+  playbook: Playbook;
+  candidate: RecommendationCandidate;
+  portfolio: RecommendationPortfolio;
+  selectedRank: number;
+  portfolioCandidateIds: ID[];
+  registry: {
+    id: ID;
+    sourceKind: CompRegistryEntry['sourceKind'];
+    lifecycle: DiscoveryLifecycleState;
+    structuralFingerprint: string;
+  };
+  staticData: StaticData;
+  staticCompatibilityFingerprint: string;
+  strategy: {
+    schemaVersion: number;
+    guidanceVersion: string;
+    status: StrategyGuidance['freshness']['state'];
+    staticSourceFingerprint: string;
+    targetBoardFingerprint: string;
+    registryFingerprint: string;
+  };
+  evidence: PlanSessionEvidenceSnapshot;
+  teamPlanner: VerifiedTeamPlannerSnapshot | null;
+}
+export interface PlanSession {
+  schemaVersion: typeof PLAN_SESSION_SCHEMA_VERSION;
+  id: ID;
+  state: PlanSessionState;
+  lockedAt: string;
+  endedAt: string | null;
+  endReason: PlanSessionEndReason | null;
+  replacesSessionId: ID | null;
+  replacedBySessionId: ID | null;
+  selectedPlaybookId: ID;
+  selectedFamilyId: ID;
+  accountContext: { riotId: string; platform: string } | null;
+  snapshot: PlanSessionSnapshot;
+  snapshotFingerprint: string;
+  manualState: PlanSessionManualState;
+  compatibility: PlanSessionCompatibility;
+  reconciliation: { matchId: ID | null };
+}
 export interface PostGameSummary {
   matchId: ID;
   selectedPlanId?: ID;
@@ -953,9 +1044,12 @@ export interface PostGameSummary {
 }
 export interface TeamPlannerSupport {
   state: 'unverified' | 'unsupported' | 'supported';
+  contractVersion: string;
+  formatVersion: string | null;
   reason: string;
   mappingVerified: boolean;
   fixtureVerified: boolean;
   manualPasteVerified: boolean;
+  knownGoodFixtureIds: ID[];
 }
 export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };

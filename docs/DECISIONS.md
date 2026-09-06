@@ -2,6 +2,8 @@
 
 ## Approved product decisions
 
+- M8 represents the chosen match plan as one explicit, versioned active session. Its plan, portfolio, scoring, evidence and display-static snapshot are immutable at lock; stage, Decision Map and inspected pivot target are the only mutable manual fields. Switch and end create auditable state transitions, and current compatibility is evaluated separately from historical truth.
+- M8 Team Planner remains `unverified`. Public Set 18 format claims are useful candidate evidence, but the audited static fixture has no planner-ID mapping, no independent known-good Set 18 code fixture is checked in, and no human current-client paste result exists.
 - M7 strategy guidance is a versioned, source-ledger-backed attachment on the generic curated/discovered comp registry. Facts are individually `sourced`, mechanically `derived`, safely `inherited`, `unavailable`, or `stale`; incompatible guidance stays auditable but is not shown as active truth.
 - M7 discovered-guidance inheritance is deliberately field-level and fail-closed. Only a mature Variant retaining capacity and the complete curated core may inherit retained item-holder directions; stage boards, roll plans, augments, replacements, Decision Maps and positioning are not inherited from final-board similarity.
 - M7 exact TFT hex positions require direct position evidence. Without it the real hex board remains unassigned and visibly says positioning is not verified; roster order is never treated as coordinates.

@@ -49,8 +49,8 @@ export function Home({
       <div className="section-line">
         <h2>Your three-plan portfolio</h2>
         <span>
-          {state.selection
-            ? 'Locked for this game'
+          {state.activeSession
+            ? `Active: ${state.activeSession.snapshot.playbook.title} · current plans remain live`
             : `${state.playbooks.length} source comps · optimized together`}
         </span>
       </div>
