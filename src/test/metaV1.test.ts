@@ -172,12 +172,18 @@ describe('Current Meta V1', () => {
     expect(meta.classifiedBoards).toBe(140);
     expect(familyRepresentation(stat, meta)).toMatchObject({
       rate: 1,
-      denominator: 140,
+      denominator: 40,
       coverage: 0.875,
     });
-    expect(stat.rawFrequency).toBe(0.875);
-    expect(stat.topFour.raw).toBe(4 / 7);
-    expect(stat.topFour.shrunk).not.toBe(stat.topFour.raw);
+    expect(stat.rawFrequency).toBe(1);
+    expect(stat.topFour.raw).toBe(1);
+    expect(meta.discoveryFamilyStats?.[0].rawFrequency).toBe(0.875);
+    expect(meta.discoveryFamilyStats?.[0].topFour.raw).toBe(4 / 7);
+    // Both verified fixture members always finish Top 4, including the cohort prior.
+    expect(stat.topFour.shrunk).toBeLessThanOrEqual(stat.topFour.raw);
+    expect(meta.discoveryFamilyStats?.[0].topFour.shrunk).not.toBe(
+      meta.discoveryFamilyStats?.[0].topFour.raw,
+    );
   });
   it('retains the twenty-observation quality gate and keeps popularity out of M4 penalties', async () => {
     const tiny = await setup(1).run();

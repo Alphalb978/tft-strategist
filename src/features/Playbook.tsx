@@ -1,4 +1,8 @@
 import { useState } from 'react';
+import { CurrentGameEditor } from './SmartCompanion';
+import { ObservedIntelligence } from './ObservedIntelligence';
+import { SmartCompBuilder } from './SmartCompBuilder';
+import { classifyObservedStyle } from '../strategy/observedStyle';
 import {
   ArrowLeft,
   ArrowRight,
@@ -204,6 +208,8 @@ export function Playbook({
   session,
   snapshotContext,
   activeMode,
+  lobby,
+  onCurrentGame,
 }: {
   plan: PlaybookModel;
   candidate: RecommendationCandidate;
@@ -215,7 +221,7 @@ export function Playbook({
     change: Partial<
       Pick<
         PlanSessionManualState,
-        'stageId' | 'decisionNodeId' | 'decisionPathEdgeIds' | 'pivotTargetId'
+        'stageId' | 'decisionNodeId' | 'decisionPathEdgeIds' | 'pivotTargetId' | 'currentGame'
       >
     >,
   ) => void;
@@ -223,7 +229,16 @@ export function Playbook({
   session: PlanSession | null;
   snapshotContext: boolean;
   activeMode: boolean;
+  lobby?: import('../domain/models').LobbyPressure;
+  onCurrentGame: (game: import('../domain/intelligence').CurrentGameState) => void;
 }) {
+  const [builderOpen, setBuilderOpen] = useState(false);
+  const observedPlan =
+    snapshotContext && session?.compatibility.state === 'stale'
+      ? plan
+      : (state.playbooks.find((p) => p.id === plan.id) ?? plan);
+  const game = session?.manualState.currentGame ?? state.currentGame;
+  const observedStyle = classifyObservedStyle(observedPlan, state.data);
   const isActivePlan = session?.selectedPlaybookId === plan.id;
   const [confirmation, setConfirmation] = useState<'end' | 'switch' | null>(null);
   const [copyMessage, setCopyMessage] = useState('');
@@ -322,8 +337,10 @@ export function Playbook({
       <div className="detail-heading">
         <div>
           <div className="eyebrow">
-            {plan.features.style.toUpperCase()} <span> / </span>{' '}
-            {discovered ? 'DISCOVERED STRUCTURE' : 'SOURCE PLAYBOOK'}
+            {observedStyle.kind !== 'unavailable'
+              ? observedStyle.label.toUpperCase()
+              : plan.features.style.toUpperCase()}{' '}
+            <span> / </span> {discovered ? 'DISCOVERED STRUCTURE' : 'SOURCE PLAYBOOK'}
           </div>
           <h1>{plan.title}</h1>
           <p>
@@ -334,6 +351,9 @@ export function Playbook({
           </p>
         </div>
         <div className="detail-actions">
+          <button className="secondary" onClick={() => setBuilderOpen(true)}>
+            Optimize board
+          </button>
           <button
             className="secondary"
             disabled={!canCopy}
@@ -403,6 +423,7 @@ export function Playbook({
 
       <nav className="playbook-nav" aria-label="Playbook sections">
         {[
+          ['strategy-intelligence', 'Intelligence'],
           ['board', 'Board'],
           ['stages', 'Stages'],
           ['items', 'Items'],
@@ -418,7 +439,30 @@ export function Playbook({
           {plan.strategy.coverage.supported}/{plan.strategy.coverage.total} fields
         </span>
       </nav>
+      {builderOpen && (
+        <SmartCompBuilder
+          plan={observedPlan}
+          data={data}
+          intelligence={state.meta?.intelligence}
+          game={game}
+          lobby={lobby}
+          assets={state.assets}
+          onClose={() => setBuilderOpen(false)}
+        />
+      )}
 
+      {activeMode && session && (
+        <CurrentGameEditor data={state.data} value={game} onChange={onCurrentGame} />
+      )}
+      <ObservedIntelligence
+        assets={state.assets}
+        plan={observedPlan}
+        data={data}
+        intelligence={state.meta?.intelligence}
+        game={game}
+        plans={state.playbooks}
+        onBuild={() => setBuilderOpen(true)}
+      />
       <section className="panel target-board-panel" id="board">
         <div className="board-header">
           <div>

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { StaticData, ActiveSetVersion, Augment, Provenance } from '../domain/models';
 import auditedRules from '../../data/rules/set18.json';
+import { compileKnowledge, resolveActiveSet } from './knowledge';
 
 const unit = z.object({
   apiName: z.string(),
@@ -26,7 +27,6 @@ const item = z.object({
   associatedTraits: z.array(z.string()).optional(),
 });
 const payload = z.object({ items: z.array(z.unknown()), setData: z.array(z.unknown()) });
-const identity = z.object({ number: z.number(), mutator: z.string() });
 const recordId = z.object({ apiName: z.string() });
 const setSchema = z.object({
   number: z.number(),
@@ -57,14 +57,7 @@ export function assetUrl(path?: string | null): string | null {
 export function normalizeCommunityDragon(input: unknown, provenance: Provenance): StaticData {
   const raw = payload.parse(input);
   // Never use max(set number) or the last set: payload includes revivals and alternate modes.
-  const selected = raw.setData.find((s) => {
-    const parsed = identity.safeParse(s);
-    return (
-      parsed.success &&
-      parsed.data.number === ACTIVE_SET.set &&
-      parsed.data.mutator === ACTIVE_SET.mutator
-    );
-  });
+  const selected = resolveActiveSet(raw.setData);
   if (!selected)
     throw new Error(
       'Verified active-set roster is absent. A new set requires a reviewed manifest.',
@@ -168,14 +161,14 @@ export function normalizeCommunityDragon(input: unknown, provenance: Provenance)
   const version: ActiveSetVersion = {
     set: set.number,
     name: ACTIVE_SET.name,
-    patch: ACTIVE_SET.patch,
+    patch: provenance.patch ?? ACTIVE_SET.patch,
     sourceVersion: provenance.hash ?? provenance.publishedAt ?? provenance.fetchedAt,
     schemaVersion: 2,
     patchVerified: false,
     parityStatus: auditedRules.parity.status as 'known-stale',
     provenance,
   };
-  return {
+  const data: StaticData = {
     version,
     champions,
     traits,
@@ -188,6 +181,8 @@ export function normalizeCommunityDragon(input: unknown, provenance: Provenance)
       'Board capacity, shop odds, pools, XP, interest, normal trait counting, Lux Avatar and Elder Dragon exceptions are audited in the Set 18 rules fixture.',
     ],
   };
+  data.knowledge = compileKnowledge(input, data);
+  return data;
 }
 
 export interface StaticProvider {

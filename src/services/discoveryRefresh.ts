@@ -8,6 +8,7 @@ import type {
 import type { RiotProvider } from '../providers/riot';
 import type { HistoryStore } from '../storage/history';
 import type { Repository } from '../storage/repository';
+import { deriveIntelligenceAsync } from './intelligenceRefresh';
 import {
   compatibleDiscoveryDataset,
   DEFAULT_DISCOVERY_CONFIG,
@@ -96,6 +97,22 @@ export async function refreshMetaDiscovery(
       : null,
   };
   const discovery = await deriveDiscoveryAsync(input, options.signal);
+  aggregate.dataset.intelligence = await deriveIntelligenceAsync(
+    [
+      aggregate.matches,
+      families,
+      discovery,
+      data,
+      now,
+      {
+        region: sample.platform,
+        ranks: sample.tiers,
+        windowDays: sample.windowDays,
+        membership: aggregate.dataset.verifiedRank?.membership,
+      },
+    ],
+    options.signal,
+  );
   if (options.signal?.aborted) throw new Error('Meta refresh cancelled. Cached evidence retained.');
   if (sample.mode) {
     const bundle = { version: 1 as const, meta: aggregate.dataset, discovery };
@@ -105,7 +122,10 @@ export async function refreshMetaDiscovery(
     await repository.set('meta-catalog-index:v1', [...new Set([...keys, key])]);
     // One SQLite upsert / localStorage replacement publishes a consistent pair.
     await repository.set('meta-current:v1', bundle);
-  } else await repository.set(DISCOVERY_REPOSITORY_KEY, discovery);
+  } else {
+    await repository.set('aggregate-meta', aggregate.dataset);
+    await repository.set(DISCOVERY_REPOSITORY_KEY, discovery);
+  }
   return {
     meta: aggregate.dataset,
     discovery,

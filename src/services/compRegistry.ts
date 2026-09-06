@@ -11,6 +11,8 @@ import type {
 import { validatePlaybook } from '../rules/validation';
 import { canonicalizeBoard } from '../strategy/canonicalBoard';
 import { inheritDiscoveredGuidance } from '../strategy/guidanceInheritance';
+import type { IntelligenceModel } from '../domain/intelligence';
+import { friendlyCompName } from '../strategy/observedIntelligence';
 
 const unavailable = <T>(note: string): Guidance<T> => ({
   value: null,
@@ -27,7 +29,10 @@ function discoveredPlaybook(
   const title =
     cluster.relation.state === 'variant-candidate' && parent
       ? `Variant of ${parentPlaybook?.title ?? parent}`
-      : `Emerging cluster ${cluster.id.replace('cluster-', '')}`;
+      : friendlyCompName(
+          cluster.unitPrevalence.filter((u) => u.prevalence >= 0.8).map((u) => u.championId),
+          data,
+        ).name;
   const provenance = {
     source: 'derived:aggregate-completed-boards',
     fetchedAt: cluster.transitions.at(-1)?.at ?? cluster.stats.freshestGameAt,
@@ -180,6 +185,7 @@ export function buildCompRegistry(
   curated: Playbook[],
   data: StaticData,
   discovery?: DiscoveryDataset | null,
+  intelligence?: IntelligenceModel,
 ): CompRegistryEntry[] {
   const entries: CompRegistryEntry[] = curated.map((playbook) => {
     const canonical = canonicalizeBoard(playbook.target, data);
@@ -215,12 +221,34 @@ export function buildCompRegistry(
       structuralFingerprint: cluster.representative.fingerprint,
       clusterId: cluster.id,
       parentFamilyId: cluster.relation.familyId,
-      recommendationEligible: legal && cluster.recommendationEligible,
+      recommendationEligible:
+        legal &&
+        cluster.recommendationEligible &&
+        !['Stale', 'Retired', 'Experimental'].includes(cluster.lifecycle),
       support: cluster.stats.games,
       effectiveSample: cluster.stats.effectiveSample,
       trendDelta: cluster.stats.adoption.mature ? cluster.stats.adoption.delta : null,
       provenance: playbook.provenance,
     });
+  }
+  for (const entry of entries) {
+    const observed = intelligence?.profiles[entry.id];
+    if (observed) entry.playbook.observed = observed;
+    if (entry.sourceKind === 'discovered') {
+      const naming = friendlyCompName(
+        entry.playbook.family.core.length
+          ? entry.playbook.family.core
+          : entry.playbook.target.units.map((u) => u.championId),
+        data,
+        observed,
+      );
+      entry.playbook.naming = { version: naming.version, evidence: naming.evidence };
+      if (!entry.parentFamilyId) {
+        entry.playbook.title = naming.name;
+        entry.playbook.family.name = naming.name;
+      }
+      entry.playbook.subtitle = 'Observed final-board structure; adaptation uses target gaps.';
+    }
   }
   return entries.sort(
     (a, b) =>

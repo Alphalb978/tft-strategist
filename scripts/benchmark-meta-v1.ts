@@ -28,10 +28,11 @@ const browser = await chromium.launch({ channel: 'msedge', headless: true });
 const page = await browser.newPage();
 await page.goto('http://127.0.0.1:1420');
 await page.locator('.plan-card').last().waitFor();
-await page.evaluate(
-  (b) => localStorage.setItem('strategist:v1:meta-current:v1', JSON.stringify(b)),
-  bundle,
-);
+await page.evaluate(async (b) => {
+  const path = '/src/storage/repository.ts';
+  const { openRepository } = await import(/* @vite-ignore */ path);
+  await (await openRepository()).set('meta-current:v1', b);
+}, bundle);
 const reloadStart = performance.now();
 await page.reload();
 await page.locator('.plan-card').last().waitFor();

@@ -334,7 +334,7 @@ export async function collectAggregateMeta(
     ? stableFingerprint({
         scopeKey,
         days: windowDays,
-        semantics: 'ranked-lobbies-of-cohort-v1',
+        semantics: 'ranked-lobbies-and-verified-membership-v2',
       })
     : stableFingerprint(config);
   const derivationFingerprint = stableFingerprint({
@@ -388,6 +388,19 @@ export async function collectAggregateMeta(
     unclassifiedBoards,
     coverage: observations.length ? classifiedBoards / observations.length : 0,
     observations,
+    verifiedRank: {
+      version: 1,
+      membership: [...new Set(cohort.map((p) => p.puuid))].sort(),
+      fetchedAt: now,
+      tiers: config.tiers,
+      complete: errors.length === 0 && cohort.length < 500,
+      observations: observations.filter((o) => cohort.some((p) => p.puuid === o.puuid)),
+      familyStats: deriveFamilyStatistics(
+        observations.filter((o) => cohort.some((p) => p.puuid === o.puuid)),
+        playbooks,
+        now,
+      ),
+    },
     familyStats: deriveFamilyStatistics(observations, playbooks, now),
     classifierVersion: COMP_CLASSIFIER.version,
     statisticsVersion: META_STATISTICS.version,
@@ -406,6 +419,11 @@ export async function collectAggregateMeta(
   };
   check();
   progress.phase = options.deferPublish ? 'discovery' : 'complete';
+  if (config.mode && dataset.verifiedRank) {
+    dataset.discoveryFamilyStats = dataset.familyStats;
+    dataset.familyStats = dataset.verifiedRank.familyStats;
+    dataset.statisticsPopulation = 'verified-rank';
+  }
   emit();
   if (!options.deferPublish) await repository.set('aggregate-meta', dataset);
   return { dataset, observations, matches: current };

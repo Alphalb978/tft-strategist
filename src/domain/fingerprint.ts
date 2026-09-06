@@ -1,5 +1,19 @@
 import type { PlanSessionSnapshot, Playbook, StaticData } from './models';
 
+// A bounded value cache, not an identity cache: in-place edits still change the signature.
+// Historical sessions often contain identical display catalogs in different cloned objects.
+const staticFingerprints = new Map<string, string>();
+function memoizedStaticFingerprint(value: unknown) {
+  const signature = JSON.stringify(value);
+  const cached = staticFingerprints.get(signature);
+  if (cached) return cached;
+  const fingerprint = stableFingerprint(value);
+  if (staticFingerprints.size >= 4)
+    staticFingerprints.delete(staticFingerprints.keys().next().value!);
+  staticFingerprints.set(signature, fingerprint);
+  return fingerprint;
+}
+
 /** Deterministic, non-cryptographic fingerprint for versioned derived data. */
 export function stableFingerprint(value: unknown): string {
   const stable = (input: unknown): string => {
@@ -40,7 +54,7 @@ export function familyDefinitionsFingerprint(playbooks: Playbook[]) {
 export function staticSetCompatibilityFingerprint(data: StaticData) {
   const byId = <T extends { id: string }>(left: T, right: T) =>
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
-  return stableFingerprint({
+  return memoizedStaticFingerprint({
     version: 'static-set-compatibility-v1',
     set: data.version.set,
     patch: data.version.patch,

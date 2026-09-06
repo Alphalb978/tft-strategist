@@ -21,10 +21,17 @@ import { PLAN_SESSION_SCHEMA_VERSION } from '../domain/models';
 import { validatePlaybook } from '../rules/validation';
 import type { Repository } from '../storage/repository';
 import { traverseDecisionMap } from '../strategy/playbookIntelligence';
+import { validateCurrentGame } from '../strategy/currentGame';
 
 export const PLAN_SESSION_VERSION = 'match-plan-session-v1';
 
 const clone = <T>(value: T): T => structuredClone(value);
+
+function sessionStaticData(data: StaticData): StaticData {
+  const { knowledge, ...display } = data;
+  void knowledge;
+  return display;
+}
 
 export function isPlanSession(value: unknown): value is PlanSession {
   if (!value || typeof value !== 'object') return false;
@@ -139,7 +146,8 @@ export function createPlanSession(
       lifecycle: registry.lifecycle,
       structuralFingerprint: registry.structuralFingerprint,
     },
-    staticData: state.data,
+    staticData: sessionStaticData(state.data),
+    ...(state.data.knowledge ? { knowledgeFingerprint: state.data.knowledge.fingerprint } : {}),
     staticCompatibilityFingerprint: staticSetCompatibilityFingerprint(state.data),
     strategy: {
       schemaVersion: candidate.playbook.strategy.schemaVersion,
@@ -225,13 +233,15 @@ export function updateManualState(
   change: Partial<
     Pick<
       PlanSessionManualState,
-      'stageId' | 'decisionNodeId' | 'decisionPathEdgeIds' | 'pivotTargetId'
+      'stageId' | 'decisionNodeId' | 'decisionPathEdgeIds' | 'pivotTargetId' | 'currentGame'
     >
   >,
   now = new Date().toISOString(),
 ): PlanSession {
   if (session.state !== 'active') throw new Error('Only an active session can be updated.');
   const manualState = { ...session.manualState, ...change, updatedAt: now };
+  if (change.currentGame)
+    manualState.currentGame = validateCurrentGame(change.currentGame, session.snapshot.staticData);
   const playbook = session.snapshot.playbook;
   if (
     manualState.stageId !== null &&

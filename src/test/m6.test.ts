@@ -209,7 +209,8 @@ describe('M6 indexed density discovery, relations, and lifecycle', () => {
     const entry = buildCompRegistry(playbooks, data, result).find(
       (value) => value.sourceKind === 'discovered',
     )!;
-    expect(entry.playbook.title).toMatch(/^Emerging cluster /);
+    expect(entry.playbook.title).toMatch(/Formation$/);
+    expect(entry.playbook.naming?.evidence.length).toBeGreaterThan(0);
     expect(entry.recommendationEligible).toBe(true);
     expect(entry.playbook.provenance.status).toBe('measured');
   });

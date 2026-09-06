@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { StaticData } from './models';
+import { knowledgeSchema } from './knowledgeSchema';
 const status = z.enum(['verified', 'curated', 'seeded', 'unverified']);
 const provenance = z.object({
   source: z.string(),
@@ -13,6 +14,7 @@ const provenance = z.object({
 const ids = z.array(z.string());
 const art = z.string().nullable();
 export const staticDataSchema = z.object({
+  knowledge: knowledgeSchema.optional(),
   version: z.object({
     set: z.literal(18),
     name: z.string(),

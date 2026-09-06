@@ -30,7 +30,11 @@ export interface SessionChain {
   terminal: PlanSession;
 }
 
-export function postGameReviewIsCurrent(review: PostGameReview, chain: SessionChain) {
+export function postGameReviewIsCurrent(
+  review: PostGameReview,
+  chain: SessionChain,
+  staticFingerprint?: string,
+) {
   const terminal = chain.terminal;
   const expected = stableFingerprint({
     reviewVersion: POST_GAME_REVIEW_VERSION,
@@ -47,8 +51,9 @@ export function postGameReviewIsCurrent(review: PostGameReview, chain: SessionCh
     review.canonicalModelVersion === CANONICAL_BOARD_MODEL.version &&
     review.similarityModelVersion === BOARD_SIMILARITY_MODEL.version &&
     review.selectedTargetFingerprint === terminal.snapshot.strategy.targetBoardFingerprint &&
-    review.staticFingerprint === staticSetCompatibilityFingerprint(terminal.snapshot.staticData) &&
-    review.derivationFingerprint === expected
+    review.derivationFingerprint === expected &&
+    review.staticFingerprint ===
+      (staticFingerprint ?? staticSetCompatibilityFingerprint(terminal.snapshot.staticData))
   );
 }
 

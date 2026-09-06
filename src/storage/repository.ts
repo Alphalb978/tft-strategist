@@ -1,4 +1,11 @@
 import type Database from '@tauri-apps/plugin-sql';
+import {
+  hydrateDerived,
+  referenceDerived,
+  largeDerivedKey,
+  readLargeDerived,
+  writeLargeDerived,
+} from './derivedCache';
 import type {
   MatchReconciliation,
   PersonalProfile,
@@ -7,7 +14,7 @@ import type {
   StaticData,
   SelectedPlan,
 } from '../domain/models';
-import { planSessionSnapshotFingerprint } from '../domain/fingerprint';
+import { planSessionSnapshotFingerprint, stableFingerprint } from '../domain/fingerprint';
 import { parsePlatform, type RiotPlatform } from '../providers/riotRouting';
 export interface Settings {
   personalWeight: number;
@@ -198,14 +205,31 @@ class BrowserRepository implements Repository {
   mode = 'Browser local storage' as const;
   async get<T>(key: string): Promise<T | null> {
     try {
+      if (largeDerivedKey(key)) return (await readLargeDerived(key)) as T | null;
       const value = localStorage.getItem(`strategist:v1:${key}`);
-      return value ? (JSON.parse(value) as T) : null;
+      if (!value) return null;
+      let parsed = JSON.parse(value);
+      if (typeof parsed?.derivedStorageRef === 'string')
+        parsed = await readLargeDerived(parsed.derivedStorageRef);
+      return (await hydrateDerived(parsed, (k) => this.get(k))) as T | null;
     } catch {
       return null;
     }
   }
   async set<T>(key: string, value: T) {
-    localStorage.setItem(`strategist:v1:${key}`, JSON.stringify(value));
+    if (largeDerivedKey(key)) return writeLargeDerived(key, value);
+    const referenced = await referenceDerived(value, (k, v) => this.set(k, v));
+    if (
+      key === 'aggregate-meta' ||
+      key === 'meta-current:v1' ||
+      key.startsWith('meta-catalog:v1:')
+    ) {
+      const derivedStorageRef = `meta-bundle:${stableFingerprint(referenced)}`;
+      await writeLargeDerived(derivedStorageRef, referenced);
+      localStorage.setItem(`strategist:v1:${key}`, JSON.stringify({ derivedStorageRef }));
+      return;
+    }
+    localStorage.setItem(`strategist:v1:${key}`, JSON.stringify(referenced));
   }
   async getActivePlanSession() {
     return (await this.listPlanSessions()).find((session) => session.state === 'active') ?? null;
@@ -309,12 +333,15 @@ class SqlRepository implements Repository {
       'SELECT value FROM settings WHERE key = $1',
       [key],
     );
-    return rows[0] ? (JSON.parse(rows[0].value) as T) : null;
+    return rows[0]
+      ? ((await hydrateDerived(JSON.parse(rows[0].value), (k) => this.get(k))) as T)
+      : null;
   }
   async set<T>(key: string, value: T) {
+    const referenced = await referenceDerived(value, (k, v) => this.set(k, v));
     await this.db.execute(
       'INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
-      [key, JSON.stringify(value)],
+      [key, JSON.stringify(referenced)],
     );
     if (key === 'static') {
       const data = value as StaticData;

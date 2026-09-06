@@ -10,7 +10,10 @@ import type {
   RecommendationCandidate,
   ScoreComponent,
   DiscoveryDataset,
+  StaticData,
 } from '../domain/models';
+import type { CurrentGameState } from '../domain/intelligence';
+import { contextualContributions, strategicScenarios } from './currentGame';
 import { candidateContestFor } from './lobbyPressure';
 export const clamp = (n: number, lo = 0, hi = 1) =>
   Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : lo));
@@ -37,6 +40,8 @@ const labels: Record<FeatureKey, string> = {
   fragility: 'Dependency fragility',
 };
 export interface ScoringContext {
+  currentGame?: CurrentGameState;
+  data?: StaticData;
   version: ActiveSetVersion;
   now: string;
   lobby?: LobbyPressure;
@@ -163,7 +168,10 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
       : {};
   const components: ScoreComponent[] = (Object.keys(weights) as FeatureKey[]).map((key) => {
     const isOutcome = key === 'meta' || key === 'floor' || key === 'ceiling';
-    const input = measuredValues[key] ?? (isOutcome ? null : clamp(p.features.values[key], 0, 100));
+    const learned = p.observed?.features[key];
+    const input =
+      measuredValues[key] ??
+      (isOutcome ? null : (learned?.value ?? clamp(p.features.values[key], 0, 100)));
     return {
       key,
       label: labels[key],
@@ -177,7 +185,9 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
             ? (discovered ? context.discovery?.sourceType : context.meta?.sourceType) === 'fixture'
               ? 'fixture'
               : 'measured'
-            : p.features.provenance.status,
+            : learned?.value !== null && learned?.value !== undefined
+              ? 'measured'
+              : p.features.provenance.status,
     };
   });
   const contest = contestFor(p, context.lobby);
@@ -204,6 +214,8 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
     contribution: adjustment,
     status: context.personal ? 'measured' : 'unavailable',
   });
+  const contextual = contextualContributions(p, context.currentGame, context.data);
+  components.push(...contextual);
   const score =
     Math.round(
       clamp(
@@ -221,15 +233,28 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
     components,
     confidence: confidenceFor(p, context),
     contest,
+    scenarios: strategicScenarios(p, context.currentGame, context.data, contest),
     reasons: measuredEligible
       ? [
-          `${positives[0]?.label ?? 'Measured evidence'} is the strongest positive driver.`,
+          contextual.length
+            ? contextual
+                .map(
+                  (c) => `${c.contribution >= 0 ? '+' : ''}${c.contribution.toFixed(1)} ${c.label}`,
+                )
+                .join(' · ')
+            : `${positives[0]?.label ?? 'Measured evidence'} is the strongest positive driver.`,
           discovered
             ? `${discovered.stats.games} clustered boards · ${Math.round(discovered.stats.confidence * 100)}% discovery confidence.`
             : `${measured!.games} classified games · ${Math.round(measured!.confidence * 100)}% aggregate-meta confidence.`,
         ]
       : [
-          `${positives[0]?.label ?? 'Curated structure'} leads the available curated profile.`,
+          contextual.length
+            ? contextual
+                .map(
+                  (c) => `${c.contribution >= 0 ? '+' : ''}${c.contribution.toFixed(1)} ${c.label}`,
+                )
+                .join(' · ')
+            : `${positives[0]?.label ?? 'Curated structure'} leads the available curated profile.`,
           measured
             ? `${measured.games} classified games do not clear the M5 quality gate.`
             : 'Measured outcome evidence is unavailable; neutral outcome fallback is explicit.',

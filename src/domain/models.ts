@@ -1,3 +1,9 @@
+import type {
+  TFTKnowledgeSnapshot,
+  CurrentGameState,
+  IntelligenceModel,
+  ObservedProfile,
+} from './intelligence';
 export type ID = string;
 export type EvidenceLabel = 'Proven' | 'Variant' | 'Emerging' | 'Experimental';
 export type Verification =
@@ -73,6 +79,7 @@ export interface Augment {
   provenance: Provenance;
 }
 export interface StaticData {
+  knowledge?: TFTKnowledgeSnapshot;
   version: ActiveSetVersion;
   champions: Champion[];
   traits: Trait[];
@@ -349,6 +356,8 @@ export interface StrategyFeatures {
   unitCriticality: Record<ID, number>;
 }
 export interface Playbook {
+  observed?: ObservedProfile;
+  naming?: { version: string; evidence: string[] };
   id: ID;
   family: CompFamily;
   set: number;
@@ -653,6 +662,18 @@ export interface FamilyMetaStats {
   quality: 'eligible' | 'insufficient';
 }
 export interface AggregateMetaDataset {
+  statisticsPopulation?: 'verified-rank' | 'discovery-lobby';
+  discoveryFamilyStats?: FamilyMetaStats[];
+  intelligence?: IntelligenceModel;
+  verifiedRank?: {
+    version: 1;
+    membership: string[];
+    fetchedAt: string;
+    tiers: string[];
+    complete: boolean;
+    observations: MetaObservation[];
+    familyStats: FamilyMetaStats[];
+  };
   scope?: {
     version: 1;
     key: string;
@@ -706,6 +727,7 @@ export interface LadderPlayer {
   leaguePoints: number;
 }
 export interface RecommendationCandidate {
+  scenarios?: { id: string; fit: number; evidence: string }[];
   playbook: Playbook;
   score: number;
   components: ScoreComponent[];
@@ -971,6 +993,7 @@ export interface PlanSessionCompatibility {
   reasons: string[];
 }
 export interface PlanSessionManualState {
+  currentGame?: CurrentGameState;
   stageId: ID | null;
   decisionNodeId: ID | null;
   decisionPathEdgeIds: ID[];
@@ -1011,6 +1034,7 @@ export interface VerifiedTeamPlannerSnapshot {
   manualPasteVerifiedAt: string;
 }
 export interface PlanSessionSnapshot {
+  knowledgeFingerprint?: string;
   playbook: Playbook;
   candidate: RecommendationCandidate;
   portfolio: RecommendationPortfolio;

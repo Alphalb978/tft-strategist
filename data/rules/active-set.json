@@ -1,0 +1,9 @@
+{
+  "set": 18,
+  "mutator": "TFTSet18",
+  "probes": ["DA_18_Xayah", "DA_Fiddlesticks18"],
+  "displayName": "Enchanted Wilds",
+  "reviewedAt": "2026-09-06",
+  "identitySource": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-1/",
+  "note": "Reviewed standard-set identity from the M2-M10 authority; balance patch and hotfix parity are separate and are not asserted by this manifest."
+}

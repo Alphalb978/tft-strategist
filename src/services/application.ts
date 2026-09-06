@@ -20,6 +20,10 @@ import { normalizeSettings } from '../storage/repository';
 import { scoreCandidate } from '../strategy/scoring';
 import { optimizePortfolio } from '../strategy/portfolio';
 import { isStaticData } from '../domain/staticSchema';
+import { stableFingerprint, staticSetCompatibilityFingerprint } from '../domain/fingerprint';
+import { reconcileIntelligence } from '../strategy/intelligenceCompatibility';
+import type { CurrentGameState } from '../domain/intelligence';
+import { validateCurrentGame } from '../strategy/currentGame';
 import { auditStaticData } from '../rules/ruleSet';
 import { COMP_CLASSIFIER } from '../strategy/compClassifier';
 import { META_STATISTICS, compatibleMetaDataset } from '../strategy/metaStatistics';
@@ -40,6 +44,8 @@ import {
   upgradeLegacySelection,
 } from './planSession';
 export interface ApplicationState {
+  currentGame?: CurrentGameState;
+  sessionKnowledge?: StaticData['knowledge'];
   data: StaticData;
   playbooks: Playbook[];
   portfolio: RecommendationPortfolio;
@@ -122,13 +128,26 @@ export function createRecommendations(
   }
   if (discovery && !usableDiscovery)
     notices.push('Incompatible discovery cache ignored and queued for recomputation.');
-  const registry = buildCompRegistry(playbooks, data, usableDiscovery);
+  const intelligence = usableMeta?.intelligence;
+  const intelligenceCurrent =
+    intelligence?.version === 'intelligence-v1' &&
+    intelligence.knowledgeFingerprint ===
+      (data.knowledge?.fingerprint ?? data.version.sourceVersion) &&
+    Date.parse(now) - Date.parse(intelligence.generatedAt) <=
+      (usableMeta?.scope?.windowDays ?? 21) * 86400000;
+  const registry = buildCompRegistry(
+    playbooks,
+    data,
+    usableDiscovery,
+    intelligenceCurrent ? intelligence : undefined,
+  );
   const recommendationPlaybooks = registry
     .filter((entry) => entry.recommendationEligible)
     .map((entry) => entry.playbook);
   const portfolio = optimizePortfolio(
     recommendationPlaybooks.map((p) =>
       scoreCandidate(p, {
+        data,
         version: data.version,
         now,
         personalWeight: settings.personalWeight,
@@ -148,6 +167,31 @@ export function createRecommendations(
     registry,
     personal,
   };
+}
+/** Shared registry boundary for every live re-score, including partial lobby scans. */
+export function rescoreRecommendations(
+  state: ApplicationState,
+  lobby?: LobbyPressure,
+  now = new Date().toISOString(),
+) {
+  return optimizePortfolio(
+    state.registry
+      .filter((e) => e.recommendationEligible && !['Stale', 'Retired'].includes(e.lifecycle))
+      .map((e) =>
+        scoreCandidate(e.playbook, {
+          data: state.data,
+          version: state.data.version,
+          now,
+          lobby,
+          meta: state.meta,
+          discovery: state.discovery,
+          personal: state.personal ?? undefined,
+          personalWeight: state.settings.personalWeight,
+          currentGame: state.activeSession?.manualState.currentGame ?? state.currentGame,
+        }),
+      ),
+    now,
+  );
 }
 export async function loadApplication(repository: Repository): Promise<ApplicationState> {
   const [
@@ -192,6 +236,18 @@ export async function loadApplication(repository: Repository): Promise<Applicati
   }
   if (!isStaticData(data))
     throw new Error('Static snapshot schema is unsupported. Refresh the application data.');
+  if (!data.knowledge) {
+    const bundled = await fetch('/data/static-set18.json')
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    if (
+      isStaticData(bundled) &&
+      bundled.knowledge &&
+      staticSetCompatibilityFingerprint(bundled) === staticSetCompatibilityFingerprint(data)
+    )
+      data = { ...data, knowledge: bundled.knowledge };
+  }
+  if (!isStaticData(data)) throw new Error('Knowledge upgrade is incompatible.');
   const assets: Record<string, string> = assetResponse?.ok
     ? await assetResponse.json().catch(() => ({}))
     : {};
@@ -205,6 +261,11 @@ export async function loadApplication(repository: Repository): Promise<Applicati
   );
   let activeSession =
     isPlanSession(storedSession) && storedSession.state === 'active' ? storedSession : null;
+  const sessionKnowledge = activeSession?.snapshot.knowledgeFingerprint
+    ? ((await repository.get<NonNullable<StaticData['knowledge']>>(
+        `knowledge:${activeSession.snapshot.knowledgeFingerprint}`,
+      )) ?? undefined)
+    : undefined;
   const baseState: ApplicationState = {
     data,
     ...result,
@@ -215,6 +276,13 @@ export async function loadApplication(repository: Repository): Promise<Applicati
     assets,
     personal: result.personal,
   };
+  let currentGame: CurrentGameState | undefined;
+  try {
+    const savedGame = await repository.get('current-game:v1');
+    if (savedGame) currentGame = validateCurrentGame(savedGame, data);
+  } catch {
+    /* A previous-set draft must not become current-game evidence. */
+  }
   if (!activeSession && legacySelection) {
     activeSession = upgradeLegacySelection(legacySelection, baseState);
     if (activeSession) await repository.createPlanSession(activeSession);
@@ -239,6 +307,8 @@ export async function loadApplication(repository: Repository): Promise<Applicati
     settings,
     activeSession,
     assets,
+    sessionKnowledge,
+    currentGame: activeSession?.manualState.currentGame ?? currentGame,
   };
 }
 export async function refreshApplication(
@@ -246,17 +316,50 @@ export async function refreshApplication(
   repository: Repository,
 ): Promise<ApplicationState> {
   const data = await new CommunityDragonProvider().fetch();
+  const structureUnchanged =
+    staticSetCompatibilityFingerprint(data) === staticSetCompatibilityFingerprint(current.data);
+  // Same-set balance-field changes do not erase structurally compatible classification or raw history.
+  const intelligence = reconcileIntelligence(current.meta?.intelligence, data);
+  const meta =
+    structureUnchanged && current.meta
+      ? {
+          ...current.meta,
+          staticSourceVersion: data.version.sourceVersion,
+          intelligence,
+          derivationFingerprint: stableFingerprint({
+            prior: current.meta.derivationFingerprint,
+            source: data.version.sourceVersion,
+          }),
+        }
+      : current.meta;
+  const discovery =
+    structureUnchanged && current.discovery
+      ? {
+          ...current.discovery,
+          staticSourceVersion: data.version.sourceVersion,
+          derivationFingerprint: stableFingerprint({
+            prior: current.discovery.derivationFingerprint,
+            source: data.version.sourceVersion,
+          }),
+        }
+      : current.discovery;
   const result = createRecommendations(
     data,
     current.settings,
     new Date().toISOString(),
-    current.meta,
-    current.discovery,
+    meta,
+    discovery,
     current.personal,
   );
   if (!result.playbooks.length)
     throw new Error('Refreshed roster failed playbook validation; previous cache retained.');
   await repository.set('static', data);
+  if (result.meta && result.discovery)
+    await repository.set('meta-current:v1', {
+      version: 1,
+      meta: result.meta,
+      discovery: result.discovery,
+    });
   let activeSession = current.activeSession;
   if (activeSession) {
     const compatibility = evaluatePlanSessionCompatibility(activeSession, data, result);
@@ -273,6 +376,9 @@ export async function lockPlanSession(
 ): Promise<PlanSession> {
   if (state.activeSession) throw new Error('An active plan session already exists.');
   const session = createPlanSession(playbookId, state, state.portfolio, lobby, now);
+  if (state.currentGame) session.manualState.currentGame = structuredClone(state.currentGame);
+  if (state.data.knowledge)
+    await repository.set(`knowledge:${state.data.knowledge.fingerprint}`, state.data.knowledge);
   await repository.createPlanSession(session);
   return session;
 }
@@ -298,6 +404,10 @@ export async function switchPlanSession(
     current.id,
   );
   const previous = endSessionRecord(current, 'replaced', now, next.id);
+  if (state.data.knowledge)
+    await repository.set(`knowledge:${state.data.knowledge.fingerprint}`, state.data.knowledge);
+  if (current.manualState.currentGame)
+    next.manualState.currentGame = structuredClone(current.manualState.currentGame);
   await repository.replacePlanSession(previous, next);
   return next;
 }
@@ -319,7 +429,7 @@ export async function savePlanSessionManualState(
   change: Partial<
     Pick<
       PlanSessionManualState,
-      'stageId' | 'decisionNodeId' | 'decisionPathEdgeIds' | 'pivotTargetId'
+      'stageId' | 'decisionNodeId' | 'decisionPathEdgeIds' | 'pivotTargetId' | 'currentGame'
     >
   >,
   now = new Date().toISOString(),

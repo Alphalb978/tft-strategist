@@ -15,6 +15,7 @@ import {
 import { openRepository, type Repository, type Settings } from '../storage/repository';
 import {
   createRecommendations,
+  rescoreRecommendations,
   loadApplication,
   refreshApplication,
   endPlanSession,
@@ -24,8 +25,11 @@ import {
   type ApplicationState,
 } from '../services/application';
 import { scoreCandidate } from '../strategy/scoring';
-import { optimizePortfolio } from '../strategy/portfolio';
 import { Home } from '../features/Home';
+import { validateCurrentGame } from '../strategy/currentGame';
+import { updateManualState } from '../services/planSession';
+import { OBSERVED_MODEL } from '../strategy/observedIntelligence';
+import type { CurrentGameState } from '../domain/intelligence';
 const Playbook = lazy(() =>
   import('../features/Playbook').then((module) => ({ default: module.Playbook })),
 );
@@ -63,6 +67,7 @@ export function App() {
   const repository = useRef<Repository | null>(null),
     main = useRef<HTMLElement | null>(null);
   const operation = useRef(false);
+  const manualWrites = useRef(Promise.resolve());
   const metaController = useRef<AbortController | null>(null);
   const [metaProgress, setMetaProgress] = useState<MetaProgress | null>(null);
   useEffect(() => {
@@ -76,6 +81,63 @@ export function App() {
           setHistoryStore(history);
           setState(loaded);
           setError('');
+          if (
+            loaded.meta &&
+            loaded.discovery &&
+            (loaded.meta.intelligence?.derivationVersion !== OBSERVED_MODEL.version ||
+              loaded.meta.intelligence?.knowledgeFingerprint !== loaded.data.knowledge?.fingerprint)
+          ) {
+            setMetaRefreshing(true);
+            setState({
+              ...loaded,
+              notices: [
+                ...loaded.notices,
+                'Building strategy intelligence from your cached matches…',
+              ],
+            });
+            try {
+              const { rebuildCachedIntelligence } = await import('../services/intelligenceRefresh');
+              const meta = await rebuildCachedIntelligence(
+                loaded.meta,
+                loaded.discovery,
+                loaded.data,
+                loaded.registry.filter((e) => e.sourceKind === 'curated').map((e) => e.playbook),
+                history,
+                repo,
+              );
+              if (alive)
+                setState((current) =>
+                  current
+                    ? {
+                        ...current,
+                        ...createRecommendations(
+                          current.data,
+                          current.settings,
+                          undefined,
+                          meta,
+                          current.discovery,
+                          current.personal,
+                        ),
+                      }
+                    : current,
+                );
+            } catch {
+              if (alive)
+                setState((current) =>
+                  current
+                    ? {
+                        ...current,
+                        notices: [
+                          ...loaded.notices,
+                          'Cached intelligence could not be rebuilt. Retry from Data & settings.',
+                        ],
+                      }
+                    : current,
+                );
+            } finally {
+              if (alive) setMetaRefreshing(false);
+            }
+          }
         }
       } catch {
         if (alive)
@@ -157,6 +219,42 @@ export function App() {
       setToast('Settings saved locally.');
     } catch {
       setToast('Settings could not be saved. Your previous settings are unchanged.');
+    }
+  };
+  const rebuildIntelligence = async () => {
+    if (!state?.meta || !state.discovery || !historyStore || !repository.current || metaRefreshing)
+      return;
+    setMetaRefreshing(true);
+    try {
+      const { rebuildCachedIntelligence } = await import('../services/intelligenceRefresh');
+      const meta = await rebuildCachedIntelligence(
+        state.meta,
+        state.discovery,
+        state.data,
+        state.registry.filter((e) => e.sourceKind === 'curated').map((e) => e.playbook),
+        historyStore,
+        repository.current,
+      );
+      setState((current) =>
+        current
+          ? {
+              ...current,
+              ...createRecommendations(
+                current.data,
+                current.settings,
+                undefined,
+                meta,
+                current.discovery,
+                current.personal,
+              ),
+            }
+          : current,
+      );
+      setToast('Intelligence rebuilt from cached matches. No Riot collection was needed.');
+    } catch {
+      setToast('Cached matches could not be derived. Existing evidence retained.');
+    } finally {
+      setMetaRefreshing(false);
     }
   };
   const refreshMeta = async (
@@ -278,7 +376,8 @@ export function App() {
     operation.current = true;
     try {
       await endPlanSession(state, repository.current);
-      setState({ ...state, activeSession: null });
+      await repository.current.set('current-game:v1', null);
+      setState({ ...state, activeSession: null, currentGame: undefined });
       setPage('home');
       setDetail(null);
       setDetailContext('current');
@@ -292,30 +391,48 @@ export function App() {
   const saveManual = async (change: Parameters<typeof savePlanSessionManualState>[2]) => {
     if (!state?.activeSession || !repository.current) return;
     try {
-      const activeSession = await savePlanSessionManualState(state, repository.current, change);
-      setState((current) => (current ? { ...current, activeSession } : current));
+      const activeSession = updateManualState(state.activeSession, change);
+      setState((current) =>
+        current
+          ? {
+              ...current,
+              activeSession,
+              currentGame: activeSession.manualState.currentGame ?? current.currentGame,
+            }
+          : current,
+      );
+      const repo = repository.current;
+      manualWrites.current = manualWrites.current
+        .catch(() => {})
+        .then(async () => {
+          await repo.updatePlanSession(activeSession);
+        });
+      await manualWrites.current;
     } catch {
       setToast('Match notes could not be saved.');
     }
   };
+  const saveGame = async (input: CurrentGameState) => {
+    if (!state || !repository.current) return;
+    try {
+      const game = validateCurrentGame(input, state.data);
+      if (state.activeSession) {
+        await saveManual({ currentGame: game });
+        return;
+      }
+      setState((current) => (current ? { ...current, currentGame: game } : current));
+      const repo = repository.current;
+      manualWrites.current = manualWrites.current
+        .catch(() => {})
+        .then(() => repo.set('current-game:v1', game));
+      await manualWrites.current;
+    } catch {
+      setToast('Current game could not be saved.');
+    }
+  };
   const livePortfolio = useMemo(() => {
     if (!state) return null;
-    if (!lobby) return state.portfolio;
-    const now = new Date().toISOString();
-    return optimizePortfolio(
-      state.playbooks.map((playbook) =>
-        scoreCandidate(playbook, {
-          version: state.data.version,
-          now,
-          lobby: lobby ?? undefined,
-          personalWeight: state.settings.personalWeight,
-          meta: state.meta,
-          discovery: state.discovery,
-          personal: state.personal ?? undefined,
-        }),
-      ),
-      now,
-    );
+    return rescoreRecommendations(state, lobby ?? undefined);
   }, [lobby, state]);
   const currentPortfolio = livePortfolio ?? state?.portfolio;
   const sessionPortfolio = state?.activeSession?.snapshot.portfolio ?? null;
@@ -332,6 +449,8 @@ export function App() {
           const p = state.playbooks.find((p) => p.id === requestedPlanId);
           return p
             ? scoreCandidate(p, {
+                data: state.data,
+                currentGame: state.activeSession?.manualState.currentGame ?? state.currentGame,
                 version: state.data.version,
                 now: new Date().toISOString(),
                 lobby: lobby ?? undefined,
@@ -347,7 +466,14 @@ export function App() {
     state?.activeSession && (page === 'active' || detailContext === 'session')
       ? {
           ...displayState!,
-          data: state.activeSession.snapshot.staticData,
+          data: {
+            ...state.activeSession.snapshot.staticData,
+            knowledge:
+              state.data.knowledge?.fingerprint ===
+              state.activeSession.snapshot.knowledgeFingerprint
+                ? state.data.knowledge
+                : (state.sessionKnowledge ?? state.activeSession.snapshot.staticData.knowledge),
+          },
           assets: state.assets,
         }
       : displayState;
@@ -480,6 +606,7 @@ export function App() {
                 )}
                 {candidate ? (
                   <Playbook
+                    lobby={lobby ?? undefined}
                     key={`${state.activeSession?.id ?? 'preview'}-${candidate.playbook.id}`}
                     plan={candidate.playbook}
                     candidate={candidate}
@@ -495,6 +622,7 @@ export function App() {
                     onLock={lockOrSwitch}
                     onEnd={end}
                     onManualState={saveManual}
+                    onCurrentGame={saveGame}
                     onOpen={(id) =>
                       open(
                         id,
@@ -510,6 +638,7 @@ export function App() {
                     onData={() => navigate('data')}
                     onScout={() => navigate('scout')}
                     lobby={lobby}
+                    onCurrentGame={saveGame}
                   />
                 ) : page === 'scout' && riotProvider && historyStore ? (
                   <>
@@ -533,6 +662,7 @@ export function App() {
                   </>
                 ) : page === 'data' && riotProvider && historyStore ? (
                   <DataSettings
+                    onRebuildIntelligence={rebuildIntelligence}
                     state={state}
                     mode={repository.current?.mode ?? 'Unavailable'}
                     onSave={saveSettings}

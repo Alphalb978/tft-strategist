@@ -4,7 +4,10 @@ export async function capture(page: Page, options: Parameters<Page['screenshot']
   await page
     .locator('img')
     .evaluateAll((images) =>
-      Promise.all(images.map((image) => (image as HTMLImageElement).decode().catch(() => {}))),
+      Promise.race([
+        Promise.all(images.map((image) => (image as HTMLImageElement).decode().catch(() => {}))),
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]),
     );
   await page.waitForTimeout(200);
   return page.screenshot(options);

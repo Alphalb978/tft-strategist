@@ -3,6 +3,8 @@ import type { LobbyPressure, RecommendationPortfolio } from '../domain/models';
 import type { ApplicationState } from '../services/application';
 import { Art, Portrait } from '../components/Art';
 import { LobbyPressureSummary } from '../components/LobbyPressureSummary';
+import { CurrentGameEditor } from './SmartCompanion';
+import type { CurrentGameState } from '../domain/intelligence';
 export function Home({
   state,
   portfolio,
@@ -10,6 +12,7 @@ export function Home({
   onData,
   onScout,
   lobby,
+  onCurrentGame,
 }: {
   state: ApplicationState;
   portfolio: RecommendationPortfolio;
@@ -17,6 +20,7 @@ export function Home({
   onData: () => void;
   onScout: () => void;
   lobby: LobbyPressure | null;
+  onCurrentGame?: (game: CurrentGameState) => void;
 }) {
   const { data, assets } = state;
   return (
@@ -32,6 +36,14 @@ export function Home({
           Scan current lobby
         </button>
       </div>
+      {onCurrentGame && (
+        <CurrentGameEditor
+          data={data}
+          value={state.activeSession?.manualState.currentGame ?? state.currentGame}
+          onChange={onCurrentGame}
+          compact
+        />
+      )}
       {!state.settings.riotId && (
         <div className="setup-strip">
           <span className="setup-number">01</span>
@@ -92,7 +104,7 @@ export function Home({
                 <b>{c.confidence.level} confidence</b>
               </div>
               <div className="plan-outcomes">
-                {measured ? (
+                {measured?.quality === 'eligible' ? (
                   <>
                     <div>
                       <strong>{measured.averagePlacement.toFixed(2)}</strong>
@@ -107,8 +119,15 @@ export function Home({
                       <span>Win</span>
                     </div>
                     <small>
-                      {measured.games} games · {measured.quality}
+                      {measured.games} games ·{' '}
+                      {state.meta?.statisticsPopulation ?? 'discovery-lobby'} · {measured.quality}
                     </small>
+                  </>
+                ) : measured ? (
+                  <>
+                    <strong>{measured.games} games</strong>
+                    <span>Insufficient sample</span>
+                    <small>Outcomes stay neutral</small>
                   </>
                 ) : (
                   <>
@@ -123,7 +142,28 @@ export function Home({
                   <Radio size={13} />
                   Historical contest: {c.contest.state.toLowerCase()}
                 </span>
-                <p className="card-reason">{c.reasons[0]}</p>
+                {!(state.activeSession?.manualState.currentGame ?? state.currentGame) && (
+                  <p className="card-reason">{c.reasons[0]}</p>
+                )}
+                {(state.activeSession?.manualState.currentGame ?? state.currentGame) && (
+                  <div className="context-reasons" aria-label="Contextual reasons">
+                    <strong>
+                      Context-aware · Context{' '}
+                      {c.components
+                        .filter((x) => x.key.startsWith('context-'))
+                        .reduce((s, x) => s + x.contribution, 0)
+                        .toFixed(1)}
+                    </strong>
+                    {c.components
+                      .filter((x) => x.key.startsWith('context-') && x.contribution !== 0)
+                      .map((x) => (
+                        <p key={x.key}>
+                          {x.contribution > 0 ? '+' : ''}
+                          {x.contribution.toFixed(1)} · {x.label}
+                        </p>
+                      ))}
+                  </div>
+                )}
                 {c.contest.pressuredUnits.length > 0 && (
                   <div className="card-pressure-units" aria-label="Pressured critical units">
                     {c.contest.pressuredUnits.slice(0, 3).map((u) => (

@@ -7,6 +7,7 @@ import type {
   RiotIdentity,
 } from '../domain/models';
 import { parseRiotId } from '../providers/riotId';
+import { staticSetCompatibilityFingerprint } from '../domain/fingerprint';
 import type { RiotProvider } from '../providers/riot';
 import type { HistoryStore } from '../storage/history';
 import type { Repository } from '../storage/repository';
@@ -44,9 +45,15 @@ export async function loadPostGameHistory(
     repository.getPersonalProfile(set),
   ]);
   const chains = reconstructSessionChains(sessions);
+  const staticFingerprints = new Map(
+    chains.map((chain) => [
+      chain.id,
+      staticSetCompatibilityFingerprint(chain.terminal.snapshot.staticData),
+    ]),
+  );
   const currentReviews = reviews.filter((review) => {
     const chain = chains.find((entry) => entry.id === review.chainId);
-    return chain ? postGameReviewIsCurrent(review, chain) : false;
+    return chain ? postGameReviewIsCurrent(review, chain, staticFingerprints.get(chain.id)) : false;
   });
   const expectedReviewIds = currentReviews
     .filter(

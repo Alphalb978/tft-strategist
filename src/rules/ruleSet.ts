@@ -70,8 +70,8 @@ export function auditStaticData(data: StaticData): RuleAuditIssue[] {
   const add = (code: string, message: string) => issues.push({ code, message });
   if (data.version.set !== set18Rules.scope.setNumber)
     add('set', 'Static set does not match rules.');
-  if (data.version.patch !== set18Rules.scope.patch)
-    add('patch', 'Static patch label does not match rules.');
+  // Structural identity is set-scoped. A newer balance label alone does not invalidate
+  // unchanged rosters/recipes; combat and guidance parity remain separately unverified.
   const pool = data.champions.filter((champion) => champion.shopStatus !== 'runtime-variant');
   for (const [costText, expected] of Object.entries(set18Rules.shop.expectedUniqueUnitsByCost)) {
     const cost = Number(costText);

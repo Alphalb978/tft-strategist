@@ -30,6 +30,7 @@ export function DataSettings({
   historyStore,
   fixturePreview,
   onLobby,
+  onRebuildIntelligence,
 }: {
   state: ApplicationState;
   mode: string;
@@ -46,6 +47,7 @@ export function DataSettings({
   historyStore: HistoryStore;
   fixturePreview: boolean;
   onLobby: (lobby: LobbyPressure) => void;
+  onRebuildIntelligence?: () => void;
 }) {
   const [collectionMode, setCollectionMode] = useState<keyof typeof META_BUDGETS>('standard');
   const [region, setRegion] = useState(state.settings.riotPlatform);
@@ -102,6 +104,21 @@ export function DataSettings({
             Export date: {state.data.version.provenance.publishedAt ?? 'Unavailable'}
             <br />
             Storage: {mode}
+            <br />
+            Knowledge: {state.data.knowledge?.version ?? 'Awaiting static refresh'} ·{' '}
+            {state.data.knowledge?.fingerprint ?? 'Unavailable'}
+            <br />
+            Entity coverage:{' '}
+            {state.data.knowledge?.coverage.filter((e) => e.state === 'normalized').length ??
+              0}{' '}
+            normalized ·{' '}
+            {state.data.knowledge?.coverage.filter((e) => e.state === 'excluded').length ?? 0}{' '}
+            explicitly excluded
+            <br />
+            Intelligence: {state.meta?.intelligence?.generatedAt ?? 'Awaiting meta derivation'}
+            <br />
+            Verified rank sample: {state.meta?.verifiedRank?.observations.length ?? 0} participants
+            explicitly in known ladder membership
           </p>
           <button className="secondary" onClick={onRefresh} disabled={refreshing}>
             <RefreshCw size={15} className={refreshing ? 'spin' : ''} />
@@ -114,6 +131,12 @@ export function DataSettings({
           </p>
         </section>
         <section className="panel discovery-status" aria-label="Comp discovery refresh status">
+          <button
+            onClick={onRebuildIntelligence}
+            disabled={metaRefreshing || !state.meta || !state.discovery}
+          >
+            Rebuild intelligence from cached matches
+          </button>
           <div className="panel-heading">
             <RefreshCw size={18} className={metaRefreshing ? 'spin' : ''} />
             <h2>Current meta</h2>

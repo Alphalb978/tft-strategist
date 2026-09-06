@@ -14,6 +14,7 @@ for (const width of [1440, 1000, 860])
     await page.getByRole('button', { name: 'Your plans', exact: true }).click();
     await page.getByRole('button', { name: 'Explore playbook' }).first().click();
     await page.getByRole('button', { name: 'Lock this plan', exact: true }).click();
+    await expect(page.getByText('ACTIVE MATCH PLAN', { exact: true })).toBeVisible();
     const snapshot = await page.evaluate(
       () => JSON.parse(localStorage.getItem('strategist:v1:plan-sessions')!)[0].snapshotFingerprint,
     );

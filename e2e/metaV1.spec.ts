@@ -18,13 +18,16 @@ for (const width of [1440, 1000, 860])
     await page.goto('/');
     await page.locator('.plan-card').last().waitFor();
     await page.evaluate(
-      ({ mature, small }) => {
+      async ({ mature, small }) => {
+        const modulePath = '/src/storage/repository.ts';
+        const { openRepository } = await import(/* @vite-ignore */ modulePath);
+        const repo = await openRepository();
         for (const [key, b] of [
           ['mature', mature],
           ['small', small],
         ] as const)
-          localStorage.setItem(`strategist:v1:${key}`, JSON.stringify(b));
-        localStorage.setItem('strategist:v1:meta-current:v1', JSON.stringify(mature));
+          await repo.set(key, b);
+        await repo.set('meta-current:v1', mature);
         localStorage.setItem(
           'strategist:v1:meta-catalog-index:v1',
           JSON.stringify(['mature', 'small']),

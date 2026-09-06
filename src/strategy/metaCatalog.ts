@@ -2,9 +2,14 @@ import type { AggregateMetaDataset, FamilyMetaStats } from '../domain/models';
 export const META_CATALOG_VERSION = 'meta-catalog-v1';
 /** Representation is conditional on a uniquely classified eligible board, never all players. */
 export function familyRepresentation(stat: FamilyMetaStats, meta: AggregateMetaDataset) {
+  const denominator =
+    meta.statisticsPopulation === 'verified-rank'
+      ? (meta.verifiedRank?.observations.filter((o) => o.classification.state === 'classified')
+          .length ?? 0)
+      : meta.classifiedBoards;
   return {
-    rate: meta.classifiedBoards ? stat.games / meta.classifiedBoards : 0,
-    denominator: meta.classifiedBoards,
+    rate: denominator ? stat.games / denominator : 0,
+    denominator,
     coverage: meta.coverage,
     confidence: Math.min(stat.confidence, meta.coverage),
   };

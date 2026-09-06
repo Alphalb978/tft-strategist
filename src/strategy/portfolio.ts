@@ -30,6 +30,35 @@ export function portfolioInteractions(candidates: RecommendationCandidate[]) {
     return total + values.reduce((sum, value) => sum + value, 0) - Math.max(...values);
   }, 0);
   return [
+    {
+      label: 'Shared scenario failure modes',
+      value:
+        -candidates.reduce(
+          (sum, candidate, i) =>
+            sum +
+            candidates
+              .slice(i + 1)
+              .reduce(
+                (pair, other) =>
+                  pair +
+                  (candidate.scenarios?.filter(
+                    (s) =>
+                      s.fit >= 0.75 && other.scenarios?.some((t) => t.id === s.id && t.fit >= 0.75),
+                  ).length ?? 0),
+                0,
+              ),
+          0,
+        ) * 2,
+    },
+    {
+      label: 'Evidence-backed scenario coverage',
+      value: [...new Set(candidates.flatMap((c) => c.scenarios?.map((s) => s.id) ?? []))].reduce(
+        (sum, id) =>
+          sum +
+          Math.max(...candidates.map((c) => c.scenarios?.find((s) => s.id === id)?.fit ?? 0)) * 8,
+        0,
+      ),
+    },
     { label: 'Individual quality', value: candidates.reduce((s, c) => s + c.score, 0) },
     { label: 'Item opening coverage', value: items.size * 4 },
     { label: 'Distinct openings', value: openings.size * 3 },
@@ -68,14 +97,23 @@ export function optimizePortfolio(
       candidate,
       role:
         i === 0
-          ? 'Primary route'
-          : candidate.playbook.features.itemCoverage.includes('Tear')
-            ? 'AP coverage'
-            : 'Alternate opening',
+          ? 'Best current fit'
+          : (candidate.scenarios
+              ?.slice()
+              .sort((a, b) => b.fit - a.fit)
+              .find(
+                (s) =>
+                  !chosen
+                    .slice(0, i)
+                    .some((c) =>
+                      c.scenarios?.some((other) => other.id === s.id && other.fit >= s.fit),
+                    ),
+              )?.id ??
+            (candidate.contest.state === 'Low' ? 'Low-contest fallback' : 'Complementary route')),
     })),
     objective: Number.isFinite(best) ? best : 0,
     interactions: portfolioInteractions(chosen),
     generatedAt: now,
-    version: 'portfolio-v4-m6-discovery',
+    version: 'portfolio-v5-m11-scenarios',
   };
 }
