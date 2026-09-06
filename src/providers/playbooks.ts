@@ -6,8 +6,10 @@ import type {
   ID,
   Playbook,
   Provenance,
+  StrategyGuidance,
   StaticData,
 } from '../domain/models';
+import { loadStrategyGuidance } from './strategyGuidance';
 import { teamPlanner } from '../rules/teamPlanner';
 import {
   activeBreakpoint,
@@ -75,7 +77,7 @@ export function loadPlaybooks(data: StaticData): Playbook[] {
       'availability',
       'fragility',
     ];
-    return {
+    const playbook = {
       id: s.id,
       set: seed.set,
       patch: seed.patch,
@@ -219,6 +221,9 @@ export function loadPlaybooks(data: StaticData): Playbook[] {
         ),
       },
       planner: teamPlanner.supportStatus(data.version),
+      strategy: undefined as unknown as StrategyGuidance,
     } satisfies Playbook;
+    playbook.strategy = loadStrategyGuidance(playbook, data);
+    return playbook;
   });
 }

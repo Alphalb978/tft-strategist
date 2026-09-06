@@ -2,6 +2,10 @@
 
 ## Approved product decisions
 
+- M7 strategy guidance is a versioned, source-ledger-backed attachment on the generic curated/discovered comp registry. Facts are individually `sourced`, mechanically `derived`, safely `inherited`, `unavailable`, or `stale`; incompatible guidance stays auditable but is not shown as active truth.
+- M7 discovered-guidance inheritance is deliberately field-level and fail-closed. Only a mature Variant retaining capacity and the complete curated core may inherit retained item-holder directions; stage boards, roll plans, augments, replacements, Decision Maps and positioning are not inherited from final-board similarity.
+- M7 exact TFT hex positions require direct position evidence. Without it the real hex board remains unassigned and visibly says positioning is not verified; roster order is never treated as coordinates.
+- M7 portfolio pivot edges require sourced early-unit, item/component or holder compatibility (or an explicit sourced pivot). Final-board overlap alone cannot create an edge, and M4 contest remains an independent transition-cost input.
 - M6 discovery uses versioned canonical champion-board structures, champion-first similarity and deterministic indexed density clustering with explicit noise; placement, player identity and family labels never enter structural features.
 - Curated comp families remain immutable anchors. Discovered variants/emerging structures are separately versioned derived registry entries with neutral generated labels, lifecycle history and fail-closed recommendation gates.
 - Meta/discovery refresh is an explicit bounded action. Immutable completed matches are reusable, while derived classifier/stat/discovery data is invalidated by set/static, family, sample or model/config fingerprints.

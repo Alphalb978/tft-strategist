@@ -20,8 +20,8 @@ test('three plans, real art, readable detail and safe planner status', async ({ 
   await expect(page.getByRole('button', { name: /Copy Team Code/ })).toBeDisabled();
   await expect(page.getByRole('heading', { name: 'Build toward this board' })).toBeVisible();
   await page.screenshot({ path: 'artifacts/playbook-1440.png', fullPage: true });
-  await page.getByRole('tab', { name: 'Stabilize', exact: true }).click();
-  await expect(page.getByText('Stabilization board unverified')).toBeVisible();
+  await page.getByRole('tab', { name: /Level 7 roll/ }).click();
+  await expect(page.getByText('Exact board unavailable')).toBeVisible();
   await page.getByRole('button', { name: 'Lock this plan' }).click();
   await expect(page.getByRole('button', { name: 'Plan locked', exact: true })).toBeDisabled();
   await page.reload();
@@ -179,10 +179,63 @@ for (const width of [1440, 1000, 860])
     await page.locator('.library-card').click();
     await expect(page.getByRole('heading', { name: 'Discovery evidence' })).toBeVisible();
     await expect(page.getByText(/Not recommendation-eligible/)).toBeVisible();
+    await expect(page.getByText('Positioning not verified', { exact: true })).toBeVisible();
+    await expect(page.getByText('Decision Map unavailable', { exact: true })).toBeVisible();
+    await expect(page.getByText('No supported pivot edge', { exact: true })).toBeVisible();
     expect(
       await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
     ).toBe(true);
     await page.screenshot({ path: `artifacts/m6-detail-${width}.png`, fullPage: true });
+    expect(errors).toEqual([]);
+  });
+
+for (const width of [1440, 1000, 860])
+  test(`M7 covered and partial playbooks are usable at ${width}px`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/');
+    await expect(
+      page.getByRole('heading', { name: 'Three plans. More possibilities.' }),
+    ).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Comps', exact: true }).click();
+    await page.getByLabel('Search comps, units, or traits').fill('Adaptors');
+    await page.locator('.library-card').click();
+    await expect(page.getByRole('heading', { name: 'Build toward this board' })).toBeVisible();
+    await expect(page.getByLabel('TFT board visualization')).toBeVisible();
+    await expect(page.locator('.tft-hex')).toHaveCount(28);
+    await expect(page.getByText('Positioning not verified', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('What am I looking for?')).toContainText('Slow roll at level 7');
+    await page.getByRole('tab', { name: /Opener/ }).click();
+    await expect(page.getByRole('tabpanel')).toContainText('Master Yi');
+    await page.getByRole('button', { name: /Yes Build toward the level 7 slow roll/ }).click();
+    await expect(
+      page.getByText('Branch complete. Reassess manually as the game changes.'),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Reset Decision Map' }).click();
+    await expect(page.getByText('Natural Adaptors or reroll/artifact support?')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Portfolio pivot graph' })).toBeVisible();
+    expect(await page.locator('.pivot-nodes button').count()).toBe(3);
+    expect(await page.locator('.pivot-edges > button').count()).toBeGreaterThan(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    expect(
+      await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    await page.screenshot({ path: `artifacts/m7-covered-${width}.png`, fullPage: true });
+
+    await page.getByRole('button', { name: 'Comps', exact: true }).click();
+    await page.getByLabel('Search comps, units, or traits').fill('Apex Predator');
+    await page.locator('.library-card').click();
+    await expect(page.getByRole('tab', { name: /Sourced target only/ })).toBeVisible();
+    await expect(page.getByText('Item guidance unavailable')).toBeVisible();
+    await expect(page.getByText('Decision Map unavailable', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Level and roll plan')).toContainText('Fast 9');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: `artifacts/m7-partial-${width}.png`, fullPage: true });
     expect(errors).toEqual([]);
   });
 for (const width of [1000, 860])

@@ -1,6 +1,15 @@
 import type { Board, Playbook, StaticData } from '../domain/models';
+import { staticSetCompatibilityFingerprint } from '../domain/fingerprint';
+import {
+  STRATEGY_GUIDANCE_VERSION,
+  STRATEGY_SCHEMA_VERSION,
+  strategyRegistryFingerprint,
+  strategyTargetFingerprint,
+} from '../providers/strategyGuidance';
+import { validateDecisionMap } from '../strategy/playbookIntelligence';
 import {
   activeBreakpoint,
+  baseCapacityForLevel,
   capacityForBoard,
   set18Rules,
   traitCount,
@@ -166,6 +175,175 @@ export function validatePlaybook(playbook: Playbook, data: StaticData): Validati
   for (const edge of playbook.decisionMap.edges)
     if (!nodes.has(edge.from) || !nodes.has(edge.to))
       add('decision-edge', 'Decision Map references a missing node.');
+  const strategy = playbook.strategy;
+  const sourceIds = new Set(strategy.sources.map((source) => source.id));
+  const strategyIssue = (
+    code: string,
+    message: string,
+    severity: ValidationIssue['severity'] = 'error',
+  ) => issues.push({ code, message, severity, path: playbook.id });
+  if (strategy.schemaVersion !== STRATEGY_SCHEMA_VERSION)
+    strategyIssue('strategy-schema', 'Strategy schema version is unsupported.');
+  if (!strategy.guidanceVersion.startsWith(STRATEGY_GUIDANCE_VERSION))
+    strategyIssue('strategy-version', 'Strategy guidance version is unsupported.');
+  if (strategy.set !== playbook.set)
+    strategyIssue('strategy-set', 'Strategy guidance and playbook set differ.');
+  const targetFingerprint = strategyTargetFingerprint(
+    playbook.set,
+    playbook.target.capacity,
+    playbook.target.units.map((unit) => unit.championId),
+  );
+  const registryFingerprint = strategyRegistryFingerprint(
+    playbook.family.id,
+    playbook.family.core,
+    targetFingerprint,
+  );
+  if (
+    strategy.freshness.state === 'stale' ||
+    strategy.staticSourceFingerprint !== staticSetCompatibilityFingerprint(data) ||
+    strategy.targetBoardFingerprint !== targetFingerprint ||
+    strategy.registryFingerprint !== registryFingerprint
+  )
+    strategyIssue(
+      'strategy-stale',
+      strategy.freshness.reasons.join(' ') || 'Strategy fingerprints are incompatible.',
+      'unverified',
+    );
+  if (new Set(strategy.sources.map((source) => source.id)).size !== strategy.sources.length)
+    strategyIssue('strategy-source', 'Strategy source IDs must be unique.');
+  const checkFactSources = (status: string, ids: string[], path: string) => {
+    if ((status === 'sourced' || status === 'inherited') && !ids.length)
+      strategyIssue('strategy-provenance', `${path} has no source reference.`);
+    for (const id of ids)
+      if (id !== 'derived:aggregate-completed-boards' && !sourceIds.has(id))
+        strategyIssue('strategy-provenance', `${path} references unknown source ${id}.`);
+  };
+  checkFactSources(
+    strategy.watchUnits.status,
+    strategy.watchUnits.sourceIds,
+    'Watch-unit guidance',
+  );
+  const championIds = new Set(data.champions.map((champion) => champion.id));
+  const allStageIds = new Set(strategy.stages.map((stage) => stage.id));
+  for (const stage of strategy.stages) {
+    for (const next of stage.nextStateIds)
+      if (!allStageIds.has(next))
+        strategyIssue('strategy-stage-edge', `Stage ${stage.id} references missing state ${next}.`);
+    for (const fact of [
+      stage.timing,
+      stage.targetLevel,
+      stage.roster,
+      stage.instruction,
+      stage.entryCondition,
+      stage.exitCondition,
+    ])
+      checkFactSources(fact.status, fact.sourceIds, `Stage ${stage.id}`);
+    for (const unit of stage.roster.value ?? [])
+      if (!championIds.has(unit.championId))
+        strategyIssue('strategy-stage-unit', `Stage ${stage.id} references an unknown unit.`);
+    if (stage.roster.value?.length && stage.targetLevel.value) {
+      const stageBoard: Board = {
+        id: `${playbook.id}-strategy-${stage.id}`,
+        set: playbook.set,
+        targetLevel: stage.targetLevel.value,
+        capacity: baseCapacityForLevel(stage.targetLevel.value) ?? stage.targetLevel.value,
+        units: stage.roster.value.map((unit) => ({
+          championId: unit.championId,
+          items: [],
+          slot: unit.slot,
+        })),
+        requiredUnits: [],
+        augmentIds: [],
+        traitClaims: [],
+        provenance: playbook.provenance,
+      };
+      stageBoard.capacity = capacityForBoard(stageBoard, data) ?? stageBoard.capacity;
+      for (const stageValidation of validateBoard(stageBoard, data).filter(
+        (issue) => issue.severity === 'error',
+      ))
+        strategyIssue('strategy-stage-board', stageValidation.message);
+    }
+  }
+  checkFactSources(strategy.rollPlan.status, strategy.rollPlan.sourceIds, 'Roll plan');
+  for (const holder of strategy.itemHolders) {
+    checkFactSources(holder.fact.status, holder.fact.sourceIds, `Item holder ${holder.holderId}`);
+    if (!championIds.has(holder.holderId))
+      strategyIssue('strategy-holder', `Unknown strategy item holder ${holder.holderId}.`);
+    for (const temporary of holder.temporaryHolderIds)
+      if (!championIds.has(temporary))
+        strategyIssue('strategy-holder', `Unknown temporary holder ${temporary}.`);
+    for (const componentId of holder.componentIds)
+      if (items.get(componentId)?.category !== 'component')
+        strategyIssue('strategy-component', `Invalid strategy component ${componentId}.`);
+    for (const group of holder.groups) {
+      checkFactSources(group.fact.status, group.fact.sourceIds, `Item group ${holder.holderId}`);
+      for (const itemId of group.itemIds)
+        if (items.get(itemId)?.category !== 'combined')
+          strategyIssue('strategy-item', `Invalid strategy item ${itemId}.`);
+    }
+  }
+  for (const branch of strategy.augmentBranches) {
+    checkFactSources(branch.signal.status, branch.signal.sourceIds, `Augment ${branch.id}`);
+    checkFactSources(
+      branch.consequence.status,
+      branch.consequence.sourceIds,
+      `Augment ${branch.id}`,
+    );
+    for (const augmentId of branch.augmentIds)
+      if (!data.augments.some((augment) => augment.id === augmentId))
+        strategyIssue('strategy-augment', `Unknown strategy augment ${augmentId}.`);
+  }
+  for (const replacement of strategy.replacements) {
+    if (
+      ![replacement.targetUnitId, replacement.substituteUnitId].every((id) => championIds.has(id))
+    )
+      strategyIssue(
+        'strategy-replacement',
+        `Replacement ${replacement.id} references unknown units.`,
+      );
+    checkFactSources(
+      replacement.role.status,
+      replacement.role.sourceIds,
+      `Replacement ${replacement.id}`,
+    );
+    checkFactSources(
+      replacement.strength.status,
+      replacement.strength.sourceIds,
+      `Replacement ${replacement.id}`,
+    );
+  }
+  checkFactSources(strategy.warnings.status, strategy.warnings.sourceIds, 'Strategy warnings');
+  for (const issue of validateDecisionMap(strategy.decisionMap))
+    strategyIssue(`strategy-decision-${issue.code}`, issue.message);
+  for (const node of strategy.decisionMap.nodes)
+    checkFactSources(node.fact.status, node.fact.sourceIds, `Decision node ${node.id}`);
+  for (const edge of strategy.decisionMap.edges)
+    checkFactSources(edge.fact.status, edge.fact.sourceIds, `Decision edge ${edge.id}`);
+  if (strategy.positioning.precision === 'exact' && !strategy.positioning.exact.value?.length)
+    strategyIssue('strategy-position', 'Exact positioning requires directly sourced hexes.');
+  if (strategy.positioning.precision === 'coarse' && !strategy.positioning.coarse.value?.length)
+    strategyIssue('strategy-position', 'Coarse positioning requires sourced formation bands.');
+  if (strategy.positioning.precision === 'unverified') {
+    if (strategy.positioning.exact.value?.length || strategy.positioning.coarse.value?.length)
+      strategyIssue('strategy-position', 'Unverified positioning cannot assign units.');
+  }
+  const occupiedHexes = new Set<string>();
+  for (const position of strategy.positioning.exact.value ?? []) {
+    const key = `${position.row}:${position.column}`;
+    if (occupiedHexes.has(key)) strategyIssue('strategy-position', `Duplicate exact hex ${key}.`);
+    occupiedHexes.add(key);
+    if (!playbook.target.units.some((unit) => unit.championId === position.championId))
+      strategyIssue(
+        'strategy-position',
+        'Exact position references a unit outside the target board.',
+      );
+  }
+  for (const position of strategy.positioning.coarse.value ?? [])
+    if (!playbook.target.units.some((unit) => unit.championId === position.championId))
+      strategyIssue(
+        'strategy-position',
+        'Coarse position references a unit outside the target board.',
+      );
   if (
     playbook.planner.state === 'supported' &&
     !(

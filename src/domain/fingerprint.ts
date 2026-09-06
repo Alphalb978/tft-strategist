@@ -1,4 +1,4 @@
-import type { Playbook } from './models';
+import type { Playbook, StaticData } from './models';
 
 /** Deterministic, non-cryptographic fingerprint for versioned derived data. */
 export function stableFingerprint(value: unknown): string {
@@ -30,4 +30,65 @@ export function familyDefinitionsFingerprint(playbooks: Playbook[]) {
       }))
       .sort((a, b) => a.id.localeCompare(b.id)),
   );
+}
+
+/**
+ * Identifies the normalized, gameplay-semantic static set consumed by strategy guidance.
+ * Transport/cache provenance, display art, warnings, and collection order are intentionally
+ * excluded: none of them changes whether a reviewed strategy fact still targets the same set.
+ */
+export function staticSetCompatibilityFingerprint(data: StaticData) {
+  const byId = <T extends { id: string }>(left: T, right: T) =>
+    left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+  return stableFingerprint({
+    version: 'static-set-compatibility-v1',
+    set: data.version.set,
+    patch: data.version.patch,
+    schemaVersion: data.version.schemaVersion,
+    champions: data.champions
+      .map((champion) => ({
+        id: champion.id,
+        name: champion.name,
+        cost: champion.cost,
+        traitIds: [...champion.traitIds].sort(),
+        set: champion.set,
+        role: champion.role ?? null,
+        plannerId: champion.plannerId ?? null,
+        shopStatus: champion.shopStatus,
+        boardEligible: champion.boardEligible,
+      }))
+      .sort(byId),
+    traits: data.traits
+      .map((trait) => ({
+        id: trait.id,
+        name: trait.name,
+        breakpoints: [...trait.breakpoints].sort((left, right) => left - right),
+        counting: trait.counting,
+        availability: trait.availability,
+      }))
+      .sort(byId),
+    items: data.items
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        components: [...item.components].sort(),
+        category: item.category,
+        set: item.set,
+        availability: item.availability,
+      }))
+      .sort(byId),
+    augments: data.augments
+      .map((augment) => ({
+        id: augment.id,
+        name: augment.name,
+        tier: augment.tier ?? null,
+        category: augment.category ?? null,
+        set: augment.set,
+        availability: augment.availability,
+        presentInExport: augment.presentInExport,
+        liveStatus: augment.liveStatus,
+        requiredTraits: [...augment.requiredTraits].sort(),
+      }))
+      .sort(byId),
+  });
 }

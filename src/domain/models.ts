@@ -104,6 +104,179 @@ export interface Guidance<T> {
   note: string;
   source?: string;
 }
+export type StrategyFactStatus = 'sourced' | 'derived' | 'inherited' | 'unavailable' | 'stale';
+export interface StrategySource {
+  id: ID;
+  url: string;
+  title: string;
+  reviewedAt: string;
+  sourceVersion: string;
+  scope: string;
+  note: string;
+}
+export interface StrategyFact<T> {
+  value: T | null;
+  status: StrategyFactStatus;
+  sourceIds: ID[];
+  note: string;
+  inheritedFrom?: ID;
+}
+export type StrategyCoverageKey =
+  | 'stageBoards'
+  | 'rollLevel'
+  | 'items'
+  | 'augments'
+  | 'replacements'
+  | 'positioning'
+  | 'warningsPivots';
+export interface StrategyCoverage {
+  fields: Record<StrategyCoverageKey, StrategyFactStatus>;
+  supported: number;
+  total: number;
+}
+export interface StrategyStageUnit {
+  championId: ID;
+  slot: 'core' | 'flex' | 'temporary';
+  role: 'carry' | 'tank' | 'holder' | 'support' | 'none';
+}
+export interface StrategyStageState {
+  id: ID;
+  label: string;
+  timing: StrategyFact<string>;
+  targetLevel: StrategyFact<number>;
+  roster: StrategyFact<StrategyStageUnit[]>;
+  instruction: StrategyFact<string>;
+  entryCondition: StrategyFact<string>;
+  exitCondition: StrategyFact<string>;
+  nextStateIds: ID[];
+}
+export type RollMilestoneKind = 'hold' | 'roll' | 'slow-roll' | 'push-level' | 'stabilize' | 'cap';
+export interface RollMilestone {
+  id: ID;
+  kind: RollMilestoneKind;
+  label: string;
+  timing: string | null;
+  targetLevel: number | null;
+  stayCondition: string | null;
+  leaveCondition: string | null;
+  nextObjective: boolean;
+}
+export type StrategyItemKind = 'primary' | 'alternative' | 'flexible';
+export interface StrategyItemGroup {
+  kind: StrategyItemKind;
+  itemIds: ID[];
+  fact: StrategyFact<string>;
+}
+export interface StrategyItemHolder {
+  holderId: ID;
+  role: 'carry' | 'tank' | 'temporary-holder';
+  groups: StrategyItemGroup[];
+  temporaryHolderIds: ID[];
+  componentIds: ID[];
+  fact: StrategyFact<string>;
+}
+export type AugmentBranchCategory =
+  | 'trait/emblem'
+  | 'combat'
+  | 'economy'
+  | 'leveling'
+  | 'item/component'
+  | 'reroll'
+  | 'special/comp-specific';
+export interface StrategyAugmentBranch {
+  id: ID;
+  category: AugmentBranchCategory;
+  augmentIds: ID[];
+  signal: StrategyFact<string>;
+  consequence: StrategyFact<string>;
+}
+export interface TraitDelta {
+  traitId: ID;
+  before: number;
+  after: number;
+  delta: number;
+}
+export interface StrategyReplacement {
+  id: ID;
+  targetUnitId: ID;
+  substituteUnitId: ID;
+  role: StrategyFact<string>;
+  traitDelta: TraitDelta[];
+  capacityDelta: number;
+  boardLegal: boolean;
+  strength: StrategyFact<string>;
+}
+export type DecisionConditionKind =
+  | 'manual-core-signal'
+  | 'manual-item-direction'
+  | 'manual-augment-category'
+  | 'manual-economy-tempo'
+  | 'lobby-contest'
+  | 'manual-level-roll'
+  | 'manual-missing-unit'
+  | 'navigation';
+export interface StrategyDecisionNode {
+  id: ID;
+  label: string;
+  kind: 'question' | 'action';
+  fact: StrategyFact<string>;
+}
+export interface StrategyDecisionEdge {
+  id: ID;
+  from: ID;
+  to: ID;
+  label: string;
+  conditionKind: DecisionConditionKind;
+  fact: StrategyFact<string>;
+}
+export interface StrategyDecisionMap {
+  rootNodeId: ID | null;
+  nodes: StrategyDecisionNode[];
+  edges: StrategyDecisionEdge[];
+  status: StrategyFactStatus;
+  note: string;
+}
+export type FormationBand = 'front' | 'mid' | 'back';
+export interface ExactHexPosition {
+  championId: ID;
+  row: number;
+  column: number;
+}
+export interface CoarseFormationPosition {
+  championId: ID;
+  band: FormationBand;
+  side: 'left' | 'center' | 'right' | 'any';
+}
+export interface StrategyPositioning {
+  precision: 'exact' | 'coarse' | 'unverified';
+  exact: StrategyFact<ExactHexPosition[]>;
+  coarse: StrategyFact<CoarseFormationPosition[]>;
+  note: string;
+}
+export interface StrategyGuidance {
+  schemaVersion: 1;
+  guidanceVersion: string;
+  reviewedAt: string;
+  set: number;
+  staticSourceFingerprint: string;
+  targetBoardFingerprint: string;
+  registryFingerprint: string;
+  freshness: {
+    state: 'current' | 'stale';
+    reasons: string[];
+  };
+  sources: StrategySource[];
+  coverage: StrategyCoverage;
+  watchUnits: StrategyFact<ID[]>;
+  stages: StrategyStageState[];
+  rollPlan: StrategyFact<RollMilestone[]>;
+  itemHolders: StrategyItemHolder[];
+  augmentBranches: StrategyAugmentBranch[];
+  replacements: StrategyReplacement[];
+  warnings: StrategyFact<string[]>;
+  decisionMap: StrategyDecisionMap;
+  positioning: StrategyPositioning;
+}
 export interface StageBoard {
   stage: 'early' | 'mid' | 'stabilization' | 'final';
   label: string;
@@ -201,6 +374,7 @@ export interface Playbook {
   variants: CompVariant[];
   features: StrategyFeatures;
   planner: TeamPlannerSupport;
+  strategy: StrategyGuidance;
   discovery?: { clusterId: ID; parentFamilyId: ID | null };
 }
 export interface Confidence {

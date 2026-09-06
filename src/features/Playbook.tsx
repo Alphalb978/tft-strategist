@@ -7,15 +7,178 @@ import {
   Copy,
   GitBranch,
   Radio,
+  RotateCcw,
   ShieldQuestion,
   Swords,
   WandSparkles,
 } from 'lucide-react';
-import type { Playbook as PlaybookModel, RecommendationCandidate } from '../domain/models';
+import type {
+  Playbook as PlaybookModel,
+  RecommendationCandidate,
+  StrategyFactStatus,
+  StrategyStageUnit,
+} from '../domain/models';
 import type { ApplicationState } from '../services/application';
-import { Portrait, Art } from '../components/Art';
+import { Art, Portrait } from '../components/Art';
 import { boardTraitCounts, validatePlaybook } from '../rules/validation';
 import { usedBoardSlots } from '../rules/ruleSet';
+import {
+  buildPivotGraph,
+  buildQuickStrip,
+  traverseDecisionMap,
+} from '../strategy/playbookIntelligence';
+
+const statusLabel = (status: StrategyFactStatus) =>
+  ({
+    sourced: 'Sourced',
+    derived: 'Derived',
+    inherited: 'Inherited',
+    unavailable: 'Unavailable',
+    stale: 'Stale',
+  })[status];
+
+function FactBadge({ status }: { status: StrategyFactStatus }) {
+  return <span className={`fact-badge status-${status}`}>{statusLabel(status)}</span>;
+}
+
+function BoardPortrait({
+  championId,
+  plan,
+  state,
+  slot,
+  role,
+}: {
+  championId: string;
+  plan: PlaybookModel;
+  state: ApplicationState;
+  slot: 'core' | 'flex' | 'temporary';
+  role?: string;
+}) {
+  const champion = state.data.champions.find((unit) => unit.id === championId);
+  if (!champion) return null;
+  return (
+    <Portrait
+      champion={champion}
+      assets={state.assets}
+      compact
+      role={role ?? plan.roles.find((item) => item.championId === championId)?.role ?? slot}
+    />
+  );
+}
+
+function TftBoard({ plan, state }: { plan: PlaybookModel; state: ApplicationState }) {
+  const exact =
+    plan.strategy.positioning.precision === 'exact'
+      ? (plan.strategy.positioning.exact.value ?? [])
+      : [];
+  const byHex = new Map(exact.map((position) => [`${position.row}:${position.column}`, position]));
+  const assigned = new Set(exact.map((position) => position.championId));
+  const unplaced = plan.target.units.filter((unit) => !assigned.has(unit.championId));
+  return (
+    <div className="tft-board-wrap">
+      <div className="tft-board" aria-label="TFT board visualization">
+        {Array.from({ length: 4 }, (_, row) => (
+          <div className={`hex-row row-${row}`} key={row}>
+            {Array.from({ length: 7 }, (_, column) => {
+              const position = byHex.get(`${row}:${column}`);
+              const unit = position
+                ? plan.target.units.find((entry) => entry.championId === position.championId)
+                : undefined;
+              const name = unit
+                ? state.data.champions.find((champion) => champion.id === unit.championId)?.name
+                : null;
+              return (
+                <div
+                  className={`tft-hex ${unit ? `slot-${unit.slot}` : ''}`}
+                  key={`${row}-${column}`}
+                  aria-label={
+                    unit
+                      ? `${name} at row ${row + 1}, column ${column + 1}`
+                      : `Empty hex row ${row + 1}, column ${column + 1}`
+                  }
+                >
+                  {unit && (
+                    <BoardPortrait
+                      championId={unit.championId}
+                      plan={plan}
+                      state={state}
+                      slot={unit.slot}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+        {!exact.length && (
+          <div className="positioning-watermark">
+            <ShieldQuestion size={20} />
+            <strong>Positioning not verified</strong>
+            <span>No exact hexes assigned</span>
+          </div>
+        )}
+      </div>
+      {unplaced.length > 0 && (
+        <div className="unplaced-roster" aria-label="Unpositioned target roster">
+          {unplaced.map((unit) => (
+            <div key={unit.championId} className={`unplaced-unit slot-${unit.slot}`}>
+              <BoardPortrait
+                championId={unit.championId}
+                plan={plan}
+                state={state}
+                slot={unit.slot}
+              />
+              <span>
+                {state.data.champions.find((champion) => champion.id === unit.championId)?.name}
+              </span>
+              <small>{unit.slot}</small>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StageRoster({
+  roster,
+  plan,
+  state,
+}: {
+  roster: StrategyStageUnit[];
+  plan: PlaybookModel;
+  state: ApplicationState;
+}) {
+  return (
+    <div className="stage-roster">
+      {roster.map((unit, index) => (
+        <div className={`stage-unit slot-${unit.slot}`} key={`${unit.championId}-${index}`}>
+          <BoardPortrait
+            championId={unit.championId}
+            plan={plan}
+            state={state}
+            slot={unit.slot}
+            role={unit.role === 'none' ? unit.slot : unit.role}
+          />
+          <span>
+            {state.data.champions.find((champion) => champion.id === unit.championId)?.name}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Unavailable({ title, note }: { title: string; note: string }) {
+  return (
+    <div className="strategy-unavailable compact-unavailable">
+      <ShieldQuestion size={18} />
+      <strong>{title}</strong>
+      <span>{note}</span>
+    </div>
+  );
+}
+
 export function Playbook({
   plan,
   candidate,
@@ -31,19 +194,34 @@ export function Playbook({
   onLock: () => void;
   onOpen: (id: string) => void;
 }) {
-  const [stage, setStage] = useState('final');
+  const [stageId, setStageId] = useState(plan.strategy.stages.at(-1)?.id ?? '');
+  const [decisionNodeId, setDecisionNodeId] = useState(plan.strategy.decisionMap.rootNodeId ?? '');
+  const [decisionPath, setDecisionPath] = useState<string[]>([]);
   const { data, assets } = state;
-  const selectedStage = plan.stages.find((s) => s.stage === stage)!;
-  const board = selectedStage.board.value;
+  const stage = plan.strategy.stages.find((item) => item.id === stageId) ?? plan.strategy.stages[0];
   const locked = state.selection?.playbookId === plan.id;
-  const eligible = state.portfolio.plans.some((p) => p.candidate.playbook.id === plan.id);
+  const eligible = state.portfolio.plans.some((item) => item.candidate.playbook.id === plan.id);
   const warnings = validatePlaybook(plan, data);
-  const itemName = (id: string) => data.items.find((i) => i.id === id)?.name ?? id;
+  const itemName = (id: string) => data.items.find((item) => item.id === id)?.name ?? id;
+  const championName = (id: string) => data.champions.find((unit) => unit.id === id)?.name ?? id;
   const measured = state.meta?.familyStats.find((stat) => stat.familyId === plan.family.id);
   const discovered = plan.discovery
     ? state.discovery?.clusters.find((cluster) => cluster.id === plan.discovery?.clusterId)
     : undefined;
-  const championName = (id: string) => data.champions.find((unit) => unit.id === id)?.name ?? id;
+  const quickStrip = buildQuickStrip(plan, state.portfolio, championName, itemName);
+  const pivotGraph = buildPivotGraph(state.portfolio);
+  const outgoing = plan.strategy.decisionMap.edges.filter((edge) => edge.from === decisionNodeId);
+  const decisionNode = plan.strategy.decisionMap.nodes.find((node) => node.id === decisionNodeId);
+  const selectDecisionEdge = (edgeId: string) => {
+    const next = traverseDecisionMap(plan.strategy.decisionMap, decisionNodeId, edgeId);
+    if (!next) return;
+    setDecisionPath((path) => [...path, edgeId]);
+    setDecisionNodeId(next.id);
+  };
+  const resetDecision = () => {
+    setDecisionPath([]);
+    setDecisionNodeId(plan.strategy.decisionMap.rootNodeId ?? '');
+  };
   return (
     <>
       <button className="back-button" onClick={onBack}>
@@ -80,98 +258,331 @@ export function Playbook({
           </button>
         </div>
       </div>
-      <div className="quick-strip">
-        <div>
-          <span>LOOK FOR</span>
-          <strong>
-            {plan.family.core.length
-              ? plan.family.core
-                  .slice(0, 2)
-                  .map((id) => data.champions.find((c) => c.id === id)?.name)
-                  .join(' + ')
-              : 'Representative board'}
-          </strong>
-        </div>
-        <div>
-          <span>COMPONENTS</span>
-          <strong>{plan.components.map(itemName).join(' · ')}</strong>
-        </div>
-        <div>
-          <span>AUGMENT SIGNAL</span>
-          <strong>{plan.augments[0]?.category ?? 'Unverified'}</strong>
-        </div>
-        <div>
-          <span>ROUTE</span>
-          <strong>{plan.features.style}</strong>
-        </div>
-      </div>
-      <section className="panel board-panel">
+
+      <nav className="playbook-nav" aria-label="Playbook sections">
+        {[
+          ['board', 'Board'],
+          ['stages', 'Stages'],
+          ['items', 'Items'],
+          ['augments', 'Augments'],
+          ['decision-map', 'Decision Map'],
+          ['pivots', 'Pivots'],
+        ].map(([target, label]) => (
+          <a href={`#${target}`} key={target}>
+            {label}
+          </a>
+        ))}
+        <span>
+          {plan.strategy.coverage.supported}/{plan.strategy.coverage.total} fields
+        </span>
+      </nav>
+
+      <section className="panel target-board-panel" id="board">
         <div className="board-header">
-          <h2>Build toward this board</h2>
+          <div>
+            <span className="section-kicker">TARGET BOARD</span>
+            <h2>Build toward this board</h2>
+          </div>
           <span>
-            {board
-              ? `${usedBoardSlots(board)} / ${board.capacity} audited slots`
-              : 'Board unavailable'}
+            {usedBoardSlots(plan.target)} / {plan.target.capacity} audited slots
           </span>
         </div>
-        <div className="stage-tabs" role="tablist" aria-label="Stage progression">
-          {plan.stages.map((s) => (
+        <TftBoard plan={plan} state={state} />
+        <div className="trait-strip" aria-label="Source trait membership counts">
+          {boardTraitCounts(plan.target, data)
+            .filter(({ activeBreakpoint }) => activeBreakpoint !== null)
+            .slice(0, 7)
+            .map(({ trait, count, activeBreakpoint }) => (
+              <span key={trait.id} title={`Active breakpoint: ${activeBreakpoint}`}>
+                <b>{count}</b>
+                {trait.name}
+              </span>
+            ))}
+          <small>Active thresholds · audited unique-unit counting</small>
+        </div>
+        <div className="board-legend">
+          <span className="legend-core">Core</span>
+          <span className="legend-flex">Flex</span>
+          <span className="legend-temporary">Temporary</span>
+          <span>{plan.strategy.positioning.note}</span>
+        </div>
+      </section>
+
+      <div className="quick-strip" aria-label="What am I looking for?">
+        {quickStrip.map((item) => (
+          <div key={item.key}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+            <FactBadge status={item.status} />
+          </div>
+        ))}
+      </div>
+
+      <section className="panel stage-progression" id="stages">
+        <div className="panel-heading">
+          <GitBranch size={18} />
+          <h2>Stage progression</h2>
+          <FactBadge status={plan.strategy.coverage.fields.stageBoards} />
+        </div>
+        <div className="strategy-stage-tabs" role="tablist" aria-label="Strategy stage progression">
+          {plan.strategy.stages.map((item) => (
             <button
-              key={s.stage}
+              key={item.id}
               role="tab"
-              aria-selected={stage === s.stage}
-              onClick={() => setStage(s.stage)}
-              className={s.stage === stage ? 'active' : ''}
+              aria-selected={stage?.id === item.id}
+              className={stage?.id === item.id ? 'active' : ''}
+              onClick={() => setStageId(item.id)}
             >
-              {s.label}
+              <strong>{item.label}</strong>
+              <span>
+                {item.timing.value ?? 'Timing open'}
+                {item.targetLevel.value ? ` · L${item.targetLevel.value}` : ''}
+              </span>
             </button>
           ))}
         </div>
-        <div className="board-roster" role="tabpanel">
-          {board ? (
-            board.units.map((u, i) => (
-              <Portrait
-                key={`${u.championId}-${i}`}
-                champion={data.champions.find((c) => c.id === u.championId)!}
-                assets={assets}
-                role={plan.roles.find((r) => r.championId === u.championId)?.role ?? u.slot}
-              />
-            ))
-          ) : (
-            <div className="unavailable-board">
-              <ShieldQuestion size={25} />
-              <strong>Stabilization board unverified</strong>
-              <span>{selectedStage.board.note}</span>
+        {stage && (
+          <div className="stage-detail" role="tabpanel">
+            {stage.roster.value?.length ? (
+              <StageRoster roster={stage.roster.value} plan={plan} state={state} />
+            ) : (
+              <Unavailable title="Exact board unavailable" note={stage.roster.note} />
+            )}
+            <div className="stage-instructions">
+              <div>
+                <span>DO</span>
+                <strong>{stage.instruction.value ?? stage.instruction.note}</strong>
+              </div>
+              <div>
+                <span>STAY WHEN</span>
+                <strong>{stage.entryCondition.value ?? 'Unavailable'}</strong>
+              </div>
+              <div>
+                <span>LEAVE WHEN</span>
+                <strong>{stage.exitCondition.value ?? 'Unavailable'}</strong>
+              </div>
             </div>
-          )}
-        </div>
-        {board && (
-          <div className="trait-strip" aria-label="Source trait membership counts">
-            {boardTraitCounts(board, data)
-              .filter(({ activeBreakpoint }) => activeBreakpoint !== null)
-              .slice(0, 7)
-              .map(({ trait, count, activeBreakpoint }) => (
-                <span key={trait.id} title={`Active breakpoint: ${activeBreakpoint}`}>
-                  <b>{count}</b>
-                  {trait.name}
-                </span>
-              ))}
-            <small>Active thresholds · audited unique-unit counting</small>
           </div>
         )}
-        <div className="board-foot">
-          <span>
-            <i className="core-dot" />{' '}
-            {discovered
-              ? 'Core slots reflect ≥80% cluster prevalence'
-              : 'Core roles are guide-curated'}
-          </span>
-          <span>Roster layout · positioning unverified</span>
+        <div className="roll-track" aria-label="Level and roll plan">
+          <span className="track-label">LEVEL / ROLL</span>
+          {plan.strategy.rollPlan.value?.map((milestone, index) => (
+            <div className="roll-milestone" key={milestone.id}>
+              <i>{index + 1}</i>
+              <div>
+                <strong>{milestone.label}</strong>
+                <span>
+                  {milestone.timing ?? 'Timing unavailable'}
+                  {milestone.targetLevel ? ` · Level ${milestone.targetLevel}` : ''}
+                </span>
+                {(milestone.stayCondition || milestone.leaveCondition) && (
+                  <small>
+                    {milestone.stayCondition ? `Stay: ${milestone.stayCondition}. ` : ''}
+                    {milestone.leaveCondition ? `Leave: ${milestone.leaveCondition}.` : ''}
+                  </small>
+                )}
+              </div>
+            </div>
+          ))}
+          {!plan.strategy.rollPlan.value && <p>{plan.strategy.rollPlan.note}</p>}
         </div>
-        <p className="stage-note">
-          {selectedStage.instruction.value ?? selectedStage.instruction.note}
-        </p>
       </section>
+
+      <div className="detail-grid strategy-detail-grid">
+        <section className="panel" id="items">
+          <div className="panel-heading">
+            <Swords size={18} />
+            <h2>Items & holders</h2>
+            <FactBadge status={plan.strategy.coverage.fields.items} />
+          </div>
+          <div className="item-plans">
+            {plan.strategy.itemHolders.map((holder) => {
+              const champion = data.champions.find((unit) => unit.id === holder.holderId);
+              if (!champion) return null;
+              return (
+                <div className="strategy-holder-row" key={holder.holderId}>
+                  <Portrait champion={champion} assets={assets} compact />
+                  <div>
+                    <div className="holder-title">
+                      <strong>{champion.name}</strong>
+                      <span>{holder.role}</span>
+                      <FactBadge status={holder.fact.status} />
+                    </div>
+                    {holder.groups.map((group) => (
+                      <div className="item-group" key={`${holder.holderId}-${group.kind}`}>
+                        <small>{group.kind}</small>
+                        <div className="item-list">
+                          {group.itemIds.map((id) => {
+                            const item = data.items.find((entry) => entry.id === id);
+                            return item ? (
+                              <span key={id} title={item.name}>
+                                <Art url={item.icon} alt={item.name} assets={assets} />
+                                <span>{item.name}</span>
+                              </span>
+                            ) : null;
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                    {holder.temporaryHolderIds.length > 0 && (
+                      <p>Temporary: {holder.temporaryHolderIds.map(championName).join(', ')}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {!plan.strategy.itemHolders.length && (
+              <Unavailable
+                title="Item guidance unavailable"
+                note="Final-board evidence does not establish holders or priorities."
+              />
+            )}
+          </div>
+        </section>
+        <section className="panel" id="augments">
+          <div className="panel-heading">
+            <WandSparkles size={18} />
+            <h2>Augment branches</h2>
+            <FactBadge status={plan.strategy.coverage.fields.augments} />
+          </div>
+          {plan.strategy.augmentBranches.map((branch) => (
+            <div className="augment-branch" key={branch.id}>
+              <span className="branch-icon">◇</span>
+              <div>
+                <div className="holder-title">
+                  <strong>{branch.category}</strong>
+                  <FactBadge status={branch.signal.status} />
+                </div>
+                <p>{branch.signal.value}</p>
+                <small>{branch.consequence.value}</small>
+              </div>
+            </div>
+          ))}
+          {!plan.strategy.augmentBranches.length && (
+            <Unavailable
+              title="No sourced augment branch"
+              note="Specific rankings and live availability remain unavailable."
+            />
+          )}
+        </section>
+        <section className="panel replacements-panel">
+          <div className="panel-heading">
+            <GitBranch size={18} />
+            <h2>Flex & replacements</h2>
+            <FactBadge status={plan.strategy.coverage.fields.replacements} />
+          </div>
+          {plan.strategy.replacements.map((replacement) => (
+            <div className="replacement-row" key={replacement.id}>
+              <strong>{championName(replacement.targetUnitId)}</strong>
+              <ArrowRight size={14} />
+              <strong>{championName(replacement.substituteUnitId)}</strong>
+              <span>{replacement.boardLegal ? 'Legal board' : 'Illegal board'}</span>
+            </div>
+          ))}
+          {!plan.strategy.replacements.length && (
+            <Unavailable
+              title="No verified substitute edge"
+              note="Trait overlap alone is not treated as equal strength."
+            />
+          )}
+          <div className="slot-key">
+            <span className="legend-core">Locked core</span>
+            <span className="legend-flex">Replaceable / flex</span>
+            <span className="legend-temporary">Temporary</span>
+          </div>
+        </section>
+        <section className="panel decision-panel" id="decision-map">
+          <div className="panel-heading">
+            <GitBranch size={18} />
+            <h2>Decision Map</h2>
+            <FactBadge status={plan.strategy.decisionMap.status} />
+          </div>
+          {decisionNode ? (
+            <div className="interactive-decision-map">
+              <div className="decision-progress">
+                <span>{decisionPath.length + 1}</span>
+                <i style={{ width: `${Math.min(100, (decisionPath.length + 1) * 34)}%` }} />
+                <button onClick={resetDecision} aria-label="Reset Decision Map">
+                  <RotateCcw size={13} /> Reset
+                </button>
+              </div>
+              <div className={`decision-current kind-${decisionNode.kind}`}>
+                <small>{decisionNode.kind}</small>
+                <strong>{decisionNode.label}</strong>
+                <FactBadge status={decisionNode.fact.status} />
+              </div>
+              {outgoing.length > 0 ? (
+                <div className="decision-options">
+                  {outgoing.map((edge) => (
+                    <button key={edge.id} onClick={() => selectDecisionEdge(edge.id)}>
+                      <span>{edge.label}</span>
+                      <strong>
+                        {plan.strategy.decisionMap.nodes.find((node) => node.id === edge.to)?.label}
+                      </strong>
+                      <ArrowRight size={15} />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="decision-terminal">
+                  Branch complete. Reassess manually as the game changes.
+                </p>
+              )}
+              <p className="fine-print">{plan.strategy.decisionMap.note}</p>
+            </div>
+          ) : (
+            <Unavailable title="Decision Map unavailable" note={plan.strategy.decisionMap.note} />
+          )}
+        </section>
+      </div>
+
+      <section className="panel pivot-graph-panel" id="pivots">
+        <div className="panel-heading">
+          <GitBranch size={18} />
+          <h2>Portfolio pivot graph</h2>
+          <span className="badge muted">Local · deterministic</span>
+        </div>
+        <div className="pivot-nodes">
+          {pivotGraph.nodes.map((node) => (
+            <button
+              key={node.id}
+              className={node.id === plan.id ? 'active' : ''}
+              onClick={() => node.id !== plan.id && onOpen(node.id)}
+            >
+              <span>{node.role}</span>
+              <strong>{node.title}</strong>
+            </button>
+          ))}
+        </div>
+        <div className="pivot-edges">
+          {pivotGraph.edges
+            .filter((edge) => edge.from === plan.id)
+            .map((edge) => {
+              const destination = pivotGraph.nodes.find((node) => node.id === edge.to);
+              return (
+                <button key={edge.id} onClick={() => onOpen(edge.to)}>
+                  <span className="pivot-arrow">→</span>
+                  <div>
+                    <strong>{destination?.title}</strong>
+                    <small>{edge.reasons.join(' · ')}</small>
+                  </div>
+                  <div className="pivot-cost">
+                    <b>{edge.transitionCost}</b>
+                    <span>cost</span>
+                    <FactBadge status={edge.status} />
+                  </div>
+                </button>
+              );
+            })}
+          {!pivotGraph.edges.some((edge) => edge.from === plan.id) && (
+            <Unavailable
+              title="No supported pivot edge"
+              note="Final-board overlap alone does not create an edge."
+            />
+          )}
+        </div>
+      </section>
+
       {discovered && (
         <section className="panel discovery-detail" aria-label="Discovery evidence detail">
           <div className="panel-heading">
@@ -202,172 +613,16 @@ export function Playbook({
               ? `Closest curated anchor: ${discovered.relation.familyId} · structural distance ${discovered.relation.diff?.structuralDistance.toFixed(2)}.`
               : `Relation: ${discovered.relation.state} · nearest-anchor similarity ${discovered.relation.similarity.toFixed(2)}.`}
           </p>
-          <div className="prevalence-list">
-            {discovered.unitPrevalence.map((unit) => (
-              <span key={unit.championId}>
-                <b>{Math.round(unit.prevalence * 100)}%</b> {championName(unit.championId)}
-              </span>
-            ))}
-          </div>
-          {discovered.relation.diff && (
-            <p className="fine-print">
-              Shared core:{' '}
-              {discovered.relation.diff.sharedCore.map(championName).join(', ') || 'none'}
-              <br />
-              Repeated additions:{' '}
-              {discovered.relation.diff.consistentlyAdded.map(championName).join(', ') || 'none'}
-              <br />
-              Repeated omissions:{' '}
-              {discovered.relation.diff.consistentlyOmitted.map(championName).join(', ') || 'none'}
-            </p>
-          )}
           <p className="fine-print">
             {discovered.recommendationEligible
-              ? 'Every configured legality, support, freshness, cohesion, relation, and outcome gate cleared.'
-              : `Not recommendation-eligible: ${discovered.recommendationGateReasons.join('; ') || 'lifecycle state is inspection-only'}.`}
-            <br />
-            Recent adoption:{' '}
-            {discovered.stats.adoption.mature
-              ? `${discovered.stats.adoption.delta >= 0 ? '+' : ''}${Math.round(discovered.stats.adoption.delta * 100)} percentage points`
-              : 'insufficient window support'}
-            . Patch relevance unavailable.
+              ? 'Every M6 recommendation gate cleared.'
+              : `Not recommendation-eligible: ${discovered.recommendationGateReasons.join('; ') || 'inspection-only lifecycle'}.`}{' '}
+            Strategy coverage remains {plan.strategy.coverage.supported}/
+            {plan.strategy.coverage.total}; inherited facts are labeled individually.
           </p>
         </section>
       )}
-      <div className="detail-grid">
-        <section className="panel">
-          <div className="panel-heading">
-            <Swords size={18} />
-            <h2>Item direction</h2>
-            <span className="badge">{discovered ? 'Unavailable' : 'Guide-curated'}</span>
-          </div>
-          <div className="item-plans">
-            {plan.items.map((itemPlan) => (
-              <div className="holder-row" key={itemPlan.holder}>
-                <Portrait
-                  champion={data.champions.find((c) => c.id === itemPlan.holder)!}
-                  assets={assets}
-                  compact
-                />
-                <div>
-                  <strong>{data.champions.find((c) => c.id === itemPlan.holder)?.name}</strong>
-                  <div className="item-list">
-                    {itemPlan.priorities.map((id) => {
-                      const item = data.items.find((i) => i.id === id)!;
-                      return (
-                        <span key={id} title={item.name}>
-                          <Art url={item.icon} alt={item.name} assets={assets} />
-                          <span>{item.name}</span>
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            ))}
-            {!plan.items.length && (
-              <p className="fine-print">
-                {discovered
-                  ? 'Final-board clustering does not establish item holders or priorities.'
-                  : 'Source-backed item roles unavailable.'}
-              </p>
-            )}
-          </div>
-          <p className="fine-print">
-            {discovered
-              ? 'No item direction is inferred from structural discovery.'
-              : 'Suggested items from the source guide. Alternatives and temporary holders are unverified.'}
-          </p>
-        </section>
-        <section className="panel">
-          <div className="panel-heading">
-            <WandSparkles size={18} />
-            <h2>Augment branches</h2>
-          </div>
-          {plan.augments.map((a) => (
-            <div className="augment-branch" key={a.category}>
-              <span className="branch-icon">◇</span>
-              <div>
-                <strong>{a.category}</strong>
-                <p>{a.change.value ?? a.change.note}</p>
-              </div>
-            </div>
-          ))}
-          {!plan.augments.length && (
-            <p className="fine-print">
-              {discovered
-                ? 'No augment branch is inferred from structural discovery.'
-                : 'No specific augment branch was imported from this source.'}
-            </p>
-          )}
-          <div className="signal-list">
-            <span>WHEN TO CONSIDER</span>
-            {plan.playSignals.value?.map((s) => (
-              <p key={s}>
-                <Check size={13} />
-                {s}
-              </p>
-            ))}
-          </div>
-          <p className="fine-print">
-            Specific augment rankings and avoid thresholds are unavailable. Live augment enablement
-            is unverified.
-          </p>
-        </section>
-        <section className="panel decision-panel">
-          <div className="panel-heading">
-            <GitBranch size={18} />
-            <h2>Decision Map</h2>
-            <span className="badge muted">{discovered ? 'Unavailable' : 'Static guide'}</span>
-          </div>
-          <div className="decision-map">
-            <div className="decision-start">{plan.decisionMap.nodes[0]?.label}</div>
-            <div className="decision-paths">
-              {plan.decisionMap.edges.map((e) => (
-                <div key={e.to}>
-                  <span>{e.condition}</span>
-                  <span className="path-line">↓</span>
-                  <div>{plan.decisionMap.nodes.find((n) => n.id === e.to)?.label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          {discovered && (
-            <p className="fine-print">No Decision Map is inferred from final boards.</p>
-          )}
-          <p className="fine-print">
-            {discovered
-              ? 'A future curated playbook may add verified transitions without changing the observed structure.'
-              : 'Guide signal → route. Reassess is a navigation prompt; no live board or economy is read.'}
-          </p>
-        </section>
-        <section className="panel">
-          <div className="panel-heading">
-            <GitBranch size={18} />
-            <h2>Variants & pivots</h2>
-          </div>
-          <div className="variant-line">
-            <span>{discovered ? 'Observed representative' : 'Source board'}</span>
-            <span className="badge">
-              {plan.target.capacity} units · {discovered?.lifecycle ?? 'Experimental'}
-            </span>
-          </div>
-          <p className="fine-print">{plan.replacements.note}</p>
-          <div className="pivot-list">
-            {state.portfolio.plans
-              .filter((p) => p.candidate.playbook.id !== plan.id)
-              .map(({ candidate: c }) => (
-                <button key={c.playbook.id} onClick={() => onOpen(c.playbook.id)}>
-                  <div>
-                    <strong>{c.playbook.title}</strong>
-                    <small>Alternative plan · pivot conditions unverified</small>
-                  </div>
-                  <ArrowRight size={16} />
-                </button>
-              ))}
-          </div>
-        </section>
-      </div>
+
       <section className="panel why-panel">
         <div className="panel-heading">
           <ShieldQuestion size={18} />
@@ -385,57 +640,43 @@ export function Playbook({
             <span>
               {discovered.stats.games} clustered boards ·{' '}
               {discovered.stats.averagePlacement.toFixed(2)} avg ·{' '}
-              {Math.round(discovered.stats.topFour.shrunk * 100)}% top 4 ·{' '}
-              {Math.round(discovered.stats.wins.shrunk * 100)}% win ·{' '}
-              {Math.round(discovered.stats.confidence * 100)}% confidence
+              {Math.round(discovered.stats.topFour.shrunk * 100)}% top 4
             </span>
           ) : measured ? (
             <span>
-              {measured.games} classified games · {measured.shrunkAveragePlacement.toFixed(2)}
-              {' avg · '}
-              {Math.round(measured.topFour.shrunk * 100)}% top 4 ·{' '}
-              {Math.round(measured.wins.shrunk * 100)}% win ·{' '}
-              {Math.round(measured.confidence * 100)}% confidence
+              {measured.games} classified games · {measured.shrunkAveragePlacement.toFixed(2)} avg ·{' '}
+              {Math.round(measured.topFour.shrunk * 100)}% top 4
             </span>
           ) : (
             <span>Unavailable · recommendation outcome inputs fall back to neutral.</span>
           )}
-          <small>
-            {discovered
-              ? `${state.discovery?.sourceType === 'fixture' ? 'Fixture' : 'Riot'} aggregate discovery · patch relevance unavailable`
-              : state.meta
-                ? `${state.meta.platform} ${state.meta.rankCohort.join(' + ')} · Riot aggregate · patch relevance unavailable`
-                : 'No compatible stored aggregate dataset. Curated board metadata is not outcome evidence.'}
-          </small>
+          <small>Strategy guidance never substitutes for measured outcome evidence.</small>
         </div>
         <div className="why-grid">
           <div className="score-breakdown">
-            {candidate.components.map((c) => (
-              <div key={c.key}>
-                <span>{c.label}</span>
+            {candidate.components.map((component) => (
+              <div key={component.key}>
+                <span>{component.label}</span>
                 <div className="bar-track">
-                  <i style={{ width: `${Math.abs(c.input ?? 0)}%` }} />
+                  <i style={{ width: `${Math.abs(component.input ?? 0)}%` }} />
                 </div>
                 <strong>
-                  {c.contribution >= 0 ? '+' : ''}
-                  {c.contribution.toFixed(1)}
+                  {component.contribution >= 0 ? '+' : ''}
+                  {component.contribution.toFixed(1)}
                 </strong>
-                <small>{c.status}</small>
+                <small>{component.status}</small>
               </div>
             ))}
           </div>
           <div className="confidence-breakdown">
             <h3>{candidate.confidence.level} confidence</h3>
-            <p>Evidence quality is assessed separately from recommendation score.</p>
-            {candidate.confidence.drivers.map((d) => (
-              <div key={d.label}>
-                <span>{d.factor < 0.5 ? '○' : '◐'}</span>
-                {d.label}
+            <p>Evidence quality is separate from score.</p>
+            {candidate.confidence.drivers.map((driver) => (
+              <div key={driver.label}>
+                <span>{driver.factor < 0.5 ? '○' : '◐'}</span>
+                {driver.label}
               </div>
             ))}
-            <p className="fine-print">
-              Personal history contributes no adjustment until relevant games exist.
-            </p>
           </div>
         </div>
         <div className="contest-explanation">
@@ -453,10 +694,7 @@ export function Playbook({
             <div className="contest-unit-list">
               {candidate.contest.pressuredUnits.slice(0, 3).map((unit) => (
                 <div key={unit.championId}>
-                  <strong>
-                    {data.champions.find((champion) => champion.id === unit.championId)?.name ??
-                      unit.championId}
-                  </strong>
+                  <strong>{championName(unit.championId)}</strong>
                   <span>{Math.round(unit.criticality * 100)}% seeded criticality</span>
                   <span>
                     {unit.equivalentHistoricalUsers.toFixed(1)} equivalent historical users
@@ -467,28 +705,31 @@ export function Playbook({
             </div>
           )}
           <small>
-            {Math.round(candidate.contest.evidenceCoverage * 100)}% seven-player evidence coverage ·
-            {Math.round(candidate.contest.contestElasticity * 100)}% seeded contest elasticity ·
-            {candidate.contest.styleFactor.toFixed(2)}× curated roll-style factor · historical
-            signal, not a future-choice probability
+            M4 historical pressure remains independent of strategy guidance and discovery.
           </small>
         </div>
       </section>
+
       <details className="source-details">
-        <summary>Provenance & validation limits</summary>
-        <p>{plan.provenance.note}</p>
-        {plan.provenance.source.startsWith('http') && (
-          <a href={plan.provenance.source} target="_blank" rel="noreferrer">
-            Read original public guide ↗
-          </a>
-        )}
+        <summary>Sources, freshness & validation</summary>
         <p>
-          {discovered
-            ? `${discovered.stats.games} aggregate clustered observations · generated ${new Date(plan.provenance.fetchedAt).toLocaleString()}. Lifecycle remains evidence-gated.`
-            : `Reviewed September 6, 2026 · patch 18.1 · ${measured ? `${measured.games} classified observations.` : 'no measured sample.'} “Experimental” reflects this app’s limited outcome evidence.`}
+          Strategy {plan.strategy.guidanceVersion} · reviewed{' '}
+          {new Date(plan.strategy.reviewedAt).toLocaleDateString()} · freshness{' '}
+          <strong>{plan.strategy.freshness.state}</strong>.
         </p>
-        {warnings.map((w, i) => (
-          <p key={`${w.code}-${i}`}>{w.message}</p>
+        {plan.strategy.freshness.reasons.map((reason) => (
+          <p key={reason}>{reason}</p>
+        ))}
+        {plan.strategy.sources.map((source) => (
+          <p key={source.id}>
+            <a href={source.url} target="_blank" rel="noreferrer">
+              {source.title} ↗
+            </a>{' '}
+            · {source.scope}
+          </p>
+        ))}
+        {warnings.map((warning, index) => (
+          <p key={`${warning.code}-${index}`}>{warning.message}</p>
         ))}
         <p>Team Planner: {plan.planner.reason}</p>
       </details>

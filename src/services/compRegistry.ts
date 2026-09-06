@@ -4,10 +4,12 @@ import type {
   DiscoveryDataset,
   Guidance,
   Playbook,
+  StrategyGuidance,
   StaticData,
 } from '../domain/models';
 import { validatePlaybook } from '../rules/validation';
 import { canonicalizeBoard } from '../strategy/canonicalBoard';
+import { inheritDiscoveredGuidance } from '../strategy/guidanceInheritance';
 
 const unavailable = <T>(note: string): Guidance<T> => ({
   value: null,
@@ -63,7 +65,7 @@ function discoveredPlaybook(
         b.cost - a.cost ||
         a.championId.localeCompare(b.championId),
     )[0].championId;
-  return {
+  const playbook = {
     id: `discovered-${cluster.id}`,
     family: { id: `discovered-${cluster.id}`, name: title, core },
     set: data.version.set,
@@ -172,8 +174,11 @@ function discoveredPlaybook(
       fixtureVerified: false,
       manualPasteVerified: false,
     },
+    strategy: undefined as unknown as StrategyGuidance,
     discovery: { clusterId: cluster.id, parentFamilyId: parent },
-  };
+  } satisfies Playbook;
+  playbook.strategy = inheritDiscoveredGuidance(playbook, cluster, data, parentPlaybook).guidance;
+  return playbook;
 }
 
 export function buildCompRegistry(

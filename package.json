@@ -18,6 +18,7 @@
     "benchmark:m4": "tsx scripts/benchmark-m4.ts",
     "benchmark:m5": "tsx scripts/benchmark-m5.ts",
     "benchmark:m6": "tsx scripts/benchmark-m6.ts",
+    "benchmark:m7": "tsx scripts/benchmark-m7.ts",
     "m5:live-smoke": "tsx scripts/live-m5-smoke.ts",
     "m6:live-smoke": "tsx scripts/live-m6-smoke.ts",
     "format": "prettier --write src scripts e2e *.json *.ts *.js data/playbooks data/rules --ignore-unknown",

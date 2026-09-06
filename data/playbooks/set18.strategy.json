@@ -1,0 +1,1496 @@
+{
+  "schemaVersion": 1,
+  "guidanceVersion": "set18-strategy-v1",
+  "set": 18,
+  "staticSourceFingerprint": "fnv1a-9b3bc81f",
+  "reviewedAt": "2026-09-06T00:00:00Z",
+  "sourceReviewVersion": "public-page-review-2026-09-06",
+  "sources": [
+    {
+      "id": "mobalytics-rise-and-vine",
+      "url": "https://mobalytics.gg/tft/comps-guide/elderwood-reroll-3HDqt0FrDEBPMY81ihqGePxVjU3",
+      "title": "Rise and Vine — Set 18 comp guide",
+      "reviewedAt": "2026-09-06T00:00:00Z",
+      "sourceVersion": "page-review-2026-09-06",
+      "scope": "Final, early and mid boards; Level 6 Slow Roll; when-to-make signals; item holders; augment list and comp tips.",
+      "note": "The page's early XP call conflicts with its leveling table, so M7 withholds the disputed exact early timing."
+    },
+    {
+      "id": "mobalytics-adapt-or-die",
+      "url": "https://mobalytics.gg/tft/comps-guide/adaptor-reroll-3HRVQSudB7SJTckVeLxU4ICvPDg",
+      "title": "Adapt or Die — Set 18 comp guide",
+      "reviewedAt": "2026-09-06T00:00:00Z",
+      "sourceVersion": "page-review-2026-09-06",
+      "scope": "Final, early and mid boards; Level 7 Slow Roll; when-to-make signals; holders and item lists.",
+      "note": "Only text and structured page facts visible without authentication were imported."
+    },
+    {
+      "id": "mobalytics-ap-8-4",
+      "url": "https://mobalytics.gg/tft/comps-guide/eldritch-3GPUwYsD4LyC2jj0jH40XM7iS2f",
+      "title": "AP 8-4 — Set 18 comp guide",
+      "reviewedAt": "2026-09-06T00:00:00Z",
+      "sourceVersion": "page-review-2026-09-06",
+      "scope": "Final, early and mid boards; Fast 8 route; when-to-make signals; holders and item lists.",
+      "note": "The final page board has nine units while the route stabilizes at level 8; those are represented as separate milestones."
+    },
+    {
+      "id": "mobalytics-final-forest",
+      "url": "https://mobalytics.gg/tft/comps-guide/elderwood-cap-3HBMcPmR81fWMyuppwi8smQJ37O",
+      "title": "The Final Forest — Set 18 comp guide",
+      "reviewedAt": "2026-09-06T00:00:00Z",
+      "sourceVersion": "page-review-2026-09-06",
+      "scope": "Final, early and mid boards; level 8 stabilization into Fast 9; when-to-make signals; holder/item and flex tips.",
+      "note": "Exact page facts were retained; no placement strength was inferred."
+    },
+    {
+      "id": "tftactics-set18-tierlist",
+      "url": "https://tftactics.gg/tierlist/team-comps/",
+      "title": "TFTactics Set 18 team comps tier list",
+      "reviewedAt": "2026-09-06T00:00:00Z",
+      "sourceVersion": "page-review-2026-09-06",
+      "scope": "Public final rosters, roll-style labels and visibly marked augment/emblem gates.",
+      "note": "The public listing does not establish early boards, holders, items, exact timings, pivots or positioning for these entries."
+    }
+  ],
+  "entries": [
+    {
+      "familyId": "solar-elderwood",
+      "expectedTarget": {
+        "unitNames": ["Kayle", "Sejuani", "Ornn", "Xayah", "Hecarim", "Leona", "Rakan"],
+        "capacity": 7
+      },
+      "expectedCore": ["Kayle", "Xayah", "Sejuani", "Ornn"],
+      "sourceIds": ["mobalytics-rise-and-vine"],
+      "watchUnits": ["Kayle", "Xayah", "Sejuani", "Ornn"],
+      "stages": [
+        {
+          "id": "opener",
+          "label": "Opener",
+          "timing": null,
+          "targetLevel": null,
+          "units": [
+            { "name": "Kayle", "slot": "core", "role": "carry" },
+            { "name": "Ornn", "slot": "core", "role": "holder" },
+            { "name": "Leona", "slot": "temporary", "role": "tank" },
+            { "name": "Xayah", "slot": "core", "role": "carry" }
+          ],
+          "instruction": {
+            "value": "Play around the main units; exact early XP timing is withheld because the source conflicts.",
+            "sourceIds": ["mobalytics-rise-and-vine"],
+            "note": "Source-backed board with conflict-safe timing."
+          },
+          "entryCondition": {
+            "value": "Natural main units.",
+            "sourceIds": ["mobalytics-rise-and-vine"],
+            "note": "Published when-to-make signal."
+          },
+          "exitCondition": null,
+          "nextStateIds": ["level-6-roll"],
+          "sourceIds": ["mobalytics-rise-and-vine"]
+        },
+        {
+          "id": "level-6-roll",
+          "label": "Level 6 roll",
+          "timing": {
+            "value": "Stage 3-2",
+            "sourceIds": ["mobalytics-rise-and-vine"],
+            "note": "Published mid-game timing."
+          },
+          "targetLevel": 6,
+          "units": [
+            { "name": "Kayle", "slot": "core", "role": "carry" },
+            { "name": "Ornn", "slot": "core", "role": "holder" },
+            { "name": "LeBlanc", "slot": "temporary", "role": "support" },
+            { "name": "Sejuani", "slot": "core", "role": "tank" },
+            { "name": "Leona", "slot": "temporary", "role": "tank" },
+            { "name": "Xayah", "slot": "core", "role": "carry" }
+          ],
+          "instruction": {
+            "value": "Slow roll at level 6 for the reroll carries.",
+            "sourceIds": ["mobalytics-rise-and-vine"],
+            "note": "Published route; no shop odds inferred."
+          },
+          "entryCondition": {
+            "value": "Natural core, reroll support and low Solar/Elderwood contest.",
+            "sourceIds": ["mobalytics-rise-and-vine"],
+            "note": "Combination of published when-to-make signals."
+          },
+          "exitCondition": null,
+          "nextStateIds": ["target"],
+          "sourceIds": ["mobalytics-rise-and-vine"]
+        },
+        {
+          "id": "target",
+          "label": "Reroll cap",
+          "timing": null,
+          "targetLevel": 7,
+          "units": [
+            { "name": "Kayle", "slot": "core", "role": "carry" },
+            { "name": "Sejuani", "slot": "core", "role": "tank" },
+            { "name": "Ornn", "slot": "core", "role": "holder" },
+            { "name": "Xayah", "slot": "core", "role": "carry" },
+            { "name": "Hecarim", "slot": "flex", "role": "none" },
+            { "name": "Leona", "slot": "flex", "role": "none" },
+            { "name": "Rakan", "slot": "flex", "role": "none" }
+          ],
+          "instruction": {
+            "value": "Complete the sourced seven-unit target after the level 6 reroll phase.",
+            "sourceIds": ["mobalytics-rise-and-vine"],
+            "note": "Final board and route order are sourced; exact transition timing is unavailable."
+          },
+          "entryCondition": null,
+          "exitCondition": null,
+          "nextStateIds": [],
+          "sourceIds": ["mobalytics-rise-and-vine"]
+        }
+      ],
+      "rollPlan": {
+        "milestones": [
+          {
+            "id": "slow-roll-6",
+            "kind": "slow-roll",
+            "label": "Slow roll at level 6",
+            "timing": "Stage 3-2",
+            "targetLevel": 6,
+            "stayCondition": "Natural core with reroll support and low contest",
+            "leaveCondition": "Core signal absent or Solar/Elderwood contested",
+            "nextObjective": true
+          },
+          {
+            "id": "cap-7",
+            "kind": "cap",
+            "label": "Add the sourced seventh unit after the reroll phase",
+            "timing": null,
+            "targetLevel": 7,
+            "stayCondition": null,
+            "leaveCondition": null,
+            "nextObjective": false
+          }
+        ],
+        "sourceIds": ["mobalytics-rise-and-vine"],
+        "note": "The disputed early XP instruction is excluded."
+      },
+      "itemHolders": [
+        {
+          "holder": "Kayle",
+          "role": "carry",
+          "groups": [
+            {
+              "kind": "primary",
+              "itemIds": ["DA_GuinsoosRageblade", "DA_GiantSlayer", "DA_RabadonsDeathcap"],
+              "sourceIds": ["mobalytics-rise-and-vine"],
+              "note": "Published Kayle item list; not claimed as universal BIS."
+            }
+          ],
+          "temporaryHolders": [],
+          "componentIds": ["DA_Component_RecurveBow", "DA_Component_NeedlesslyLargeRod"],
+          "sourceIds": ["mobalytics-rise-and-vine"],
+          "note": "Published carry holder and items."
+        },
+        {
+          "holder": "Sejuani",
+          "role": "tank",
+          "groups": [
+            {
+              "kind": "alternative",
+              "itemIds": ["DA_SunfireCape", "DA_ProtectorsVow", "DA_Evenshroud"],
+              "sourceIds": ["mobalytics-rise-and-vine"],
+              "note": "Published Sejuani alternatives."
+            }
+          ],
+          "temporaryHolders": ["Ornn"],
+          "componentIds": ["DA_Component_ChainVest", "DA_Component_GiantsBelt"],
+          "sourceIds": ["mobalytics-rise-and-vine"],
+          "note": "The guide explicitly says to itemize Ornn early, then transfer items to Sejuani after the Artifact is obtained."
+        }
+      ],
+      "augmentBranches": [
+        {
+          "id": "reroll-support",
+          "category": "reroll",
+          "signal": {
+            "value": "Reroll augment",
+            "sourceIds": ["mobalytics-rise-and-vine"],
+            "note": "Published when-to-make category."
+          },
+          "consequence": {
+            "value": "Supports commitment to the level 6 reroll route.",
+            "sourceIds": ["mobalytics-rise-and-vine"],
+            "note": "Consequence is limited to the published route."
+          }
+        }
+      ],
+      "warnings": {
+        "values": [
+          "Do not treat the conflicting early XP advice as verified.",
+          "The source's entry signal requires natural core units and uncontested Solar/Elderwood."
+        ],
+        "sourceIds": ["mobalytics-rise-and-vine"],
+        "note": "Conflict and when-to-make conditions retained verbatim in meaning."
+      },
+      "decisionMap": {
+        "rootNodeId": "core-signal",
+        "nodes": [
+          {
+            "id": "core-signal",
+            "label": "Natural Kayle/Xayah core plus reroll support?",
+            "kind": "question",
+            "sourceIds": ["mobalytics-rise-and-vine"],
+            "status": "sourced",
+            "note": "Manual observation of published entry signals."
+          },
+          {
+            "id": "contest",
+            "label": "Solar/Elderwood contest low?",
+            "kind": "question",
+            "sourceIds": ["mobalytics-rise-and-vine"],
+            "status": "sourced",
+            "note": "Can be answered manually or from existing M4 aggregate pressure."
+          },
+          {
+            "id": "commit",
+            "label": "Commit to level 6 slow roll",
+            "kind": "action",
+            "sourceIds": ["mobalytics-rise-and-vine"],
+            "status": "sourced",
+            "note": "Published route."
+          },
+          {
+            "id": "pivot",
+            "label": "Compare the other portfolio plans",
+            "kind": "action",
+            "sourceIds": [],
+            "status": "derived",
+            "note": "Application navigation, not a gameplay strength claim."
+          }
+        ],
+        "edges": [
+          {
+            "id": "core-yes",
+            "from": "core-signal",
+            "to": "contest",
+            "label": "Yes",
+            "conditionKind": "manual-core-signal",
+            "sourceIds": ["mobalytics-rise-and-vine"],
+            "status": "sourced",
+            "note": "Published natural-unit signal."
+          },
+          {
+            "id": "core-no",
+            "from": "core-signal",
+            "to": "pivot",
+            "label": "No",
+            "conditionKind": "navigation",
+            "sourceIds": [],
+            "status": "derived",
+            "note": "Safe fallback to portfolio comparison."
+          },
+          {
+            "id": "contest-low",
+            "from": "contest",
+            "to": "commit",
+            "label": "Low",
+            "conditionKind": "lobby-contest",
+            "sourceIds": ["mobalytics-rise-and-vine"],
+            "status": "sourced",
+            "note": "Published uncontested condition; M4 remains independent evidence."
+          },
+          {
+            "id": "contest-high",
+            "from": "contest",
+            "to": "pivot",
+            "label": "High",
+            "conditionKind": "navigation",
+            "sourceIds": [],
+            "status": "derived",
+            "note": "No alternate line is invented."
+          }
+        ],
+        "note": "Manual deterministic traversal only; no board, shop, gold or augment state is read."
+      },
+      "positioning": null
+    },
+    {
+      "familyId": "adaptor-reroll",
+      "expectedTarget": {
+        "unitNames": ["Nidalee", "Kog'Maw", "Master Yi", "Rengar", "Vi", "Sett", "Krug", "Yorick"],
+        "capacity": 8
+      },
+      "expectedCore": ["Master Yi", "Kog'Maw", "Vi"],
+      "sourceIds": ["mobalytics-adapt-or-die"],
+      "watchUnits": ["Master Yi", "Kog'Maw", "Vi", "Rengar"],
+      "stages": [
+        {
+          "id": "opener",
+          "label": "Opener",
+          "timing": {
+            "value": "Stage 2-1",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "note": "Published early-game timing."
+          },
+          "targetLevel": 4,
+          "units": [
+            { "name": "Master Yi", "slot": "core", "role": "carry" },
+            { "name": "Karma", "slot": "temporary", "role": "support" },
+            { "name": "Rakan", "slot": "temporary", "role": "support" },
+            { "name": "Yorick", "slot": "temporary", "role": "tank" }
+          ],
+          "instruction": {
+            "value": "Use a strong opener, ideally Master Yi or Rengar, and level to 4.",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "note": "Published early plan."
+          },
+          "entryCondition": {
+            "value": "Natural Adaptors, reroll support, Artifact Anvil, or Bruiser Emblem.",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "note": "Published when-to-make signals."
+          },
+          "exitCondition": null,
+          "nextStateIds": ["mid", "level-7-roll"],
+          "sourceIds": ["mobalytics-adapt-or-die"]
+        },
+        {
+          "id": "mid",
+          "label": "Mid board",
+          "timing": {
+            "value": "Stage 3-2",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "note": "Published leveling point."
+          },
+          "targetLevel": 6,
+          "units": [
+            { "name": "Master Yi", "slot": "core", "role": "carry" },
+            { "name": "Vi", "slot": "core", "role": "tank" },
+            { "name": "Kog'Maw", "slot": "core", "role": "carry" },
+            { "name": "Krug", "slot": "temporary", "role": "tank" },
+            { "name": "Rengar", "slot": "flex", "role": "carry" },
+            { "name": "Sejuani", "slot": "temporary", "role": "tank" }
+          ],
+          "instruction": {
+            "value": "Build through the published six-unit mid board before the level 7 roll phase.",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "note": "Roster and sequence are sourced."
+          },
+          "entryCondition": null,
+          "exitCondition": null,
+          "nextStateIds": ["level-7-roll"],
+          "sourceIds": ["mobalytics-adapt-or-die"]
+        },
+        {
+          "id": "level-7-roll",
+          "label": "Level 7 roll",
+          "timing": {
+            "value": "Stage 3-7",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "note": "Published leveling table."
+          },
+          "targetLevel": 7,
+          "units": [],
+          "instruction": {
+            "value": "Slow roll at level 7 for the three-cost carries.",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "note": "Published route; no shop odds inferred."
+          },
+          "entryCondition": {
+            "value": "Natural Adaptors or one of the published support signals.",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "note": "Published conditions."
+          },
+          "exitCondition": null,
+          "nextStateIds": ["target"],
+          "sourceIds": ["mobalytics-adapt-or-die"]
+        },
+        {
+          "id": "target",
+          "label": "Target board",
+          "timing": null,
+          "targetLevel": 8,
+          "units": [
+            { "name": "Nidalee", "slot": "flex", "role": "carry" },
+            { "name": "Kog'Maw", "slot": "core", "role": "carry" },
+            { "name": "Master Yi", "slot": "core", "role": "carry" },
+            { "name": "Rengar", "slot": "flex", "role": "carry" },
+            { "name": "Vi", "slot": "core", "role": "tank" },
+            { "name": "Sett", "slot": "flex", "role": "none" },
+            { "name": "Krug", "slot": "flex", "role": "none" },
+            { "name": "Yorick", "slot": "flex", "role": "none" }
+          ],
+          "instruction": {
+            "value": "Add the sourced eighth unit after the level 7 reroll phase.",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "note": "Exact transition strength is not claimed."
+          },
+          "entryCondition": null,
+          "exitCondition": null,
+          "nextStateIds": [],
+          "sourceIds": ["mobalytics-adapt-or-die"]
+        }
+      ],
+      "rollPlan": {
+        "milestones": [
+          {
+            "id": "slow-roll-7",
+            "kind": "slow-roll",
+            "label": "Slow roll at level 7",
+            "timing": "Stage 3-7",
+            "targetLevel": 7,
+            "stayCondition": "Natural Adaptors or a published support signal",
+            "leaveCondition": "Those entry signals are absent",
+            "nextObjective": true
+          },
+          {
+            "id": "cap-8",
+            "kind": "cap",
+            "label": "Complete the eight-unit target",
+            "timing": null,
+            "targetLevel": 8,
+            "stayCondition": null,
+            "leaveCondition": null,
+            "nextObjective": false
+          }
+        ],
+        "sourceIds": ["mobalytics-adapt-or-die"],
+        "note": "The guide publishes a level 7 slow-roll route and later eight-unit board."
+      },
+      "itemHolders": [
+        {
+          "holder": "Master Yi",
+          "role": "carry",
+          "groups": [
+            {
+              "kind": "primary",
+              "itemIds": ["DA_GuinsoosRageblade", "DA_TitansResolve", "DA_EdgeOfNight"],
+              "sourceIds": ["mobalytics-adapt-or-die"],
+              "note": "Published Master Yi list; not universal BIS."
+            }
+          ],
+          "temporaryHolders": [],
+          "componentIds": ["DA_Component_RecurveBow", "DA_Component_ChainVest"],
+          "sourceIds": ["mobalytics-adapt-or-die"],
+          "note": "Published carry holder and items."
+        },
+        {
+          "holder": "Vi",
+          "role": "tank",
+          "groups": [
+            {
+              "kind": "primary",
+              "itemIds": ["DA_GargoyleStoneplate", "DA_WarmogsArmor", "DA_BrambleVest"],
+              "sourceIds": ["mobalytics-adapt-or-die"],
+              "note": "Published Vi tank list."
+            }
+          ],
+          "temporaryHolders": [],
+          "componentIds": ["DA_Component_ChainVest", "DA_Component_GiantsBelt"],
+          "sourceIds": ["mobalytics-adapt-or-die"],
+          "note": "Published tank holder and items."
+        }
+      ],
+      "augmentBranches": [
+        {
+          "id": "reroll",
+          "category": "reroll",
+          "signal": {
+            "value": "Reroll augment",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "note": "Published when-to-make category."
+          },
+          "consequence": {
+            "value": "Supports investment in the level 7 reroll carries.",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "note": "Limited to published route."
+          }
+        },
+        {
+          "id": "artifact",
+          "category": "item/component",
+          "signal": {
+            "value": "Artifact Anvil",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "note": "Published entry signal."
+          },
+          "consequence": {
+            "value": "Makes the source recommend considering this Adaptor line.",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "note": "No artifact ranking or hidden interaction is inferred."
+          }
+        }
+      ],
+      "warnings": {
+        "values": [
+          "The guide conditions this reroll line on natural Adaptors or specific support signals."
+        ],
+        "sourceIds": ["mobalytics-adapt-or-die"],
+        "note": "Published when-to-make boundary."
+      },
+      "decisionMap": {
+        "rootNodeId": "entry",
+        "nodes": [
+          {
+            "id": "entry",
+            "label": "Natural Adaptors or reroll/artifact support?",
+            "kind": "question",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "status": "sourced",
+            "note": "Manual published signals."
+          },
+          {
+            "id": "commit",
+            "label": "Build toward the level 7 slow roll",
+            "kind": "action",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "status": "sourced",
+            "note": "Published route."
+          },
+          {
+            "id": "pivot",
+            "label": "Compare the other portfolio plans",
+            "kind": "action",
+            "sourceIds": [],
+            "status": "derived",
+            "note": "Application navigation only."
+          }
+        ],
+        "edges": [
+          {
+            "id": "entry-yes",
+            "from": "entry",
+            "to": "commit",
+            "label": "Yes",
+            "conditionKind": "manual-core-signal",
+            "sourceIds": ["mobalytics-adapt-or-die"],
+            "status": "sourced",
+            "note": "Published condition."
+          },
+          {
+            "id": "entry-no",
+            "from": "entry",
+            "to": "pivot",
+            "label": "No",
+            "conditionKind": "navigation",
+            "sourceIds": [],
+            "status": "derived",
+            "note": "No unsourced substitute route is introduced."
+          }
+        ],
+        "note": "Manual deterministic traversal only."
+      },
+      "positioning": null
+    },
+    {
+      "familyId": "ap-summoners",
+      "expectedTarget": {
+        "unitNames": [
+          "Malphite",
+          "Soraka",
+          "Zyra",
+          "Alune",
+          "Kennen",
+          "Amumu",
+          "Azir",
+          "Fiddlesticks",
+          "Yorick"
+        ],
+        "capacity": 9
+      },
+      "expectedCore": ["Soraka", "Zyra", "Malphite"],
+      "sourceIds": ["mobalytics-ap-8-4"],
+      "watchUnits": ["Soraka", "Zyra", "Malphite"],
+      "stages": [
+        {
+          "id": "opener",
+          "label": "AP opener",
+          "timing": {
+            "value": "Stage 2-1",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "note": "Published early plan."
+          },
+          "targetLevel": 4,
+          "units": [
+            { "name": "LeBlanc", "slot": "temporary", "role": "holder" },
+            { "name": "Alistar", "slot": "temporary", "role": "tank" },
+            { "name": "Rek'Sai", "slot": "temporary", "role": "tank" },
+            { "name": "Xayah", "slot": "temporary", "role": "carry" }
+          ],
+          "instruction": {
+            "value": "Play a strong AP opener and level to 4.",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "note": "Published early plan."
+          },
+          "entryCondition": {
+            "value": "Economy support or AP/Gargoyle components.",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "note": "Published when-to-make signal."
+          },
+          "exitCondition": null,
+          "nextStateIds": ["mid"],
+          "sourceIds": ["mobalytics-ap-8-4"]
+        },
+        {
+          "id": "mid",
+          "label": "Mid board",
+          "timing": {
+            "value": "Stage 3-2",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "note": "Published leveling point."
+          },
+          "targetLevel": 6,
+          "units": [
+            { "name": "Alistar", "slot": "temporary", "role": "tank" },
+            { "name": "LeBlanc", "slot": "temporary", "role": "holder" },
+            { "name": "Fiddlesticks", "slot": "flex", "role": "carry" },
+            { "name": "Ornn", "slot": "temporary", "role": "tank" },
+            { "name": "Rek'Sai", "slot": "temporary", "role": "tank" },
+            { "name": "Veigar", "slot": "temporary", "role": "holder" }
+          ],
+          "instruction": {
+            "value": "Continue strongest board and play four-costs when found.",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "note": "Published mid-game instruction."
+          },
+          "entryCondition": null,
+          "exitCondition": null,
+          "nextStateIds": ["stabilize-8"],
+          "sourceIds": ["mobalytics-ap-8-4"]
+        },
+        {
+          "id": "stabilize-8",
+          "label": "Fast 8",
+          "timing": {
+            "value": "Stage 4-2",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "note": "Published leveling table."
+          },
+          "targetLevel": 8,
+          "units": [],
+          "instruction": {
+            "value": "Reach level 8 aggressively with strong economy, then reroll for carries.",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "note": "Published route; the exact level-8 cut board is unavailable."
+          },
+          "entryCondition": {
+            "value": "Strong economy with AP/Gargoyle direction.",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "note": "Published signals."
+          },
+          "exitCondition": null,
+          "nextStateIds": ["target"],
+          "sourceIds": ["mobalytics-ap-8-4"]
+        },
+        {
+          "id": "target",
+          "label": "Nine-unit cap",
+          "timing": null,
+          "targetLevel": 9,
+          "units": [
+            { "name": "Malphite", "slot": "core", "role": "tank" },
+            { "name": "Soraka", "slot": "core", "role": "carry" },
+            { "name": "Zyra", "slot": "core", "role": "carry" },
+            { "name": "Alune", "slot": "flex", "role": "none" },
+            { "name": "Kennen", "slot": "flex", "role": "none" },
+            { "name": "Amumu", "slot": "flex", "role": "none" },
+            { "name": "Azir", "slot": "flex", "role": "none" },
+            { "name": "Fiddlesticks", "slot": "flex", "role": "none" },
+            { "name": "Yorick", "slot": "flex", "role": "none" }
+          ],
+          "instruction": {
+            "value": "Use the published nine-unit board as the final extension after level 8 stabilization.",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "note": "The page does not publish an exact level-8 cut."
+          },
+          "entryCondition": null,
+          "exitCondition": null,
+          "nextStateIds": [],
+          "sourceIds": ["mobalytics-ap-8-4"]
+        }
+      ],
+      "rollPlan": {
+        "milestones": [
+          {
+            "id": "fast-8",
+            "kind": "push-level",
+            "label": "Push level 8 aggressively",
+            "timing": "Stage 4-2",
+            "targetLevel": 8,
+            "stayCondition": "Strong economy with AP/Gargoyle direction",
+            "leaveCondition": "Entry signals are absent",
+            "nextObjective": true
+          },
+          {
+            "id": "roll-8",
+            "kind": "stabilize",
+            "label": "Reroll for carries at level 8",
+            "timing": "Stage 4-2",
+            "targetLevel": 8,
+            "stayCondition": null,
+            "leaveCondition": null,
+            "nextObjective": false
+          },
+          {
+            "id": "cap-9",
+            "kind": "cap",
+            "label": "Add the ninth unit when the route supports it",
+            "timing": null,
+            "targetLevel": 9,
+            "stayCondition": null,
+            "leaveCondition": null,
+            "nextObjective": false
+          }
+        ],
+        "sourceIds": ["mobalytics-ap-8-4"],
+        "note": "Fast 8 stabilization and the nine-unit source board remain separate."
+      },
+      "itemHolders": [
+        {
+          "holder": "Soraka",
+          "role": "carry",
+          "groups": [
+            {
+              "kind": "primary",
+              "itemIds": ["DA_SpearOfShojin", "DA_ArchangelsStaff", "DA_RabadonsDeathcap"],
+              "sourceIds": ["mobalytics-ap-8-4"],
+              "note": "Published Soraka list; not universal BIS."
+            }
+          ],
+          "temporaryHolders": [],
+          "componentIds": ["DA_Component_NeedlesslyLargeRod", "DA_Component_TearOfTheGoddess"],
+          "sourceIds": ["mobalytics-ap-8-4"],
+          "note": "Published carry holder and items."
+        },
+        {
+          "holder": "Malphite",
+          "role": "tank",
+          "groups": [
+            {
+              "kind": "primary",
+              "itemIds": ["DA_WarmogsArmor", "DA_Crownguard", "DA_GargoyleStoneplate"],
+              "sourceIds": ["mobalytics-ap-8-4"],
+              "note": "Published Malphite tank list."
+            }
+          ],
+          "temporaryHolders": [],
+          "componentIds": ["DA_Component_GiantsBelt", "DA_Component_ChainVest"],
+          "sourceIds": ["mobalytics-ap-8-4"],
+          "note": "Published tank holder and items."
+        }
+      ],
+      "augmentBranches": [
+        {
+          "id": "economy",
+          "category": "economy",
+          "signal": {
+            "value": "Economy augment",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "note": "Published when-to-make category."
+          },
+          "consequence": {
+            "value": "Supports the aggressive push to level 8.",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "note": "Published route consequence."
+          }
+        },
+        {
+          "id": "executioner-emblem",
+          "category": "trait/emblem",
+          "signal": {
+            "value": "Executioner Emblem",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "note": "Published when-to-make signal."
+          },
+          "consequence": {
+            "value": "Makes the source recommend considering this line.",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "note": "No trait-count or emblem-holder behavior is inferred."
+          }
+        }
+      ],
+      "warnings": {
+        "values": [
+          "The source final board has nine units; its level 8 stabilization cut is not published."
+        ],
+        "sourceIds": ["mobalytics-ap-8-4"],
+        "note": "Capacity distinction retained."
+      },
+      "decisionMap": {
+        "rootNodeId": "direction",
+        "nodes": [
+          {
+            "id": "direction",
+            "label": "Economy plus AP/Gargoyle direction?",
+            "kind": "question",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "status": "sourced",
+            "note": "Manual published signals."
+          },
+          {
+            "id": "commit",
+            "label": "Push level 8 and stabilize",
+            "kind": "action",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "status": "sourced",
+            "note": "Published route."
+          },
+          {
+            "id": "pivot",
+            "label": "Compare the other portfolio plans",
+            "kind": "action",
+            "sourceIds": [],
+            "status": "derived",
+            "note": "Application navigation only."
+          }
+        ],
+        "edges": [
+          {
+            "id": "direction-yes",
+            "from": "direction",
+            "to": "commit",
+            "label": "Yes",
+            "conditionKind": "manual-item-direction",
+            "sourceIds": ["mobalytics-ap-8-4"],
+            "status": "sourced",
+            "note": "Published condition."
+          },
+          {
+            "id": "direction-no",
+            "from": "direction",
+            "to": "pivot",
+            "label": "No",
+            "conditionKind": "navigation",
+            "sourceIds": [],
+            "status": "derived",
+            "note": "No unsourced branch is introduced."
+          }
+        ],
+        "note": "Manual deterministic traversal only."
+      },
+      "positioning": null
+    },
+    {
+      "familyId": "elderwood-cap",
+      "expectedTarget": {
+        "unitNames": [
+          "Draven",
+          "Maokai",
+          "Ezreal",
+          "Kennen",
+          "Gnar",
+          "Ivern",
+          "Taric",
+          "Amumu",
+          "Alistar"
+        ],
+        "capacity": 9
+      },
+      "expectedCore": ["Draven", "Maokai", "Ezreal", "Kennen"],
+      "sourceIds": ["mobalytics-final-forest"],
+      "watchUnits": ["Draven", "Maokai", "Ezreal", "Kennen"],
+      "stages": [
+        {
+          "id": "opener",
+          "label": "Strong opener",
+          "timing": {
+            "value": "Stage 2-1",
+            "sourceIds": ["mobalytics-final-forest"],
+            "note": "Published early plan."
+          },
+          "targetLevel": 4,
+          "units": [
+            { "name": "Varus", "slot": "temporary", "role": "holder" },
+            { "name": "Shen", "slot": "temporary", "role": "tank" },
+            { "name": "Leona", "slot": "temporary", "role": "tank" },
+            { "name": "Xayah", "slot": "temporary", "role": "carry" }
+          ],
+          "instruction": {
+            "value": "Use the published strong opener and level to 4.",
+            "sourceIds": ["mobalytics-final-forest"],
+            "note": "Published early plan."
+          },
+          "entryCondition": {
+            "value": "Strong opener plus economy support.",
+            "sourceIds": ["mobalytics-final-forest"],
+            "note": "Published when-to-make signals."
+          },
+          "exitCondition": null,
+          "nextStateIds": ["mid"],
+          "sourceIds": ["mobalytics-final-forest"]
+        },
+        {
+          "id": "mid",
+          "label": "Mid board",
+          "timing": {
+            "value": "Stage 3-2",
+            "sourceIds": ["mobalytics-final-forest"],
+            "note": "Published leveling point."
+          },
+          "targetLevel": 6,
+          "units": [
+            { "name": "Varus", "slot": "temporary", "role": "holder" },
+            { "name": "Shen", "slot": "temporary", "role": "tank" },
+            { "name": "Sejuani", "slot": "temporary", "role": "tank" },
+            { "name": "Leona", "slot": "temporary", "role": "tank" },
+            { "name": "Rakan", "slot": "temporary", "role": "support" },
+            { "name": "Xayah", "slot": "temporary", "role": "carry" }
+          ],
+          "instruction": {
+            "value": "Continue strongest board; roll only slightly on 8 if you are bleeding HP.",
+            "sourceIds": ["mobalytics-final-forest"],
+            "note": "Published mid-game and stabilization guidance."
+          },
+          "entryCondition": null,
+          "exitCondition": null,
+          "nextStateIds": ["stabilize-8"],
+          "sourceIds": ["mobalytics-final-forest"]
+        },
+        {
+          "id": "stabilize-8",
+          "label": "Stabilize 8",
+          "timing": {
+            "value": "Stage 4-2",
+            "sourceIds": ["mobalytics-final-forest"],
+            "note": "Published leveling table."
+          },
+          "targetLevel": 8,
+          "units": [],
+          "instruction": {
+            "value": "Stabilize a little at level 8 while preserving a strong economy.",
+            "sourceIds": ["mobalytics-final-forest"],
+            "note": "Published Fast 9 bridge; no exact level-8 board is shown."
+          },
+          "entryCondition": {
+            "value": "Strong opener and economy remain intact.",
+            "sourceIds": ["mobalytics-final-forest"],
+            "note": "Published entry conditions."
+          },
+          "exitCondition": {
+            "value": "Push level 9 after the board is stable enough to preserve economy.",
+            "sourceIds": ["mobalytics-final-forest"],
+            "note": "Published transition."
+          },
+          "nextStateIds": ["target"],
+          "sourceIds": ["mobalytics-final-forest"]
+        },
+        {
+          "id": "target",
+          "label": "Fast 9 cap",
+          "timing": {
+            "value": "Stage 5-2",
+            "sourceIds": ["mobalytics-final-forest"],
+            "note": "Published leveling table."
+          },
+          "targetLevel": 9,
+          "units": [
+            { "name": "Draven", "slot": "core", "role": "carry" },
+            { "name": "Maokai", "slot": "core", "role": "tank" },
+            { "name": "Ezreal", "slot": "core", "role": "carry" },
+            { "name": "Kennen", "slot": "core", "role": "carry" },
+            { "name": "Gnar", "slot": "flex", "role": "none" },
+            { "name": "Ivern", "slot": "flex", "role": "none" },
+            { "name": "Taric", "slot": "flex", "role": "tank" },
+            { "name": "Amumu", "slot": "flex", "role": "none" },
+            { "name": "Alistar", "slot": "flex", "role": "none" }
+          ],
+          "instruction": {
+            "value": "Complete the sourced legendary-heavy target at level 9.",
+            "sourceIds": ["mobalytics-final-forest"],
+            "note": "Published final board."
+          },
+          "entryCondition": null,
+          "exitCondition": null,
+          "nextStateIds": [],
+          "sourceIds": ["mobalytics-final-forest"]
+        }
+      ],
+      "rollPlan": {
+        "milestones": [
+          {
+            "id": "stabilize-8",
+            "kind": "stabilize",
+            "label": "Stabilize a little at level 8",
+            "timing": "Stage 4-2",
+            "targetLevel": 8,
+            "stayCondition": "Board still needs enough strength to preserve economy",
+            "leaveCondition": "Board is stable with strong economy",
+            "nextObjective": true
+          },
+          {
+            "id": "fast-9",
+            "kind": "push-level",
+            "label": "Push level 9",
+            "timing": "Stage 5-2",
+            "targetLevel": 9,
+            "stayCondition": "Strong economy",
+            "leaveCondition": null,
+            "nextObjective": false
+          }
+        ],
+        "sourceIds": ["mobalytics-final-forest"],
+        "note": "Published level 8 stabilization into Fast 9."
+      },
+      "itemHolders": [
+        {
+          "holder": "Draven",
+          "role": "carry",
+          "groups": [
+            {
+              "kind": "primary",
+              "itemIds": ["DA_Deathblade", "DA_LastWhisper", "DA_GuinsoosRageblade"],
+              "sourceIds": ["mobalytics-final-forest"],
+              "note": "Published Draven list; not universal BIS."
+            }
+          ],
+          "temporaryHolders": [],
+          "componentIds": ["DA_Component_BFSword", "DA_Component_RecurveBow"],
+          "sourceIds": ["mobalytics-final-forest"],
+          "note": "Published carry holder and items."
+        },
+        {
+          "holder": "Maokai",
+          "role": "tank",
+          "groups": [
+            {
+              "kind": "primary",
+              "itemIds": ["DA_BrambleVest", "DA_DragonsClaw", "DA_WarmogsArmor"],
+              "sourceIds": ["mobalytics-final-forest"],
+              "note": "Published Maokai tank list."
+            }
+          ],
+          "temporaryHolders": [],
+          "componentIds": ["DA_Component_ChainVest", "DA_Component_GiantsBelt"],
+          "sourceIds": ["mobalytics-final-forest"],
+          "note": "Published tank holder and items."
+        }
+      ],
+      "augmentBranches": [
+        {
+          "id": "economy",
+          "category": "economy",
+          "signal": {
+            "value": "Economy augment",
+            "sourceIds": ["mobalytics-final-forest"],
+            "note": "Published when-to-make category."
+          },
+          "consequence": {
+            "value": "Supports the level 8 stabilization into level 9 route.",
+            "sourceIds": ["mobalytics-final-forest"],
+            "note": "Published route consequence."
+          }
+        }
+      ],
+      "warnings": {
+        "values": [
+          "This line is source-conditioned on a strong opener and economy.",
+          "If Maokai is contested, the guide says Taric can become the main tank; it does not claim equal board strength."
+        ],
+        "sourceIds": ["mobalytics-final-forest"],
+        "note": "Published conditions and flex tip."
+      },
+      "decisionMap": {
+        "rootNodeId": "entry",
+        "nodes": [
+          {
+            "id": "entry",
+            "label": "Strong opener and economy support?",
+            "kind": "question",
+            "sourceIds": ["mobalytics-final-forest"],
+            "status": "sourced",
+            "note": "Manual published signals."
+          },
+          {
+            "id": "stabilize",
+            "label": "Stabilize a little at level 8",
+            "kind": "action",
+            "sourceIds": ["mobalytics-final-forest"],
+            "status": "sourced",
+            "note": "Published bridge."
+          },
+          {
+            "id": "pivot",
+            "label": "Compare the other portfolio plans",
+            "kind": "action",
+            "sourceIds": [],
+            "status": "derived",
+            "note": "Application navigation only."
+          }
+        ],
+        "edges": [
+          {
+            "id": "entry-yes",
+            "from": "entry",
+            "to": "stabilize",
+            "label": "Yes",
+            "conditionKind": "manual-economy-tempo",
+            "sourceIds": ["mobalytics-final-forest"],
+            "status": "sourced",
+            "note": "Published condition."
+          },
+          {
+            "id": "entry-no",
+            "from": "entry",
+            "to": "pivot",
+            "label": "No",
+            "conditionKind": "navigation",
+            "sourceIds": [],
+            "status": "derived",
+            "note": "No unsourced recovery line is introduced."
+          }
+        ],
+        "note": "Manual deterministic traversal only."
+      },
+      "positioning": null
+    },
+    {
+      "familyId": "apex-predator",
+      "expectedTarget": {
+        "unitNames": [
+          "Pebbles",
+          "Murkwolf",
+          "Krug",
+          "Brambleback",
+          "Sentinel",
+          "Elder Dragon",
+          "Gnar",
+          "Taric"
+        ],
+        "capacity": 9
+      },
+      "expectedCore": ["Elder Dragon", "Brambleback", "Sentinel"],
+      "sourceIds": ["tftactics-set18-tierlist"],
+      "watchUnits": [],
+      "stages": [],
+      "rollPlan": {
+        "milestones": [
+          {
+            "id": "fast-9",
+            "kind": "push-level",
+            "label": "Fast 9",
+            "timing": null,
+            "targetLevel": 9,
+            "stayCondition": null,
+            "leaveCondition": null,
+            "nextObjective": true
+          }
+        ],
+        "sourceIds": ["tftactics-set18-tierlist"],
+        "note": "Only the public roll-style label is supported; exact timing is unavailable."
+      },
+      "itemHolders": [],
+      "augmentBranches": [],
+      "warnings": null,
+      "decisionMap": null,
+      "positioning": null
+    },
+    {
+      "familyId": "consuming-flora",
+      "expectedTarget": {
+        "unitNames": [
+          "Kobuko",
+          "Rek'Sai",
+          "Veigar",
+          "Teemo",
+          "Fiddlesticks",
+          "Rammus",
+          "Sett",
+          "Gnar"
+        ],
+        "capacity": 8
+      },
+      "expectedCore": ["Veigar", "Teemo", "Fiddlesticks"],
+      "sourceIds": ["tftactics-set18-tierlist"],
+      "watchUnits": [],
+      "stages": [],
+      "rollPlan": {
+        "milestones": [
+          {
+            "id": "slow-roll-5",
+            "kind": "slow-roll",
+            "label": "Slow Roll (5)",
+            "timing": null,
+            "targetLevel": 5,
+            "stayCondition": "Required augment gate is present",
+            "leaveCondition": "Required augment gate is absent",
+            "nextObjective": true
+          }
+        ],
+        "sourceIds": ["tftactics-set18-tierlist"],
+        "note": "The public listing labels this as augment-gated but does not identify the augment."
+      },
+      "itemHolders": [],
+      "augmentBranches": [],
+      "warnings": {
+        "values": ["Augment-gated; the specific augment is unavailable."],
+        "sourceIds": ["tftactics-set18-tierlist"],
+        "note": "Visible public gate retained without inventing an augment ID."
+      },
+      "decisionMap": null,
+      "positioning": null
+    },
+    {
+      "familyId": "flora-executioners",
+      "expectedTarget": {
+        "unitNames": [
+          "Yorick",
+          "Azir",
+          "Fiddlesticks",
+          "Amumu",
+          "Malphite",
+          "Soraka",
+          "Zyra",
+          "Kennen"
+        ],
+        "capacity": 8
+      },
+      "expectedCore": ["Zyra", "Fiddlesticks", "Kennen"],
+      "sourceIds": ["tftactics-set18-tierlist"],
+      "watchUnits": [],
+      "stages": [],
+      "rollPlan": {
+        "milestones": [
+          {
+            "id": "fast-8",
+            "kind": "push-level",
+            "label": "Fast 8",
+            "timing": null,
+            "targetLevel": 8,
+            "stayCondition": null,
+            "leaveCondition": null,
+            "nextObjective": true
+          }
+        ],
+        "sourceIds": ["tftactics-set18-tierlist"],
+        "note": "Only the public roll-style label is supported."
+      },
+      "itemHolders": [],
+      "augmentBranches": [],
+      "warnings": null,
+      "decisionMap": null,
+      "positioning": null
+    },
+    {
+      "familyId": "invoker-spellweavers",
+      "expectedTarget": {
+        "unitNames": ["Karma", "Pebbles", "Krug", "Sett", "Ahri", "Morgana", "Sentinel", "Taric"],
+        "capacity": 8
+      },
+      "expectedCore": ["Karma", "Ahri", "Morgana"],
+      "sourceIds": ["tftactics-set18-tierlist"],
+      "watchUnits": [],
+      "stages": [],
+      "rollPlan": {
+        "milestones": [
+          {
+            "id": "fast-8",
+            "kind": "push-level",
+            "label": "Fast 8",
+            "timing": null,
+            "targetLevel": 8,
+            "stayCondition": "Required emblem gate is present",
+            "leaveCondition": "Required emblem gate is absent",
+            "nextObjective": true
+          }
+        ],
+        "sourceIds": ["tftactics-set18-tierlist"],
+        "note": "The public listing labels an emblem gate; exact emblem behavior is unavailable."
+      },
+      "itemHolders": [],
+      "augmentBranches": [],
+      "warnings": {
+        "values": ["Emblem-gated; exact holder and trait-count behavior are unavailable."],
+        "sourceIds": ["tftactics-set18-tierlist"],
+        "note": "Visible public gate retained without inferring rules."
+      },
+      "decisionMap": null,
+      "positioning": null
+    },
+    {
+      "familyId": "unrivaled",
+      "expectedTarget": {
+        "unitNames": [
+          "LeBlanc",
+          "Diana",
+          "Hecarim",
+          "Kha'Zix",
+          "Rengar",
+          "Aphelios",
+          "Ezreal",
+          "Alune"
+        ],
+        "capacity": 8
+      },
+      "expectedCore": ["Rengar", "Kha'Zix", "Diana"],
+      "sourceIds": ["tftactics-set18-tierlist"],
+      "watchUnits": [],
+      "stages": [],
+      "rollPlan": {
+        "milestones": [
+          {
+            "id": "slow-roll-7",
+            "kind": "slow-roll",
+            "label": "Slow Roll (7)",
+            "timing": null,
+            "targetLevel": 7,
+            "stayCondition": "Required augment gate is present",
+            "leaveCondition": "Required augment gate is absent",
+            "nextObjective": true
+          }
+        ],
+        "sourceIds": ["tftactics-set18-tierlist"],
+        "note": "Only the roll-style and augment-gate labels are supported."
+      },
+      "itemHolders": [],
+      "augmentBranches": [],
+      "warnings": {
+        "values": ["Augment-gated; the specific augment is unavailable."],
+        "sourceIds": ["tftactics-set18-tierlist"],
+        "note": "Visible public gate retained without inventing an augment ID."
+      },
+      "decisionMap": null,
+      "positioning": null
+    },
+    {
+      "familyId": "elderwood-rapidfire",
+      "expectedTarget": {
+        "unitNames": ["Ornn", "Xayah", "Alistar", "LeBlanc", "Aphelios", "Lillia", "Alune", "Gnar"],
+        "capacity": 8
+      },
+      "expectedCore": ["Xayah", "Aphelios", "Gnar"],
+      "sourceIds": ["tftactics-set18-tierlist"],
+      "watchUnits": [],
+      "stages": [],
+      "rollPlan": {
+        "milestones": [
+          {
+            "id": "fast-8",
+            "kind": "push-level",
+            "label": "Fast 8",
+            "timing": null,
+            "targetLevel": 8,
+            "stayCondition": null,
+            "leaveCondition": null,
+            "nextObjective": true
+          }
+        ],
+        "sourceIds": ["tftactics-set18-tierlist"],
+        "note": "Only the public roll-style label is supported."
+      },
+      "itemHolders": [],
+      "augmentBranches": [],
+      "warnings": null,
+      "decisionMap": null,
+      "positioning": null
+    },
+    {
+      "familyId": "blackthorn-sprykin",
+      "expectedTarget": {
+        "unitNames": [
+          "Kobuko",
+          "Rek'Sai",
+          "Veigar",
+          "Fiddlesticks",
+          "Rammus",
+          "Tristana",
+          "Sett",
+          "Gnar"
+        ],
+        "capacity": 8
+      },
+      "expectedCore": ["Veigar", "Fiddlesticks", "Rammus"],
+      "sourceIds": ["tftactics-set18-tierlist"],
+      "watchUnits": [],
+      "stages": [],
+      "rollPlan": {
+        "milestones": [
+          {
+            "id": "slow-roll-5",
+            "kind": "slow-roll",
+            "label": "Slow Roll (5)",
+            "timing": null,
+            "targetLevel": 5,
+            "stayCondition": null,
+            "leaveCondition": null,
+            "nextObjective": true
+          }
+        ],
+        "sourceIds": ["tftactics-set18-tierlist"],
+        "note": "Only the public roll-style label is supported."
+      },
+      "itemHolders": [],
+      "augmentBranches": [],
+      "warnings": null,
+      "decisionMap": null,
+      "positioning": null
+    },
+    {
+      "familyId": "blossom-executioners",
+      "expectedTarget": {
+        "unitNames": ["Alistar", "LeBlanc", "Yunara", "Ahri", "Ezreal", "Sett", "Soraka", "Kennen"],
+        "capacity": 8
+      },
+      "expectedCore": ["Yunara", "Ahri", "Kennen"],
+      "sourceIds": ["tftactics-set18-tierlist"],
+      "watchUnits": [],
+      "stages": [],
+      "rollPlan": {
+        "milestones": [
+          {
+            "id": "slow-roll-6",
+            "kind": "slow-roll",
+            "label": "Slow Roll (6)",
+            "timing": null,
+            "targetLevel": 6,
+            "stayCondition": null,
+            "leaveCondition": null,
+            "nextObjective": true
+          }
+        ],
+        "sourceIds": ["tftactics-set18-tierlist"],
+        "note": "Only the public roll-style label is supported."
+      },
+      "itemHolders": [],
+      "augmentBranches": [],
+      "warnings": null,
+      "decisionMap": null,
+      "positioning": null
+    },
+    {
+      "familyId": "coven-invokers",
+      "expectedTarget": {
+        "unitNames": [
+          "Pebbles",
+          "Diana",
+          "Hecarim",
+          "Kog'Maw",
+          "Brambleback",
+          "Morgana",
+          "Sentinel",
+          "Taric"
+        ],
+        "capacity": 8
+      },
+      "expectedCore": ["Diana", "Morgana", "Sentinel"],
+      "sourceIds": ["tftactics-set18-tierlist"],
+      "watchUnits": [],
+      "stages": [],
+      "rollPlan": {
+        "milestones": [
+          {
+            "id": "fast-8",
+            "kind": "push-level",
+            "label": "Fast 8",
+            "timing": null,
+            "targetLevel": 8,
+            "stayCondition": null,
+            "leaveCondition": null,
+            "nextObjective": true
+          }
+        ],
+        "sourceIds": ["tftactics-set18-tierlist"],
+        "note": "Only the public roll-style label is supported."
+      },
+      "itemHolders": [],
+      "augmentBranches": [],
+      "warnings": null,
+      "decisionMap": null,
+      "positioning": null
+    }
+  ]
+}

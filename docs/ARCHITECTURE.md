@@ -241,6 +241,12 @@ The implemented M6 path extends the same aggregate matches with `fail-closed can
 
 Discovery datasets are keyed by active set/static source, canonical/similarity/clustering/relation/lifecycle/statistics versions, centralized configuration, family definitions and aggregate sample definition. Static/set refresh ignores incompatible derived evidence, reuses compatible immutable matches, revalidates registry boards, and keeps patch relevance unavailable unless a verified mapping exists. M4 lobby pressure is supplied independently at recommendation time and is not a discovery feature.
 
+### M7 strategy-guidance boundary
+
+The generic registry entry now carries a versioned strategy attachment loaded from a validated public-source ledger. The attachment records static-source, target-board and family/core fingerprints plus field-level source status. Stage, roll, item, augment, replacement, Decision Map and positioning validation remains in the rules/strategy layers; React only renders the validated model.
+
+The hot playbook path is local: deterministic quick-strip derivation, acyclic manual Decision Map traversal, TFT-board rendering data and three-plan pivot construction make no network request. Discovered final boards begin with sparse guidance. A mature Variant can inherit only retained holder/item directions after explicit core/capacity compatibility checks; recommendation eligibility and M4 lobby pressure remain independent.
+
 ## Testing
 
 Critical unit/integration tests should cover:
