@@ -81,6 +81,16 @@ export function upgradeStoredCompletedMatch(value: unknown): CompletedMatch | nu
       : null;
   stored.tftContentPatch = contentPatch;
   stored.tftContentPatchSource = contentPatch ? patchSource : 'unavailable';
+  stored.gameTimestamp =
+    typeof stored.gameTimestamp === 'string' ? stored.gameTimestamp : stored.completedAt;
+  stored.gameTimestampSemantics =
+    stored.gameTimestampSemantics === 'fixture-completed-at'
+      ? 'fixture-completed-at'
+      : 'riot-game-datetime-unspecified';
+  stored.gameDurationSeconds =
+    typeof stored.gameDurationSeconds === 'number' && stored.gameDurationSeconds >= 0
+      ? stored.gameDurationSeconds
+      : null;
   return stored as unknown as CompletedMatch;
 }
 

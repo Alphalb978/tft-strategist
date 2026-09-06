@@ -285,6 +285,155 @@ for (const width of [1440, 1000, 860])
   });
 
 for (const width of [1440, 1000, 860])
+  test(`M9 reconciliation, review, manual confirm, and personal evidence fit at ${width}px`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/?riot-fixture=1');
+    await expect(
+      page.getByRole('heading', { name: 'Three plans. More possibilities.' }),
+    ).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Resolve', exact: true }).click();
+    await expect(
+      page.getByText('Account resolved through the native Riot boundary.'),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Your plans', exact: true }).click();
+    await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+    await page.getByRole('button', { name: 'Lock this plan' }).click();
+    await page.locator('.pivot-edges > button').first().click();
+    await page.getByRole('button', { name: 'Switch to this plan' }).click();
+    await page.getByRole('button', { name: 'Post-game', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Recent games & reviews' })).toBeVisible();
+    await expect(page.getByText(/Sample too small/)).toBeVisible();
+    await page.getByRole('button', { name: 'Check completed match', exact: true }).click();
+    await expect(page.locator('[data-history-state="matched"]')).toBeVisible();
+    await expect(page.getByText(/terminal plan/).first()).toBeVisible();
+    await expect(page.getByText(/Result attribution uses only the terminal route/)).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    expect(
+      await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    await page.screenshot({ path: `artifacts/m9-matched-${width}.png`, fullPage: true });
+
+    await page.evaluate(() => {
+      const key = 'strategist:v1:postgame-reconciliations';
+      const rows = JSON.parse(localStorage.getItem(key) ?? '[]') as Array<{
+        state: string;
+        matchId: string | null;
+        decision: string | null;
+        candidates: Array<Record<string, unknown>>;
+      }>;
+      const row = rows[0];
+      const first = row.candidates[0];
+      row.state = 'ambiguous';
+      row.matchId = null;
+      row.decision = null;
+      row.candidates = [
+        first,
+        {
+          ...first,
+          matchId: 'EUW1_FIXTURE_SELF_2',
+          score: Number(first.score) - 0.01,
+          placement: 2,
+        },
+      ];
+      localStorage.setItem(key, JSON.stringify(rows));
+      localStorage.setItem('strategist:v1:postgame-reviews', '[]');
+    });
+    await page.getByRole('button', { name: 'Your plans', exact: true }).click();
+    await page.getByRole('button', { name: 'Post-game', exact: true }).click();
+    await expect(page.getByText('Manual confirmation required')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Confirm this match' })).toHaveCount(2);
+    await page.screenshot({ path: `artifacts/m9-ambiguous-${width}.png`, fullPage: true });
+    await page.getByRole('button', { name: 'Confirm this match' }).first().click();
+    await expect(page.locator('[data-history-state="matched"]')).toBeVisible();
+
+    await page.evaluate(() => {
+      const sessionKey = 'strategist:v1:plan-sessions';
+      const sessions = JSON.parse(localStorage.getItem(sessionKey) ?? '[]') as Array<{
+        snapshot: { playbook: { set: number } };
+      }>;
+      sessions.at(-1)!.snapshot.playbook.set = 17;
+      localStorage.setItem(sessionKey, JSON.stringify(sessions));
+      const reviewKey = 'strategist:v1:postgame-reviews';
+      const current = JSON.parse(localStorage.getItem(reviewKey) ?? '[]') as Array<
+        Record<string, unknown>
+      >;
+      const base = current[0] as Record<string, unknown> & {
+        baseline: { derivationFingerprint: string | null };
+        classifierVersion: string;
+        canonicalModelVersion: string;
+        similarityModelVersion: string;
+      };
+      const terminal = sessions.at(-1)! as unknown as {
+        snapshotFingerprint: string;
+      };
+      const stableFingerprint = (value: unknown) => {
+        const stable = (input: unknown): string => {
+          if (Array.isArray(input)) return `[${input.map(stable).join(',')}]`;
+          if (input && typeof input === 'object')
+            return `{${Object.entries(input as Record<string, unknown>)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`)
+              .join(',')}}`;
+          return JSON.stringify(input);
+        };
+        let hash = 2166136261;
+        for (const character of stable(value)) {
+          hash ^= character.charCodeAt(0);
+          hash = Math.imul(hash, 16777619);
+        }
+        return `fnv1a-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+      };
+      const reviews = Array.from({ length: 20 }, (_, index) => {
+        const matchId = `EUW1_MATURE_${index}`;
+        const derivationFingerprint = stableFingerprint({
+          reviewVersion: base.reviewVersion,
+          matchId,
+          terminalSnapshot: terminal.snapshotFingerprint,
+          classifierVersion: base.classifierVersion,
+          canonicalVersion: base.canonicalModelVersion,
+          similarityVersion: base.similarityModelVersion,
+          baseline: base.baseline.derivationFingerprint,
+        });
+        return {
+          ...base,
+          id: `fixture-review-${index}`,
+          matchId,
+          derivationFingerprint,
+          baseline: {
+            ...base.baseline,
+            state: 'available',
+            placementResidual: index % 2 ? 1.2 : 0.4,
+            confidence: 0.85,
+          },
+          attribution: {
+            eligible: true,
+            familyId: (base.selectedPlan as { familyId: string }).familyId,
+            confidence: 0.9,
+            reasons: [],
+          },
+        };
+      });
+      localStorage.setItem(reviewKey, JSON.stringify(reviews));
+    });
+    await page.getByRole('button', { name: 'Your plans', exact: true }).click();
+    await page.getByRole('button', { name: 'Post-game', exact: true }).click();
+    await expect(page.getByText('Old set · excluded from learning')).toBeVisible();
+    await expect(page.getByText(/20 attributed current-set games/)).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: `artifacts/m9-mature-stale-${width}.png`, fullPage: true });
+    expect(errors).toEqual([]);
+  });
+
+for (const width of [1440, 1000, 860])
   test(`M7 covered and partial playbooks are usable at ${width}px`, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));

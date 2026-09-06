@@ -5,6 +5,7 @@ import type {
   LobbyPressure,
   PlanSession,
   PlanSessionManualState,
+  PersonalProfile,
   Playbook,
   RecommendationPortfolio,
   SelectedPlan,
@@ -49,6 +50,7 @@ export interface ApplicationState {
   meta: AggregateMetaDataset | null;
   discovery: DiscoveryDataset | null;
   registry: CompRegistryEntry[];
+  personal: PersonalProfile | null;
 }
 export function createRecommendations(
   data: StaticData,
@@ -56,6 +58,7 @@ export function createRecommendations(
   now = new Date().toISOString(),
   meta: AggregateMetaDataset | null = null,
   discovery: DiscoveryDataset | null = null,
+  personal: PersonalProfile | null = null,
 ) {
   const dataIssues = auditStaticData(data);
   if (dataIssues.length)
@@ -103,6 +106,7 @@ export function createRecommendations(
         personalWeight: settings.personalWeight,
         meta: usableMeta,
         discovery: usableDiscovery,
+        personal: personal ?? undefined,
       }),
     ),
     now,
@@ -114,6 +118,7 @@ export function createRecommendations(
     meta: usableMeta,
     discovery: usableDiscovery,
     registry,
+    personal,
   };
 }
 export async function loadApplication(repository: Repository): Promise<ApplicationState> {
@@ -167,6 +172,7 @@ export async function loadApplication(repository: Repository): Promise<Applicati
     new Date().toISOString(),
     savedMeta,
     savedDiscovery,
+    await repository.getPersonalProfile(data.version.set),
   );
   let activeSession =
     isPlanSession(storedSession) && storedSession.state === 'active' ? storedSession : null;
@@ -178,6 +184,7 @@ export async function loadApplication(repository: Repository): Promise<Applicati
     activeSession,
     notices: result.notices,
     assets,
+    personal: result.personal,
   };
   if (!activeSession && legacySelection) {
     activeSession = upgradeLegacySelection(legacySelection, baseState);
@@ -216,6 +223,7 @@ export async function refreshApplication(
     new Date().toISOString(),
     current.meta,
     current.discovery,
+    current.personal,
   );
   if (!result.playbooks.length)
     throw new Error('Refreshed roster failed playbook validation; previous cache retained.');

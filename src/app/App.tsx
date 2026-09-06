@@ -6,6 +6,7 @@ import {
   Compass,
   Database,
   Hexagon,
+  History,
   LockKeyhole,
   Play,
   RefreshCw,
@@ -33,7 +34,8 @@ import { openHistoryStore, type HistoryStore } from '../storage/history';
 import { CompLibrary } from '../features/CompLibrary';
 import { refreshMetaDiscovery } from '../services/discoveryRefresh';
 import { regionalRouteFor } from '../providers/riotRouting';
-type Page = 'home' | 'active' | 'library' | 'data';
+import { PostGameHistory } from '../features/PostGameHistory';
+type Page = 'home' | 'active' | 'library' | 'history' | 'data';
 type DetailContext = 'current' | 'session';
 export function App() {
   const [state, setState] = useState<ApplicationState | null>(null),
@@ -126,6 +128,7 @@ export function App() {
           new Date().toISOString(),
           state.meta,
           state.discovery,
+          state.personal,
         ),
       });
       if (
@@ -167,6 +170,7 @@ export function App() {
           refreshed.discovery.generatedAt,
           refreshed.meta,
           refreshed.discovery,
+          state.personal,
         ),
       });
       setToast(refreshed.status.message);
@@ -244,6 +248,7 @@ export function App() {
           personalWeight: state.settings.personalWeight,
           meta: state.meta,
           discovery: state.discovery,
+          personal: state.personal ?? undefined,
         }),
       ),
       now,
@@ -270,6 +275,7 @@ export function App() {
                 personalWeight: state.settings.personalWeight,
                 meta: state.meta,
                 discovery: state.discovery,
+                personal: state.personal ?? undefined,
               })
             : undefined;
         })())
@@ -301,6 +307,7 @@ export function App() {
                 ? ([{ id: 'active', label: 'Active plan', icon: Play }] as const)
                 : []),
               { id: 'library', label: 'Comps', icon: BookOpen },
+              { id: 'history', label: 'Post-game', icon: History },
               { id: 'data', label: 'Data & settings', icon: Database },
             ] as const
           ).map((n) => (
@@ -341,7 +348,9 @@ export function App() {
                     ? 'Your plans'
                     : page === 'library'
                       ? 'Comps'
-                      : 'Data & settings'}
+                      : page === 'history'
+                        ? 'Post-game'
+                        : 'Data & settings'}
             </strong>
           </div>
           <div className="topbar-right">
@@ -443,6 +452,24 @@ export function App() {
                   historyStore={historyStore}
                   fixturePreview={fixturePreview}
                   onLobby={setLobby}
+                />
+              ) : page === 'history' && riotProvider && historyStore && repository.current ? (
+                <PostGameHistory
+                  state={state}
+                  repository={repository.current}
+                  provider={riotProvider}
+                  historyStore={historyStore}
+                  onUpdated={(personal, activeSession) => {
+                    const next = createRecommendations(
+                      state.data,
+                      state.settings,
+                      new Date().toISOString(),
+                      state.meta,
+                      state.discovery,
+                      personal,
+                    );
+                    setState({ ...state, ...next, personal, activeSession });
+                  }}
                 />
               ) : (
                 <CompLibrary state={state} onOpen={(id) => open(id, 'current')} />

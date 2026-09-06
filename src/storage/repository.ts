@@ -1,5 +1,12 @@
 import type Database from '@tauri-apps/plugin-sql';
-import type { PlanSession, StaticData, SelectedPlan } from '../domain/models';
+import type {
+  MatchReconciliation,
+  PersonalProfile,
+  PlanSession,
+  PostGameReview,
+  StaticData,
+  SelectedPlan,
+} from '../domain/models';
 import { planSessionSnapshotFingerprint } from '../domain/fingerprint';
 import { parsePlatform, type RiotPlatform } from '../providers/riotRouting';
 export interface Settings {
@@ -42,6 +49,13 @@ export interface Repository {
   createPlanSession(session: PlanSession): Promise<void>;
   replacePlanSession(previous: PlanSession, next: PlanSession): Promise<void>;
   updatePlanSession(session: PlanSession): Promise<void>;
+  listReconciliations(): Promise<MatchReconciliation[]>;
+  putReconciliation(reconciliation: MatchReconciliation): Promise<void>;
+  listPostGameReviews(): Promise<PostGameReview[]>;
+  putPostGameReview(review: PostGameReview): Promise<void>;
+  deletePostGameReview(chainId: string): Promise<void>;
+  getPersonalProfile(set: number): Promise<PersonalProfile | null>;
+  putPersonalProfile(profile: PersonalProfile): Promise<void>;
 }
 function assertSessionSnapshotIntegrity(session: PlanSession, existing?: PlanSession) {
   if (planSessionSnapshotFingerprint(session.snapshot) !== session.snapshotFingerprint)
@@ -124,6 +138,61 @@ export class MemoryRepository implements Repository {
       throw new Error('An active plan session already exists.');
     this.entries.set('plan-sessions', structuredClone([...others, session]));
   }
+  async listReconciliations() {
+    return structuredClone(
+      (this.entries.get('postgame-reconciliations') as MatchReconciliation[] | undefined) ?? [],
+    );
+  }
+  async putReconciliation(reconciliation: MatchReconciliation) {
+    const rows = await this.listReconciliations();
+    const existing = rows.find((row) => row.chainId === reconciliation.chainId);
+    if (existing?.state === 'matched' && existing.matchId !== reconciliation.matchId)
+      throw new Error('Unlink the existing match before choosing another candidate.');
+    const conflict = rows.find(
+      (row) =>
+        row.chainId !== reconciliation.chainId &&
+        (row.terminalSessionId === reconciliation.terminalSessionId ||
+          (reconciliation.matchId && row.matchId === reconciliation.matchId)),
+    );
+    if (conflict) throw new Error('This match or session chain is already reconciled.');
+    this.entries.set(
+      'postgame-reconciliations',
+      structuredClone([
+        ...rows.filter((row) => row.chainId !== reconciliation.chainId),
+        reconciliation,
+      ]),
+    );
+  }
+  async listPostGameReviews() {
+    return structuredClone(
+      (this.entries.get('postgame-reviews') as PostGameReview[] | undefined) ?? [],
+    );
+  }
+  async putPostGameReview(review: PostGameReview) {
+    const rows = await this.listPostGameReviews();
+    const conflict = rows.find(
+      (row) => row.chainId !== review.chainId && row.matchId === review.matchId,
+    );
+    if (conflict) throw new Error('This completed match already has a review.');
+    this.entries.set(
+      'postgame-reviews',
+      structuredClone([...rows.filter((row) => row.chainId !== review.chainId), review]),
+    );
+  }
+  async deletePostGameReview(chainId: string) {
+    this.entries.set(
+      'postgame-reviews',
+      structuredClone((await this.listPostGameReviews()).filter((row) => row.chainId !== chainId)),
+    );
+  }
+  async getPersonalProfile(set: number) {
+    return structuredClone(
+      (this.entries.get(`personal-profile:${set}`) as PersonalProfile | undefined) ?? null,
+    );
+  }
+  async putPersonalProfile(profile: PersonalProfile) {
+    this.entries.set(`personal-profile:${profile.set}`, structuredClone(profile));
+  }
 }
 class BrowserRepository implements Repository {
   mode = 'Browser local storage' as const;
@@ -184,6 +253,52 @@ class BrowserRepository implements Repository {
     if (session.state === 'active' && others.some((entry) => entry.state === 'active'))
       throw new Error('An active plan session already exists.');
     await this.set('plan-sessions', [...others, session]);
+  }
+  async listReconciliations() {
+    return (await this.get<MatchReconciliation[]>('postgame-reconciliations')) ?? [];
+  }
+  async putReconciliation(reconciliation: MatchReconciliation) {
+    const rows = await this.listReconciliations();
+    const existing = rows.find((row) => row.chainId === reconciliation.chainId);
+    if (existing?.state === 'matched' && existing.matchId !== reconciliation.matchId)
+      throw new Error('Unlink the existing match before choosing another candidate.');
+    if (
+      rows.some(
+        (row) =>
+          row.chainId !== reconciliation.chainId &&
+          (row.terminalSessionId === reconciliation.terminalSessionId ||
+            (reconciliation.matchId && row.matchId === reconciliation.matchId)),
+      )
+    )
+      throw new Error('This match or session chain is already reconciled.');
+    await this.set('postgame-reconciliations', [
+      ...rows.filter((row) => row.chainId !== reconciliation.chainId),
+      reconciliation,
+    ]);
+  }
+  async listPostGameReviews() {
+    return (await this.get<PostGameReview[]>('postgame-reviews')) ?? [];
+  }
+  async putPostGameReview(review: PostGameReview) {
+    const rows = await this.listPostGameReviews();
+    if (rows.some((row) => row.chainId !== review.chainId && row.matchId === review.matchId))
+      throw new Error('This completed match already has a review.');
+    await this.set('postgame-reviews', [
+      ...rows.filter((row) => row.chainId !== review.chainId),
+      review,
+    ]);
+  }
+  async deletePostGameReview(chainId: string) {
+    await this.set(
+      'postgame-reviews',
+      (await this.listPostGameReviews()).filter((row) => row.chainId !== chainId),
+    );
+  }
+  async getPersonalProfile(set: number) {
+    return this.get<PersonalProfile>(`personal-profile:${set}`);
+  }
+  async putPersonalProfile(profile: PersonalProfile) {
+    await this.set(`personal-profile:${profile.set}`, profile);
   }
 }
 class SqlRepository implements Repository {
@@ -278,6 +393,66 @@ class SqlRepository implements Repository {
       ],
     );
     if (!result.rowsAffected) throw new Error('Plan session does not exist.');
+  }
+  async listReconciliations() {
+    const rows = await this.db.select<{ payload: string }[]>(
+      'SELECT payload FROM postgame_reconciliations ORDER BY checked_at DESC',
+    );
+    return rows.map((row) => JSON.parse(row.payload) as MatchReconciliation);
+  }
+  async putReconciliation(reconciliation: MatchReconciliation) {
+    const existing = await this.db.select<{ state: string; match_id: string | null }[]>(
+      'SELECT state,match_id FROM postgame_reconciliations WHERE chain_id=$1',
+      [reconciliation.chainId],
+    );
+    if (existing[0]?.state === 'matched' && existing[0].match_id !== reconciliation.matchId)
+      throw new Error('Unlink the existing match before choosing another candidate.');
+    await this.db.execute(
+      'INSERT INTO postgame_reconciliations (chain_id,terminal_session_id,state,match_id,payload,checked_at,decided_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(chain_id) DO UPDATE SET state=excluded.state,match_id=excluded.match_id,payload=excluded.payload,checked_at=excluded.checked_at,decided_at=excluded.decided_at',
+      [
+        reconciliation.chainId,
+        reconciliation.terminalSessionId,
+        reconciliation.state,
+        reconciliation.matchId,
+        JSON.stringify(reconciliation),
+        reconciliation.checkedAt,
+        reconciliation.decidedAt,
+      ],
+    );
+  }
+  async listPostGameReviews() {
+    const rows = await this.db.select<{ payload: string }[]>(
+      'SELECT payload FROM postgame_reviews ORDER BY created_at DESC',
+    );
+    return rows.map((row) => JSON.parse(row.payload) as PostGameReview);
+  }
+  async putPostGameReview(review: PostGameReview) {
+    await this.db.execute(
+      'INSERT INTO postgame_reviews (chain_id,match_id,derivation_fingerprint,payload,created_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(chain_id) DO UPDATE SET match_id=excluded.match_id,derivation_fingerprint=excluded.derivation_fingerprint,payload=excluded.payload,created_at=excluded.created_at',
+      [
+        review.chainId,
+        review.matchId,
+        review.derivationFingerprint,
+        JSON.stringify(review),
+        review.createdAt,
+      ],
+    );
+  }
+  async deletePostGameReview(chainId: string) {
+    await this.db.execute('DELETE FROM postgame_reviews WHERE chain_id=$1', [chainId]);
+  }
+  async getPersonalProfile(set: number) {
+    const rows = await this.db.select<{ payload: string }[]>(
+      'SELECT payload FROM personal_profiles WHERE key=$1',
+      [`set:${set}`],
+    );
+    return rows[0] ? (JSON.parse(rows[0].payload) as PersonalProfile) : null;
+  }
+  async putPersonalProfile(profile: PersonalProfile) {
+    await this.db.execute(
+      'INSERT INTO personal_profiles (key,payload) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload',
+      [`set:${profile.set}`, JSON.stringify(profile)],
+    );
   }
 }
 export async function openRepository(): Promise<Repository> {

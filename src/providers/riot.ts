@@ -191,6 +191,7 @@ const matchSchema = z
     info: z
       .object({
         game_datetime: z.number().finite(),
+        game_length: z.number().finite().nonnegative().optional(),
         game_version: z.string().min(1),
         participants: z.array(participantSchema).min(1),
         queue_id: z.number().int().optional(),
@@ -224,6 +225,8 @@ export function normalizeRiotMatch(
     tftContentPatchSource: 'unavailable',
     dataVersion: metadata.data_version,
     gameTimestamp: timestamp,
+    gameTimestampSemantics: 'riot-game-datetime-unspecified',
+    gameDurationSeconds: info.game_length ?? null,
     completedAt: timestamp,
     queueId: info.queue_id ?? info.queueId ?? null,
     gameType: info.tft_game_type ?? null,

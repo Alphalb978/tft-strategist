@@ -862,11 +862,17 @@ export interface LobbyPressure {
   errors: string[];
 }
 export interface PersonalProfile {
+  schemaVersion?: 1;
+  modelVersion?: string;
   set: number;
   patch: string;
   effectiveGames: number;
   familyAffinity: Record<ID, number>;
   generatedAt: string;
+  sourceReviewIds?: ID[];
+  confidence?: number;
+  minimumEvidenceGames?: number;
+  families?: PersonalFamilyEvidence[];
   insights: {
     kind: 'strength' | 'weakness';
     text: string;
@@ -923,6 +929,10 @@ export interface CompletedMatch {
   tftContentPatchSource: 'verified-mapping' | 'fixture' | 'unavailable';
   dataVersion: string;
   gameTimestamp: string;
+  /** Riot documents `game_datetime` only as a Unix timestamp, without start/end semantics. */
+  gameTimestampSemantics?: 'riot-game-datetime-unspecified' | 'fixture-completed-at';
+  /** Documented `game_length` in seconds when present in the completed-match DTO. */
+  gameDurationSeconds?: number | null;
   completedAt: string;
   queueId: number | null;
   gameType: string | null;
@@ -944,7 +954,7 @@ export interface SelectedPlan {
 }
 export const PLAN_SESSION_SCHEMA_VERSION = 1 as const;
 export type PlanSessionState = 'active' | 'ended';
-export type PlanSessionEndReason = 'ended-without-result' | 'replaced';
+export type PlanSessionEndReason = 'ended-without-result' | 'replaced' | 'completed';
 export interface PlanSessionCompatibility {
   state: 'current' | 'stale';
   evaluatedAt: string;
@@ -1032,6 +1042,122 @@ export interface PlanSession {
   manualState: PlanSessionManualState;
   compatibility: PlanSessionCompatibility;
   reconciliation: { matchId: ID | null };
+}
+
+export type ReconciliationState = 'unmatched' | 'candidate' | 'matched' | 'ambiguous' | 'rejected';
+export interface ReconciliationCandidate {
+  matchId: ID;
+  score: number;
+  confidence: 'low' | 'medium' | 'high';
+  participantPuuid: string;
+  placement: number;
+  gameTimestamp: string;
+  gameDurationSeconds: number | null;
+  timestampSemantics: 'riot-game-datetime-unspecified' | 'fixture-completed-at';
+  evidence: {
+    key: 'account' | 'platform' | 'timing' | 'mode' | 'set';
+    state: 'matched' | 'compatible' | 'unverified' | 'rejected';
+    weight: number;
+    detail: string;
+  }[];
+  reasons: string[];
+}
+export interface ReconciliationAuditEvent {
+  at: string;
+  action: 'checked' | 'auto-matched' | 'confirmed' | 'rejected' | 'unlinked';
+  matchId: ID | null;
+  note: string;
+}
+export interface MatchReconciliation {
+  schemaVersion: 1;
+  modelVersion: string;
+  chainId: ID;
+  sessionIds: ID[];
+  terminalSessionId: ID;
+  state: ReconciliationState;
+  matchId: ID | null;
+  candidates: ReconciliationCandidate[];
+  accountPuuid: string | null;
+  platform: string | null;
+  checkedAt: string;
+  decidedAt: string | null;
+  decision: 'automatic' | 'manual' | 'rejected' | null;
+  audit: ReconciliationAuditEvent[];
+}
+
+export interface SelectedFinalBoardRelation {
+  state: 'same-family' | 'pivot-destination' | 'other-family' | 'unknown' | 'unavailable';
+  classification: CompClassification;
+  canonicalFinal: CanonicalBoard | null;
+  canonicalTarget: CanonicalBoard | null;
+  similarity: BoardSimilarity | null;
+  selectedCorePresent: ID[];
+  selectedCoreMissing: ID[];
+  finalUnitsAdded: ID[];
+  targetCapacity: number;
+  finalBoardSize: number | null;
+}
+export interface ReviewBaselineEvidence {
+  state: 'available' | 'unavailable';
+  familyId: ID | null;
+  datasetId: ID | null;
+  derivationFingerprint: string | null;
+  games: number;
+  confidence: number;
+  expectedPlacement: number | null;
+  placementResidual: number | null;
+  expectedTopFour: number | null;
+  note: string;
+}
+export interface PostGameReview {
+  schemaVersion: 1;
+  reviewVersion: string;
+  id: ID;
+  chainId: ID;
+  sessionIds: ID[];
+  terminalSessionId: ID;
+  matchId: ID;
+  set: number;
+  createdAt: string;
+  matchFingerprint: string;
+  staticFingerprint: string;
+  selectedTargetFingerprint: string;
+  classifierVersion: string;
+  canonicalModelVersion: string;
+  similarityModelVersion: string;
+  participant: {
+    puuid: string;
+    placement: number;
+    level: number;
+    augmentIds: ID[];
+    augmentEvidence: 'validated' | 'unavailable';
+    itemIds: ID[];
+    itemEvidence: 'validated' | 'unavailable';
+  };
+  selectedPlan: { playbookId: ID; familyId: ID; title: string };
+  switchChain: { sessionId: ID; playbookId: ID; familyId: ID; title: string }[];
+  relation: SelectedFinalBoardRelation;
+  baseline: ReviewBaselineEvidence;
+  summary: string[];
+  adjustment: string;
+  evidenceGaps: string[];
+  attribution: {
+    eligible: boolean;
+    familyId: ID | null;
+    confidence: number;
+    reasons: string[];
+  };
+  derivationFingerprint: string;
+}
+export interface PersonalFamilyEvidence {
+  familyId: ID;
+  games: number;
+  effectiveGames: number;
+  averageResidual: number;
+  shrunkResidual: number;
+  affinity: number;
+  confidence: number;
+  matchIds: ID[];
 }
 export interface PostGameSummary {
   matchId: ID;

@@ -28,6 +28,12 @@ pub fn run() {
                             sql: include_str!("../../src/storage/schema_m8.sql"),
                             kind: MigrationKind::Up,
                         },
+                        Migration {
+                            version: 4,
+                            description: "postgame reconciliation reviews and personal learning",
+                            sql: include_str!("../../src/storage/schema_m9.sql"),
+                            kind: MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

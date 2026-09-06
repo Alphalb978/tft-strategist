@@ -28,6 +28,8 @@ export function match(
     tftContentPatchSource: contentPatch === null ? 'unavailable' : 'fixture',
     dataVersion: 'fixture-v2',
     gameTimestamp: NOW,
+    gameTimestampSemantics: 'fixture-completed-at',
+    gameDurationSeconds: 2100,
     completedAt: NOW,
     queueId: null,
     gameType: 'fixture-standard',

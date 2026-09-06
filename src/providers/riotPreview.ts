@@ -57,8 +57,9 @@ export function createRiotPreviewProvider(data: StaticData): FixtureRiotProvider
       ? discoveryReplacement
       : eligible.find((entry) => entry.id === unit.championId)!,
   );
+  const previewNow = Date.now();
   const matches: CompletedMatch[] = Array.from({ length: 20 }, (_, matchIndex) => {
-    const completedAt = new Date(Date.UTC(2026, 8, 5 - matchIndex, 18)).toISOString();
+    const completedAt = new Date(previewNow - matchIndex * 86_400_000).toISOString();
     return {
       id: `EUW1_FIXTURE_${matchIndex + 1}`,
       set: data.version.set,
@@ -68,6 +69,8 @@ export function createRiotPreviewProvider(data: StaticData): FixtureRiotProvider
       tftContentPatchSource: 'unavailable',
       dataVersion: 'fixture-v2',
       gameTimestamp: completedAt,
+      gameTimestampSemantics: 'fixture-completed-at',
+      gameDurationSeconds: 2100,
       completedAt,
       queueId: null,
       gameType: 'fixture-standard',
@@ -105,9 +108,21 @@ export function createRiotPreviewProvider(data: StaticData): FixtureRiotProvider
       })),
     };
   });
+  const ownMatches: CompletedMatch[] = matches.slice(0, 2).map((source, index) => ({
+    ...structuredClone(source),
+    id: `EUW1_FIXTURE_SELF_${index + 1}`,
+    participants: [
+      {
+        ...structuredClone(source.participants[0]),
+        puuid: identities[0].puuid,
+        riotId: `${identities[0].gameName}#${identities[0].tagLine}`,
+        placement: index + 1,
+      },
+    ],
+  }));
   return new FixtureRiotProvider(
-    matches,
-    identities,
+    [...ownMatches, ...matches],
+    [...opponents, identities[0]],
     opponents.map((identity) => identity.puuid),
   );
 }

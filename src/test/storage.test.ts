@@ -8,6 +8,7 @@ it('runs the real SQLite migration and enforces immutable match identity', () =>
   db.exec(readFileSync(new URL('../storage/schema.sql', import.meta.url), 'utf8'));
   db.exec(readFileSync(new URL('../storage/schema_m3.sql', import.meta.url), 'utf8'));
   db.exec(readFileSync(new URL('../storage/schema_m8.sql', import.meta.url), 'utf8'));
+  db.exec(readFileSync(new URL('../storage/schema_m9.sql', import.meta.url), 'utf8'));
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
   expect(tables.map((t) => t.name)).toEqual(
     expect.arrayContaining([
@@ -22,6 +23,8 @@ it('runs the real SQLite migration and enforces immutable match identity', () =>
       'riot_opponent_profiles',
       'riot_scan_snapshots',
       'plan_sessions',
+      'postgame_reconciliations',
+      'postgame_reviews',
     ]),
   );
   db.prepare('INSERT INTO completed_matches VALUES (?,?,?,?)').run('same', '{}', 18, '18.1');
@@ -115,6 +118,35 @@ it('runs the real SQLite migration and enforces immutable match identity', () =>
       .prepare('UPDATE plan_sessions SET state=?,ended_at=? WHERE id=?')
       .run('active', null, 'immutable-session'),
   ).toThrow('ended plan session cannot be reactivated');
+  db.prepare('INSERT INTO postgame_reconciliations VALUES (?,?,?,?,?,?,?)').run(
+    'chain-a',
+    'terminal-a',
+    'matched',
+    'EUW1_MATCH',
+    '{}',
+    '2026-09-06T12:00:00Z',
+    '2026-09-06T12:00:00Z',
+  );
+  expect(() =>
+    db
+      .prepare('INSERT INTO postgame_reconciliations VALUES (?,?,?,?,?,?,?)')
+      .run(
+        'chain-b',
+        'terminal-b',
+        'matched',
+        'EUW1_MATCH',
+        '{}',
+        '2026-09-06T12:01:00Z',
+        '2026-09-06T12:01:00Z',
+      ),
+  ).toThrow();
+  db.prepare('INSERT INTO postgame_reviews VALUES (?,?,?,?,?)').run(
+    'chain-a',
+    'EUW1_MATCH',
+    'review-fingerprint',
+    '{}',
+    '2026-09-06T12:00:00Z',
+  );
   db.close();
 });
 

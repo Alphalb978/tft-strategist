@@ -2,6 +2,9 @@
 
 ## Approved product decisions
 
+- M9 reconciliation is a versioned outer record over the immutable M8 switch chain. Exact PUUID participation and set compatibility are mandatory; documented Riot `game_datetime` is treated as a timestamp with unspecified start/end semantics, ambiguous candidates require explicit confirmation, and a result is attributed only to the terminal route.
+- M9 post-game reviews are deterministic and descriptive. They reuse the M5 classifier and M6 canonical-board/similarity models, retain evidence/version fingerprints, and never infer shop, economy, positioning, acquisition opportunity or causal loss explanations from completed-match end state.
+- M9 personal learning uses only confidently attributed current-set reviews with a compatible eligible M5 family baseline. It learns a recency-weighted, aggressively shrunk placement residual, remains neutral below five family games, and contributes at most 0.875 score points at the default 5% setting or 1.75 points at the normal 10% maximum.
 - M8 represents the chosen match plan as one explicit, versioned active session. Its plan, portfolio, scoring, evidence and display-static snapshot are immutable at lock; stage, Decision Map and inspected pivot target are the only mutable manual fields. Switch and end create auditable state transitions, and current compatibility is evaluated separately from historical truth.
 - M8 Team Planner remains `unverified`. Public Set 18 format claims are useful candidate evidence, but the audited static fixture has no planner-ID mapping, no independent known-good Set 18 code fixture is checked in, and no human current-client paste result exists.
 - M7 strategy guidance is a versioned, source-ledger-backed attachment on the generic curated/discovered comp registry. Facts are individually `sourced`, mechanically `derived`, safely `inherited`, `unavailable`, or `stale`; incompatible guidance stays auditable but is not shown as active truth.

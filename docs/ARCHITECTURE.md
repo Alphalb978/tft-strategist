@@ -253,6 +253,14 @@ The existing selected-plan snapshot is extended into a versioned `PlanSession`; 
 
 The lock snapshot includes the selected playbook/candidate, all three portfolio candidates, relevant evidence identities/summaries, and the static display data needed for offline resume. Its fingerprint and payload are immutable after creation. Mutable session state is restricted to stage, Decision Map path/current node, inspected pivot target, current compatibility, end metadata and future match association. Compatibility is evaluated against current static/registry/guidance inputs without rewriting the historical snapshot.
 
+### M9 post-game and personal-learning boundary
+
+M9 reconstructs each logical match-plan chain from M8 replacement links and stores reconciliation, review and personal-model records separately from the immutable lock snapshot. Candidate matching requires resolved PUUID participation and current-set compatibility, ranks only bounded recent completed matches from the existing immutable Riot cache, and retains explicit candidate evidence and audit actions. SQLite unique constraints enforce one match per logical chain and one chain per match; browser and memory repositories enforce the same contract.
+
+Reviews reuse the M5 retrospective family classifier plus M6 canonical-board and similarity models. Derived records fingerprint the match, saved static set, selected target, classifier/canonical/similarity versions and compatible lock-time M5 baseline. Incompatible review derivations remain auditable but do not enter current personal learning.
+
+The personal model is rebuilt only from unique, confidently attributed, current-set reviews carrying an eligible compatible M5 family baseline. It uses recency-weighted placement residuals with strong prior shrinkage and exposes confidence separately from its bounded recommendation adjustment. M4 lobby pressure, M5 meta, M6 discovery, M7 guidance and M8 history remain independent inputs.
+
 ## Testing
 
 Critical unit/integration tests should cover:

@@ -46,15 +46,14 @@ export interface ScoringContext {
   discovery?: DiscoveryDataset | null;
 }
 export function personalAdjustment(p: Playbook, profile?: PersonalProfile, weight = 0.05): number {
-  if (!profile || profile.set !== p.set || profile.effectiveGames < 5) return 0;
+  if (!profile || profile.set !== p.set) return 0;
+  const family = profile.families?.find((entry) => entry.familyId === p.family.id);
+  if (family && family.games < (profile.minimumEvidenceGames ?? 5)) return 0;
+  if (!family && profile.effectiveGames < 5) return 0;
   const relevance = profile.patch === p.patch ? 1 : 0.25;
-  return (
-    clamp(weight, 0.05, 0.1) *
-    50 *
-    clamp(profile.familyAffinity[p.family.id] ?? 0, -1, 1) *
-    (profile.effectiveGames / (profile.effectiveGames + 30)) *
-    relevance
-  );
+  const affinity = family?.affinity ?? profile.familyAffinity[p.family.id] ?? 0;
+  const maturity = family ? 1 : profile.effectiveGames / (profile.effectiveGames + 30);
+  return clamp(weight, 0.05, 0.1) * 50 * clamp(affinity, -0.35, 0.35) * maturity * relevance;
 }
 export function confidenceFor(p: Playbook, context: ScoringContext): Confidence {
   const measured = context.meta?.familyStats.find((stat) => stat.familyId === p.family.id);
@@ -192,13 +191,18 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
     status: lobbyValue === null ? 'unavailable' : 'seeded',
   });
   const adjustment = personalAdjustment(p, context.personal, context.personalWeight);
+  const personalFamily = context.personal?.families?.find(
+    (entry) => entry.familyId === p.family.id,
+  );
   components.push({
     key: 'personal',
-    label: 'Personal adjustment',
+    label: context.personal
+      ? `Personal adjustment · ${adjustment > 0 ? 'positive' : adjustment < 0 ? 'negative' : 'neutral'} · ${personalFamily?.games ?? 0} games · ${Math.round((personalFamily?.confidence ?? 0) * 100)}% confidence`
+      : 'Personal adjustment · unavailable',
     input: context.personal ? adjustment : null,
     weight: clamp(context.personalWeight ?? 0.05, 0.05, 0.1),
     contribution: adjustment,
-    status: context.personal ? 'curated' : 'unavailable',
+    status: context.personal ? 'measured' : 'unavailable',
   });
   const score =
     Math.round(
