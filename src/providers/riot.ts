@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import type { CompletedMatch, RiotIdentity, RiotTelemetry, Result } from '../domain/models';
+import type {
+  CompletedMatch,
+  LadderPlayer,
+  RiotIdentity,
+  RiotTelemetry,
+  Result,
+} from '../domain/models';
 import {
   accountRouteFor,
   parsePlatform,
@@ -104,6 +110,12 @@ export interface RiotProvider {
     options?: RiotRequestOptions,
   ): Promise<string[]>;
   completedMatch(id: string, options?: RiotRequestOptions): Promise<CompletedMatch>;
+  ladderPlayers(
+    tier: LadderPlayer['tier'],
+    limit: number,
+    options?: RiotRequestOptions,
+  ): Promise<LadderPlayer[]>;
+  puuidBySummonerId(summonerId: string, options?: RiotRequestOptions): Promise<string>;
   metrics(): Promise<
     Omit<RiotTelemetry, 'cacheHits' | 'uniqueMatchDetailsFetched' | 'sharedMatchesDeduplicated'>
   >;
@@ -123,6 +135,21 @@ const accountSchema = z
     tagLine: z.string().optional(),
   })
   .passthrough();
+const ladderSchema = z
+  .object({
+    tier: z.enum(['CHALLENGER', 'GRANDMASTER', 'MASTER']),
+    entries: z.array(
+      z
+        .object({
+          puuid: z.string().min(1),
+          summonerId: z.string().min(1).optional(),
+          leaguePoints: z.number().int().default(0),
+        })
+        .passthrough(),
+    ),
+  })
+  .passthrough();
+const summonerSchema = z.object({ puuid: z.string().min(1) }).passthrough();
 const unitSchema = z
   .object({
     character_id: z.string().min(1),
@@ -405,6 +432,33 @@ export class NativeRiotProvider implements RiotProvider {
     return match;
   }
 
+  async ladderPlayers(
+    tier: LadderPlayer['tier'],
+    limit: number,
+    options?: RiotRequestOptions,
+  ): Promise<LadderPlayer[]> {
+    const parsed = ladderSchema.safeParse(
+      await this.invoke<unknown>('riot_tft_ladder', { tier, platform: this.platform }, options),
+    );
+    if (!parsed.success) throw new RiotProviderError('malformed-response');
+    return parsed.data.entries
+      .sort((a, b) => b.leaguePoints - a.leaguePoints || a.puuid.localeCompare(b.puuid))
+      .slice(0, Math.max(0, Math.min(50, limit)))
+      .map((entry) => ({ ...entry, tier: parsed.data.tier }));
+  }
+
+  async puuidBySummonerId(summonerId: string, options?: RiotRequestOptions): Promise<string> {
+    const parsed = summonerSchema.safeParse(
+      await this.invoke<unknown>(
+        'riot_tft_summoner_by_id',
+        { summonerId, platform: this.platform },
+        options,
+      ),
+    );
+    if (!parsed.success) throw new RiotProviderError('malformed-response');
+    return parsed.data.puuid;
+  }
+
   async metrics() {
     try {
       const bridge = await this.bridgeFactory();
@@ -456,6 +510,22 @@ export class FixtureRiotProvider implements RiotProvider {
     const match = this.matches.find((candidate) => candidate.id === id);
     if (!match) throw new RiotProviderError('not-found', 404);
     return structuredClone(match);
+  }
+  async ladderPlayers(tier: LadderPlayer['tier'], limit: number): Promise<LadderPlayer[]> {
+    this.requestsAttempted++;
+    return this.participants.slice(0, limit).map((participant, index) => ({
+      puuid: participant.puuid,
+      summonerId: `fixture-summoner-${participant.puuid}`,
+      tier,
+      leaguePoints: 1000 - index,
+    }));
+  }
+  async puuidBySummonerId(summonerId: string): Promise<string> {
+    this.requestsAttempted++;
+    const puuid = summonerId.replace('fixture-summoner-', '');
+    if (!this.participants.some((participant) => participant.puuid === puuid))
+      throw new RiotProviderError('not-found', 404);
+    return puuid;
   }
   async metrics() {
     return { ...emptyMetrics(), requestsAttempted: this.requestsAttempted };

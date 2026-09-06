@@ -39,6 +39,7 @@ export function Playbook({
   const eligible = state.portfolio.plans.some((p) => p.candidate.playbook.id === plan.id);
   const warnings = validatePlaybook(plan, data);
   const itemName = (id: string) => data.items.find((i) => i.id === id)?.name ?? id;
+  const measured = state.meta?.familyStats.find((stat) => stat.familyId === plan.family.id);
   return (
     <>
       <button className="back-button" onClick={onBack}>
@@ -192,6 +193,9 @@ export function Playbook({
                 </div>
               </div>
             ))}
+            {!plan.items.length && (
+              <p className="fine-print">Source-backed item roles unavailable.</p>
+            )}
           </div>
           <p className="fine-print">
             Suggested items from the source guide. Alternatives and temporary holders are
@@ -212,6 +216,9 @@ export function Playbook({
               </div>
             </div>
           ))}
+          {!plan.augments.length && (
+            <p className="fine-print">No specific augment branch was imported from this source.</p>
+          )}
           <div className="signal-list">
             <span>WHEN TO CONSIDER</span>
             {plan.playSignals.value?.map((s) => (
@@ -277,7 +284,29 @@ export function Playbook({
         <div className="panel-heading">
           <ShieldQuestion size={18} />
           <h2>Why this plan?</h2>
-          <span className="badge muted">{Math.round(candidate.score)} / 100 · seeded score</span>
+          <span className="badge muted">
+            {Math.round(candidate.score)} / 100 ·{' '}
+            {measured?.quality === 'eligible' ? 'measured calibrated' : 'neutral meta fallback'}
+          </span>
+        </div>
+        <div className="meta-evidence-detail">
+          <strong>Aggregate meta evidence</strong>
+          {measured ? (
+            <span>
+              {measured.games} classified games · {measured.shrunkAveragePlacement.toFixed(2)}
+              {' avg · '}
+              {Math.round(measured.topFour.shrunk * 100)}% top 4 ·{' '}
+              {Math.round(measured.wins.shrunk * 100)}% win ·{' '}
+              {Math.round(measured.confidence * 100)}% confidence
+            </span>
+          ) : (
+            <span>Unavailable · recommendation outcome inputs fall back to neutral.</span>
+          )}
+          <small>
+            {state.meta
+              ? `${state.meta.platform} ${state.meta.rankCohort.join(' + ')} · Riot aggregate · patch relevance unavailable`
+              : 'No compatible stored aggregate dataset. Curated board metadata is not outcome evidence.'}
+          </small>
         </div>
         <div className="why-grid">
           <div className="score-breakdown">
@@ -352,8 +381,9 @@ export function Playbook({
           Read original public guide ↗
         </a>
         <p>
-          Reviewed September 6, 2026 · patch 18.1 · no measured sample. “Experimental” reflects this
-          app’s limited evidence.
+          Reviewed September 6, 2026 · patch 18.1 ·{' '}
+          {measured ? `${measured.games} classified observations.` : 'no measured sample.'}{' '}
+          “Experimental” reflects this app’s limited outcome evidence.
         </p>
         {warnings.map((w, i) => (
           <p key={`${w.code}-${i}`}>{w.message}</p>

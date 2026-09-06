@@ -128,6 +128,29 @@ test('M3 no-key state exposes no credential value', async ({ page }) => {
   await expect(page.getByLabel('Riot ID', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Platform')).toHaveValue('EUW1');
 });
+test('M5 Comp Library searches, filters, sorts, and opens attributed evidence', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Comps', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Comp Library' })).toBeVisible();
+  await expect(page.locator('.library-card')).toHaveCount(13);
+  await page.screenshot({ path: 'artifacts/m5-comps-1440.png', fullPage: true });
+  await page.getByLabel('Search comps, units, or traits').fill('Elder Dragon');
+  await expect(page.locator('.library-card')).toHaveCount(1);
+  await page.getByLabel('Search comps, units, or traits').fill('');
+  await page.getByLabel('Roll style filter').selectOption('Fast 9');
+  expect(await page.locator('.library-card').count()).toBeGreaterThan(0);
+  await page.getByLabel('Roll style filter').selectOption('all');
+  await page.getByLabel('Sort comps').selectOption('strength');
+  await expect(page.getByText(/Outcome statistics are unavailable/)).toBeVisible();
+  await page.locator('.library-card').first().click();
+  await expect(page.getByText('Aggregate meta evidence', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Unavailable · recommendation outcome inputs/)).toBeVisible();
+  expect(errors).toEqual([]);
+});
 for (const width of [1000, 860])
   test(`desktop layout at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
@@ -144,6 +167,23 @@ for (const width of [1000, 860])
     expect(await page.locator('main').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
       true,
     );
+  });
+for (const width of [1000, 860])
+  test(`M5 Comp Library controls fit at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Comps', exact: true }).click();
+    await expect(page.locator('.library-card')).toHaveCount(13);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    expect(
+      await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    await page.getByLabel('Search comps, units, or traits').fill('Invoker');
+    expect(await page.locator('.library-card').count()).toBeGreaterThan(0);
+    await page.getByLabel('Sort comps').selectOption('sample');
+    await page.screenshot({ path: `artifacts/m5-comps-${width}.png`, fullPage: true });
   });
 for (const width of [1000, 860])
   test(`M4 scouting and lobby-fit layout at ${width}px`, async ({ page }) => {

@@ -35,8 +35,12 @@ export function Home({
       <div className="evidence-banner">
         <ShieldQuestion size={19} />
         <span>
-          <strong>Curated boards. Seeded rankings.</strong> These scores demonstrate the engine;
-          they are not live meta statistics.
+          <strong>
+            Curated boards. Measured outcomes {state.meta ? 'connected' : 'unavailable'}.
+          </strong>{' '}
+          {state.meta
+            ? `${state.meta.uniqueMatches} ${state.meta.platform} matches · ${state.meta.rankCohort.join(' + ')} cohort.`
+            : 'Outcome components use an explicit neutral fallback; they are not live meta statistics.'}
         </span>
         <button onClick={onData}>
           View evidence <ArrowRight size={14} />
@@ -45,7 +49,9 @@ export function Home({
       <div className="section-line">
         <h2>Your three-plan portfolio</h2>
         <span>
-          {state.selection ? 'Locked for this game' : '4 source playbooks · optimized together'}
+          {state.selection
+            ? 'Locked for this game'
+            : `${state.playbooks.length} source comps · optimized together`}
         </span>
       </div>
       {!portfolio.plans.length ? (
@@ -59,7 +65,8 @@ export function Home({
         <div className="plan-grid">
           {portfolio.plans.map(({ candidate: c, role }, index) => {
             const p = c.playbook,
-              hero = data.champions.find((u) => u.id === p.hero)!;
+              hero = data.champions.find((u) => u.id === p.hero)!,
+              measured = state.meta?.familyStats.find((stat) => stat.familyId === p.family.id);
             return (
               <article className={`plan-card accent-${index}`} key={p.id}>
                 <div className="card-art">
@@ -80,7 +87,10 @@ export function Home({
                     <div className="score">
                       <strong>{Math.round(c.score)}</strong>
                       <span>
-                        /100<small>Seeded score</small>
+                        /100
+                        <small>
+                          {measured?.quality === 'eligible' ? 'Measured calibrated' : 'Mixed score'}
+                        </small>
                       </span>
                     </div>
                     <div className="confidence">
@@ -109,15 +119,31 @@ export function Home({
                     </span>
                   </div>
                   <p className="card-reason">{c.reasons[0]}</p>
-                  <div className="risk-cues">
-                    <span>
-                      Floor <strong>{p.features.values.floor}/100</strong>
-                    </span>
-                    <span>
-                      Ceiling <strong>{p.features.values.ceiling}/100</strong>
-                    </span>
-                    <small>Seeded estimates</small>
-                  </div>
+                  {measured ? (
+                    <div className="risk-cues measured-cues">
+                      <span>
+                        Avg <strong>{measured.shrunkAveragePlacement.toFixed(2)}</strong>
+                      </span>
+                      <span>
+                        Top 4 <strong>{Math.round(measured.topFour.shrunk * 100)}%</strong>
+                      </span>
+                      <span>
+                        Win <strong>{Math.round(measured.wins.shrunk * 100)}%</strong>
+                      </span>
+                      <small>
+                        {measured.games} classified · {Math.round(measured.confidence * 100)}% meta
+                        confidence
+                      </small>
+                    </div>
+                  ) : (
+                    <div className="risk-cues unavailable-cues">
+                      <span>Measured strength</span>
+                      <strong>Unavailable</strong>
+                      <small>
+                        Neutral outcome fallback · curated strategy metadata remains separate
+                      </small>
+                    </div>
+                  )}
                   <div className="contest">
                     <Radio size={13} />
                     <span>Historical contest: {c.contest.state.toLowerCase()}</span>

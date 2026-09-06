@@ -538,6 +538,49 @@ pub async fn riot_completed_match(
 }
 
 #[tauri::command]
+pub async fn riot_tft_ladder(
+    state: tauri::State<'_, RiotState>,
+    tier: String,
+    platform: String,
+    request_id: String,
+    deadline_epoch_ms: u64,
+) -> Result<Value, SafeRiotError> {
+    let path = ladder_path(&tier)?;
+    let host = platform_host(&platform)?;
+    let url = format!("https://{host}/tft/league/v1/{path}?queue=RANKED_TFT");
+    state
+        .get_json(request_id, deadline_epoch_ms, "tft-league.cohort", url)
+        .await
+}
+
+fn ladder_path(tier: &str) -> Result<&'static str, SafeRiotError> {
+    match tier.to_ascii_uppercase().as_str() {
+        "CHALLENGER" => Ok("challenger"),
+        "GRANDMASTER" => Ok("grandmaster"),
+        "MASTER" => Ok("master"),
+        _ => Err(SafeRiotError::new("unavailable", None, false)),
+    }
+}
+
+#[tauri::command]
+pub async fn riot_tft_summoner_by_id(
+    state: tauri::State<'_, RiotState>,
+    summoner_id: String,
+    platform: String,
+    request_id: String,
+    deadline_epoch_ms: u64,
+) -> Result<Value, SafeRiotError> {
+    let host = platform_host(&platform)?;
+    let url = format!(
+        "https://{host}/tft/summoner/v1/summoners/{}",
+        urlencoding::encode(&summoner_id)
+    );
+    state
+        .get_json(request_id, deadline_epoch_ms, "tft-summoner.by-id", url)
+        .await
+}
+
+#[tauri::command]
 pub async fn riot_current_game(
     state: tauri::State<'_, RiotState>,
     puuid: String,
@@ -607,6 +650,13 @@ mod tests {
         assert_eq!(windows.len(), 2);
         assert_eq!(windows[0].limit, 20);
         assert_eq!(windows[1].count, 44);
+    }
+
+    #[test]
+    fn restricts_meta_ladder_to_documented_high_skill_cohorts() {
+        assert_eq!(ladder_path("CHALLENGER").unwrap(), "challenger");
+        assert_eq!(ladder_path("master").unwrap(), "master");
+        assert_eq!(ladder_path("DIAMOND").unwrap_err().code, "unavailable");
     }
 
     #[tokio::test]

@@ -129,6 +129,36 @@ describe('official match DTO normalization', () => {
 });
 
 describe('native bridge security and spectator normalization', () => {
+  it('uses the documented TFT ladder PUUID and keeps the legacy summoner lookup bounded', async () => {
+    const bridge = {
+      invoke: vi
+        .fn()
+        .mockResolvedValueOnce({
+          tier: 'CHALLENGER',
+          entries: [
+            { puuid: 'lower-puuid', leaguePoints: 10 },
+            { puuid: 'higher-puuid', leaguePoints: 100 },
+          ],
+        })
+        .mockResolvedValueOnce({ puuid: 'resolved-puuid' }),
+    };
+    const provider = new NativeRiotProvider('EUW1', catalog, async () => bridge);
+    await expect(provider.ladderPlayers('CHALLENGER', 1)).resolves.toEqual([
+      { puuid: 'higher-puuid', leaguePoints: 100, tier: 'CHALLENGER' },
+    ]);
+    await expect(provider.puuidBySummonerId('higher')).resolves.toBe('resolved-puuid');
+    expect(bridge.invoke).toHaveBeenNthCalledWith(
+      1,
+      'riot_tft_ladder',
+      expect.objectContaining({ tier: 'CHALLENGER', platform: 'EUW1' }),
+    );
+    expect(bridge.invoke).toHaveBeenNthCalledWith(
+      2,
+      'riot_tft_summoner_by_id',
+      expect.objectContaining({ summonerId: 'higher', platform: 'EUW1' }),
+    );
+  });
+
   it.each([
     ['missing-key', null],
     ['not-found', 404],

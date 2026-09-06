@@ -6,7 +6,6 @@ import {
   Compass,
   Database,
   Hexagon,
-  Layers3,
   LockKeyhole,
   RefreshCw,
 } from 'lucide-react';
@@ -23,11 +22,11 @@ import { optimizePortfolio } from '../strategy/portfolio';
 import { Home } from '../features/Home';
 import { Playbook } from '../features/Playbook';
 import { DataSettings } from '../features/DataSettings';
-import { Art } from '../components/Art';
 import type { LobbyPressure } from '../domain/models';
 import { NativeRiotProvider } from '../providers/riot';
 import { createRiotPreviewProvider } from '../providers/riotPreview';
 import { openHistoryStore, type HistoryStore } from '../storage/history';
+import { CompLibrary } from '../features/CompLibrary';
 type Page = 'home' | 'library' | 'data';
 export function App() {
   const [state, setState] = useState<ApplicationState | null>(null),
@@ -107,7 +106,11 @@ export function App() {
     if (!state || !repository.current) return;
     try {
       await repository.current.set('settings', settings);
-      setState({ ...state, settings, ...createRecommendations(state.data, settings) });
+      setState({
+        ...state,
+        settings,
+        ...createRecommendations(state.data, settings, new Date().toISOString(), state.meta),
+      });
       if (
         settings.historyWindow !== state.settings.historyWindow ||
         settings.riotPlatform !== state.settings.riotPlatform
@@ -150,6 +153,7 @@ export function App() {
           now,
           lobby: lobby ?? undefined,
           personalWeight: state.settings.personalWeight,
+          meta: state.meta,
         }),
       ),
       now,
@@ -168,6 +172,7 @@ export function App() {
                 now: new Date().toISOString(),
                 lobby: lobby ?? undefined,
                 personalWeight: state.settings.personalWeight,
+                meta: state.meta,
               })
             : undefined;
         })())
@@ -187,7 +192,7 @@ export function App() {
           {(
             [
               { id: 'home', label: 'Your plans', icon: Compass },
-              { id: 'library', label: 'Playbook library', icon: BookOpen },
+              { id: 'library', label: 'Comps', icon: BookOpen },
               { id: 'data', label: 'Data & settings', icon: Database },
             ] as const
           ).map((n) => (
@@ -220,11 +225,11 @@ export function App() {
             Workspace <ChevronRight size={13} />
             <strong>
               {detail
-                ? 'Playbook'
+                ? 'Comp'
                 : page === 'home'
                   ? 'Your plans'
                   : page === 'library'
-                    ? 'Library'
+                    ? 'Comps'
                     : 'Data & settings'}
             </strong>
           </div>
@@ -311,34 +316,7 @@ export function App() {
                   onLobby={setLobby}
                 />
               ) : (
-                <>
-                  <div className="page-heading">
-                    <div>
-                      <div className="eyebrow">A SMALL, ATTRIBUTED STARTING LIBRARY</div>
-                      <h1>Find your next direction.</h1>
-                      <p>Four current-set examples. All retain their evidence limits.</p>
-                    </div>
-                    <Layers3 size={30} />
-                  </div>
-                  <div className="library-grid">
-                    {state.playbooks.map((p) => (
-                      <button className="library-card" key={p.id} onClick={() => open(p.id)}>
-                        <Art
-                          url={state.data.champions.find((c) => c.id === p.hero)!.splash}
-                          alt={p.title}
-                          assets={state.assets}
-                        />
-                        <div>
-                          <span className="eyebrow">{p.features.style}</span>
-                          <h2>{p.title}</h2>
-                          <p>{p.subtitle}</p>
-                          <span className="badge">Experimental · public guide</span>
-                        </div>
-                        <ChevronRight />
-                      </button>
-                    ))}
-                  </div>
-                </>
+                <CompLibrary state={displayState!} onOpen={open} />
               )}
               <footer>
                 <span>

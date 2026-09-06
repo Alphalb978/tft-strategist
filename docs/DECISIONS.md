@@ -1,6 +1,9 @@
 # Decision Log & Open Questions
 
 ## Approved product decisions
+- M5 aggregate outcome evidence is a versioned regional/rank-cohort sample, never "global meta"; it remains separate from M4 historical lobby unit pressure.
+- Completed-board family classification is retrospective and conservative: low-score and close-score boards remain unclassified or ambiguous.
+- Measured meta/floor/ceiling inputs replace the old seeded inputs only after explicit sample, freshness, and confidence gates; otherwise the outcome contribution is a visible neutral fallback.
 - Product type: private TFT pre-game/lobby strategist plus static in-game playbook.
 - Goal: improve win/top-4 decision quality with three strong complementary plans, not automated play.
 - TFT knowledge is structural/data-driven; model memory is not authoritative.

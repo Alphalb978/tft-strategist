@@ -201,6 +201,9 @@ V1 may use seeded curated playbooks, but preserve a path to data-derived evoluti
 
 Start with simple weighted core-unit/trait family matching before introducing complex ML.
 
+### M5 aggregate evidence boundary
+The implemented M5 path is `tft-league-v1 cohort -> documented summoner identifier resolution -> tft-match-v1 IDs/details -> immutable match cache -> current-set filter -> versioned retrospective classifier -> uncertainty-aware family statistics -> quality-gated recommendation calibration`. Aggregate popularity is never reused as M4 lobby contest pressure. Derived datasets retain classifier, family-definition, static-source, cohort, and statistics fingerprints; incompatible cache entries are ignored and recomputed from immutable source matches.
+
 ## Testing
 Critical unit/integration tests should cover:
 - active-set normalization;

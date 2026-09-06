@@ -1,6 +1,12 @@
 export type ID = string;
 export type EvidenceLabel = 'Proven' | 'Variant' | 'Emerging' | 'Experimental';
-export type Verification = 'verified' | 'curated' | 'seeded' | 'unverified';
+export type Verification =
+  | 'verified'
+  | 'measured'
+  | 'fixture'
+  | 'curated'
+  | 'seeded'
+  | 'unverified';
 export interface Provenance {
   source: string;
   fetchedAt: string;
@@ -208,6 +214,102 @@ export interface ScoreComponent {
   weight: number;
   contribution: number;
   status: Verification | 'unavailable';
+}
+
+export type ClassificationState = 'classified' | 'ambiguous' | 'unclassified';
+export interface CompClassification {
+  state: ClassificationState;
+  familyId: ID | null;
+  score: number;
+  runnerUpFamilyId: ID | null;
+  runnerUpScore: number;
+  margin: number;
+  coreRecall: number;
+  boardSimilarity: number;
+  rolePresence: number;
+  sizeFit: number;
+  classifierVersion: string;
+}
+export interface MetaObservation {
+  matchId: ID;
+  puuid: string;
+  completedAt: string;
+  placement: number;
+  classification: CompClassification;
+}
+export interface BinomialEstimate {
+  raw: number;
+  shrunk: number;
+  lower: number;
+  upper: number;
+}
+export interface FamilyMetaStats {
+  familyId: ID;
+  games: number;
+  uniqueMatches: number;
+  rawFrequency: number;
+  weightedFrequency: number;
+  averagePlacement: number;
+  weightedAveragePlacement: number;
+  shrunkAveragePlacement: number;
+  averagePlacementStandardError: number;
+  topFour: BinomialEstimate;
+  wins: BinomialEstimate;
+  botFour: BinomialEstimate;
+  placementCounts: Record<string, number>;
+  effectiveSample: number;
+  averageClassifierScore: number;
+  averageClassifierMargin: number;
+  freshestGameAt: string;
+  ageDays: number;
+  confidence: number;
+  measuredStrength: number;
+  measuredFloor: number;
+  measuredCeiling: number;
+  quality: 'eligible' | 'insufficient';
+}
+export interface AggregateMetaDataset {
+  id: ID;
+  schemaVersion: 1;
+  set: number;
+  state: 'complete' | 'partial' | 'unavailable';
+  sourceType: 'riot-api' | 'fixture';
+  source: string;
+  platform: string;
+  regionalRoute: string;
+  rankCohort: string[];
+  collectedAt: string;
+  windowStart: string | null;
+  windowEnd: string | null;
+  cohortPlayersConsidered: number;
+  uniqueCohortPlayers: number;
+  uniqueParticipants: number;
+  discoveredMatchIds: number;
+  fetchedMatchPayloads: number;
+  currentSetMatches: number;
+  uniqueMatches: number;
+  currentSetBoards: number;
+  classifiedBoards: number;
+  ambiguousBoards: number;
+  unclassifiedBoards: number;
+  coverage: number;
+  observations: MetaObservation[];
+  familyStats: FamilyMetaStats[];
+  classifierVersion: string;
+  statisticsVersion: string;
+  familyDefinitionsFingerprint: string;
+  staticSourceVersion: string;
+  sampleDefinitionFingerprint: string;
+  derivationFingerprint: string;
+  patchRelevance: 'unavailable';
+  telemetry: RiotTelemetry;
+  errors: string[];
+}
+export interface LadderPlayer {
+  puuid: string;
+  summonerId?: string;
+  tier: 'CHALLENGER' | 'GRANDMASTER' | 'MASTER';
+  leaguePoints: number;
 }
 export interface RecommendationCandidate {
   playbook: Playbook;

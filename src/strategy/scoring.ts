@@ -1,5 +1,6 @@
 import type {
   ActiveSetVersion,
+  AggregateMetaDataset,
   CandidateContest,
   Confidence,
   FeatureKey,
@@ -40,6 +41,7 @@ export interface ScoringContext {
   lobby?: LobbyPressure;
   personal?: PersonalProfile;
   personalWeight?: number;
+  meta?: AggregateMetaDataset | null;
 }
 export function personalAdjustment(p: Playbook, profile?: PersonalProfile, weight = 0.05): number {
   if (!profile || profile.set !== p.set || profile.effectiveGames < 5) return 0;
@@ -53,6 +55,7 @@ export function personalAdjustment(p: Playbook, profile?: PersonalProfile, weigh
   );
 }
 export function confidenceFor(p: Playbook, context: ScoringContext): Confidence {
+  const measured = context.meta?.familyStats.find((stat) => stat.familyId === p.family.id);
   const date = Math.min(
     Date.parse(p.provenance.fetchedAt),
     Date.parse(context.version.provenance.publishedAt ?? context.version.provenance.fetchedAt),
@@ -64,10 +67,14 @@ export function confidenceFor(p: Playbook, context: ScoringContext): Confidence 
       factor: { Proven: 1, Variant: 0.8, Emerging: 0.6, Experimental: 0.35 }[p.evidence],
     },
     { label: 'Source freshness', factor: Math.exp(-age / 14) },
-    {
-      label: p.sampleSize ? `${p.sampleSize} observed games` : 'No measured game sample',
-      factor: p.sampleSize ? clamp(p.sampleSize / 200, 0.15, 1) : 0.25,
-    },
+    measured
+      ? {
+          label: `${measured.games} measured games · ${Math.round(measured.confidence * 100)}% meta confidence`,
+          factor: measured.confidence,
+        }
+      : p.sampleSize
+        ? { label: `${p.sampleSize} observed games`, factor: clamp(p.sampleSize / 200, 0.15, 1) }
+        : { label: 'No compatible measured game sample', factor: 0.25 },
     {
       label:
         context.version.patchVerified && p.patch === context.version.patch
@@ -81,17 +88,24 @@ export function confidenceFor(p: Playbook, context: ScoringContext): Confidence 
     },
     {
       label:
-        p.features.provenance.status === 'seeded'
-          ? 'Seeded score metadata'
-          : 'Derived / curated metadata',
-      factor: p.features.provenance.status === 'seeded' ? 0.25 : 0.9,
+        measured?.quality === 'eligible'
+          ? 'Measured strength eligible'
+          : p.features.provenance.status === 'seeded'
+            ? 'Seeded score metadata'
+            : 'Derived / curated metadata',
+      factor:
+        measured?.quality === 'eligible'
+          ? 0.9
+          : p.features.provenance.status === 'seeded'
+            ? 0.25
+            : 0.9,
     },
   ];
   const value = drivers.reduce((a, b) => a + b.factor, 0) / drivers.length;
   // Evidence class and seeded metadata are upper bounds; strong static data cannot promote a novel board.
   const bounded = Math.min(
     value,
-    p.evidence === 'Experimental' || p.features.provenance.status === 'seeded' ? 0.39 : 1,
+    p.evidence === 'Experimental' && measured?.quality !== 'eligible' ? 0.39 : 1,
   );
   return {
     level: bounded >= 0.75 ? 'High' : bounded >= 0.5 ? 'Medium' : 'Low',
@@ -103,14 +117,34 @@ export function contestFor(p: Playbook, lobby?: LobbyPressure): CandidateContest
   return candidateContestFor(p, lobby);
 }
 export function scoreCandidate(p: Playbook, context: ScoringContext): RecommendationCandidate {
-  const components: ScoreComponent[] = (Object.keys(weights) as FeatureKey[]).map((key) => ({
-    key,
-    label: labels[key],
-    input: clamp(p.features.values[key], 0, 100),
-    weight: weights[key],
-    contribution: clamp(p.features.values[key], 0, 100) * weights[key],
-    status: p.features.provenance.status,
-  }));
+  const measured = context.meta?.familyStats.find((stat) => stat.familyId === p.family.id);
+  const measuredEligible = measured?.quality === 'eligible';
+  const measuredValues: Partial<Record<FeatureKey, number>> = measuredEligible
+    ? {
+        meta: measured.measuredStrength,
+        floor: measured.measuredFloor,
+        ceiling: measured.measuredCeiling,
+      }
+    : {};
+  const components: ScoreComponent[] = (Object.keys(weights) as FeatureKey[]).map((key) => {
+    const isOutcome = key === 'meta' || key === 'floor' || key === 'ceiling';
+    const input = measuredValues[key] ?? (isOutcome ? null : clamp(p.features.values[key], 0, 100));
+    return {
+      key,
+      label: labels[key],
+      input,
+      weight: weights[key],
+      contribution: (input ?? 50) * weights[key],
+      status:
+        input === null
+          ? 'unavailable'
+          : measuredValues[key] !== undefined
+            ? context.meta?.sourceType === 'fixture'
+              ? 'fixture'
+              : 'measured'
+            : p.features.provenance.status,
+    };
+  });
   const contest = contestFor(p, context.lobby);
   const lobbyValue = contest.lobbyFit;
   components.push({
@@ -139,7 +173,7 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
       ) * 10,
     ) / 10;
   const positives = components
-    .filter((c) => c.key !== 'personal' && c.key !== 'lobby' && c.weight > 0)
+    .filter((c) => c.key !== 'personal' && c.key !== 'lobby' && c.weight > 0 && c.input !== null)
     .sort((a, b) => (b.input ?? 0) - (a.input ?? 0));
   return {
     playbook: p,
@@ -147,9 +181,16 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
     components,
     confidence: confidenceFor(p, context),
     contest,
-    reasons: [
-      `${positives[0].label} leads its seeded profile.`,
-      'Public guide board; performance evidence is not yet measured.',
-    ],
+    reasons: measuredEligible
+      ? [
+          `${positives[0]?.label ?? 'Measured evidence'} is the strongest positive driver.`,
+          `${measured.games} classified games · ${Math.round(measured.confidence * 100)}% aggregate-meta confidence.`,
+        ]
+      : [
+          `${positives[0]?.label ?? 'Curated structure'} leads the available curated profile.`,
+          measured
+            ? `${measured.games} classified games do not clear the M5 quality gate.`
+            : 'Measured outcome evidence is unavailable; neutral outcome fallback is explicit.',
+        ],
   };
 }

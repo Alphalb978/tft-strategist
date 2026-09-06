@@ -76,6 +76,6 @@ export function optimizePortfolio(
     objective: Number.isFinite(best) ? best : 0,
     interactions: portfolioInteractions(chosen),
     generatedAt: now,
-    version: 'portfolio-v2-m4-unit-pressure',
+    version: 'portfolio-v3-m5-measured-meta',
   };
 }

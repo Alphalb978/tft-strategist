@@ -3,6 +3,7 @@ import type {
   Board,
   FeatureKey,
   Guidance,
+  ID,
   Playbook,
   Provenance,
   StaticData,
@@ -38,7 +39,7 @@ export function loadPlaybooks(data: StaticData): Playbook[] {
     });
     const core = s.core.map(id);
     const board = (names: string[], stage: string): Board => {
-      const targetLevel = names.length;
+      const targetLevel = names.length + (names.includes('Elder Dragon') ? 1 : 0);
       const value: Board = {
         id: `${s.id}-${stage}`,
         set: seed.set,
@@ -88,15 +89,19 @@ export function loadPlaybooks(data: StaticData): Playbook[] {
       stages: [
         {
           stage: 'early',
-          label: 'Early · 4 units',
-          board: curated(board(s.early, 'early')),
+          label: s.early.length ? `Early · ${s.early.length} units` : 'Early',
+          board: s.early.length
+            ? curated(board(s.early, 'early'))
+            : unavailable('No source-backed early board.'),
           instruction: unavailable('Exact opener timing not certified.'),
           temporaryHolders: [],
         },
         {
           stage: 'mid',
-          label: 'Mid · 6 units',
-          board: curated(board(s.mid, 'mid')),
+          label: s.mid.length ? `Mid · ${s.mid.length} units` : 'Mid',
+          board: s.mid.length
+            ? curated(board(s.mid, 'mid'))
+            : unavailable('No source-backed mid-game board.'),
           instruction: unavailable('Adapt to your actual board; no live state is read.'),
           temporaryHolders: [],
         },
@@ -116,32 +121,42 @@ export function loadPlaybooks(data: StaticData): Playbook[] {
         },
       ],
       roles: [
-        { championId: id(s.carry), role: 'carry' },
-        { championId: id(s.tank), role: 'tank' },
+        ...(s.carry ? [{ championId: id(s.carry), role: 'carry' as const }] : []),
+        ...(s.tank ? [{ championId: id(s.tank), role: 'tank' as const }] : []),
       ],
       items: [
-        {
-          holder: id(s.carry),
-          priorities: s.items,
-          alternatives: unavailable('Item alternatives not verified.'),
-          provenance,
-        },
-        {
-          holder: id(s.tank),
-          priorities: s.tankItems,
-          alternatives: unavailable('Item alternatives not verified.'),
-          provenance,
-        },
+        ...(s.carry
+          ? [
+              {
+                holder: id(s.carry),
+                priorities: s.items,
+                alternatives: unavailable<ID[]>('Item alternatives not verified.'),
+                provenance,
+              },
+            ]
+          : []),
+        ...(s.tank
+          ? [
+              {
+                holder: id(s.tank),
+                priorities: s.tankItems,
+                alternatives: unavailable<ID[]>('Item alternatives not verified.'),
+                provenance,
+              },
+            ]
+          : []),
       ],
       components: s.components,
-      augments: [
-        {
-          category: s.augmentCategory,
-          augmentIds: [],
-          signal: s.signals.at(-1)!,
-          change: curated(s.augmentChange),
-        },
-      ],
+      augments: s.augmentCategory
+        ? [
+            {
+              category: s.augmentCategory,
+              augmentIds: [],
+              signal: s.signals.at(-1)!,
+              change: curated(s.augmentChange),
+            },
+          ]
+        : [],
       playSignals: curated(s.signals),
       avoidSignals: unavailable(
         'No verified avoid thresholds; do not treat this example as a force recommendation.',
@@ -149,7 +164,12 @@ export function loadPlaybooks(data: StaticData): Playbook[] {
       levelPlan: curated(s.levelNote),
       decisionMap: {
         nodes: [
-          { id: 'signal', label: s.signals[0], kind: 'question', provenance },
+          {
+            id: 'signal',
+            label: s.signals[0] ?? 'Does the sourced final board fit?',
+            kind: 'question',
+            provenance,
+          },
           { id: 'route', label: s.style, kind: 'action', provenance },
           {
             id: 'reassess',

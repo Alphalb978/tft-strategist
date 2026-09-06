@@ -133,6 +133,8 @@ rows.push(
     resolveAccount: base.resolveAccount.bind(base),
     accountByPuuid: base.accountByPuuid.bind(base),
     lobby: base.lobby.bind(base),
+    ladderPlayers: base.ladderPlayers.bind(base),
+    puuidBySummonerId: base.puuidBySummonerId.bind(base),
     completedMatch: base.completedMatch.bind(base),
     metrics: base.metrics.bind(base),
     recentMatchIds: () => new Promise(() => undefined),

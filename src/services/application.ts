@@ -1,4 +1,10 @@
-import type { Playbook, RecommendationPortfolio, SelectedPlan, StaticData } from '../domain/models';
+import type {
+  AggregateMetaDataset,
+  Playbook,
+  RecommendationPortfolio,
+  SelectedPlan,
+  StaticData,
+} from '../domain/models';
 import { CommunityDragonProvider } from '../providers/communityDragon';
 import { loadPlaybooks } from '../providers/playbooks';
 import { validatePlaybook } from '../rules/validation';
@@ -8,6 +14,9 @@ import { scoreCandidate } from '../strategy/scoring';
 import { optimizePortfolio } from '../strategy/portfolio';
 import { isStaticData } from '../domain/staticSchema';
 import { auditStaticData } from '../rules/ruleSet';
+import { COMP_CLASSIFIER } from '../strategy/compClassifier';
+import { META_STATISTICS, compatibleMetaDataset } from '../strategy/metaStatistics';
+import { familyDefinitionsFingerprint } from './metaPipeline';
 export interface ApplicationState {
   data: StaticData;
   playbooks: Playbook[];
@@ -17,11 +26,13 @@ export interface ApplicationState {
   selection: SelectedPlan | null;
   notices: string[];
   assets: Record<string, string>;
+  meta: AggregateMetaDataset | null;
 }
 export function createRecommendations(
   data: StaticData,
   settings: Settings,
   now = new Date().toISOString(),
+  meta: AggregateMetaDataset | null = null,
 ) {
   const dataIssues = auditStaticData(data);
   if (dataIssues.length)
@@ -36,19 +47,35 @@ export function createRecommendations(
       notices.push(`${p.title} excluded: ${errors.map((e) => e.message).join(' ')}`);
     return !errors.length;
   });
+  const usableMeta = compatibleMetaDataset(meta, {
+    classifierVersion: COMP_CLASSIFIER.version,
+    statisticsVersion: META_STATISTICS.version,
+    familyDefinitionsFingerprint: familyDefinitionsFingerprint(playbooks),
+    staticSourceVersion: data.version.sourceVersion,
+  })
+    ? meta
+    : null;
+  if (meta && !usableMeta)
+    notices.push('Incompatible aggregate-meta cache ignored and queued for recomputation.');
   const portfolio = optimizePortfolio(
     playbooks.map((p) =>
-      scoreCandidate(p, { version: data.version, now, personalWeight: settings.personalWeight }),
+      scoreCandidate(p, {
+        version: data.version,
+        now,
+        personalWeight: settings.personalWeight,
+        meta: usableMeta,
+      }),
     ),
     now,
   );
-  return { playbooks, portfolio, notices };
+  return { playbooks, portfolio, notices, meta: usableMeta };
 }
 export async function loadApplication(repository: Repository): Promise<ApplicationState> {
-  const [cached, savedSettings, selection, assetResponse] = await Promise.all([
+  const [cached, savedSettings, selection, savedMeta, assetResponse] = await Promise.all([
     repository.get<StaticData>('static'),
     repository.get<Settings>('settings'),
     repository.get<SelectedPlan>('selection'),
+    repository.get<AggregateMetaDataset>('aggregate-meta'),
     fetch('/data/asset-manifest.json').catch(() => null),
   ]);
   const settings = normalizeSettings(savedSettings);
@@ -68,7 +95,7 @@ export async function loadApplication(repository: Repository): Promise<Applicati
   const assets: Record<string, string> = assetResponse?.ok
     ? await assetResponse.json().catch(() => ({}))
     : {};
-  const result = createRecommendations(data, settings);
+  const result = createRecommendations(data, settings, new Date().toISOString(), savedMeta);
   let usableSelection: SelectedPlan | null = null;
   try {
     if (
@@ -77,7 +104,7 @@ export async function loadApplication(repository: Repository): Promise<Applicati
       selection.sourceVersion === data.version.sourceVersion &&
       Array.isArray(selection.snapshot?.plans) &&
       selection.snapshot.plans.length === 3 &&
-      selection.snapshot.version === 'portfolio-v2-m4-unit-pressure' &&
+      selection.snapshot.version === 'portfolio-v3-m5-measured-meta' &&
       selection.snapshot.plans.some((p) => p.candidate.playbook.id === selection.playbookId) &&
       selection.snapshot.plans.every(
         (p) =>
@@ -106,7 +133,12 @@ export async function refreshApplication(
   repository: Repository,
 ): Promise<ApplicationState> {
   const data = await new CommunityDragonProvider().fetch();
-  const result = createRecommendations(data, current.settings);
+  const result = createRecommendations(
+    data,
+    current.settings,
+    new Date().toISOString(),
+    current.meta,
+  );
   if (!result.playbooks.length)
     throw new Error('Refreshed roster failed playbook validation; previous cache retained.');
   await repository.set('static', data);

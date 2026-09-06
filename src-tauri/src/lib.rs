@@ -35,6 +35,8 @@ pub fn run() {
             riot::riot_account_by_puuid,
             riot::riot_recent_match_ids,
             riot::riot_completed_match,
+            riot::riot_tft_ladder,
+            riot::riot_tft_summoner_by_id,
             riot::riot_current_game,
         ])
         .run(tauri::generate_context!())
