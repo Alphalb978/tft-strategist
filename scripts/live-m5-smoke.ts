@@ -19,6 +19,7 @@ import { MemoryRepository } from '../src/storage/repository';
 import { data, playbooks } from '../src/test/fixtures';
 import { createRecommendations } from '../src/services/application';
 import { defaultSettings } from '../src/storage/repository';
+import { deriveDiscoveryDataset } from '../src/strategy/compDiscovery';
 
 const key = process.env.RIOT_API_KEY?.trim();
 if (!key) throw new Error('RIOT_API_KEY is unavailable; live M5 smoke test was not started.');
@@ -133,7 +134,33 @@ const cold = await collectAggregateMeta(provider, history, repository, data, pla
 const coldFinished = performance.now();
 const warm = await collectAggregateMeta(provider, history, repository, data, playbooks, config);
 const warmFinished = performance.now();
-const loaded = createRecommendations(data, defaultSettings, cold.dataset.collectedAt, cold.dataset);
+const discovery = deriveDiscoveryDataset({
+  matches: cold.matches,
+  families: playbooks,
+  data,
+  sampleDefinitionFingerprint: cold.dataset.sampleDefinitionFingerprint,
+  sourceType: 'riot-api',
+  source: cold.dataset.source,
+  now: cold.dataset.collectedAt,
+});
+await repository.set('comp-discovery', discovery);
+const warmDiscovery = deriveDiscoveryDataset({
+  matches: warm.matches,
+  families: playbooks,
+  data,
+  sampleDefinitionFingerprint: warm.dataset.sampleDefinitionFingerprint,
+  sourceType: 'riot-api',
+  source: warm.dataset.source,
+  now: warm.dataset.collectedAt,
+  previous: discovery,
+});
+const loaded = createRecommendations(
+  data,
+  defaultSettings,
+  cold.dataset.collectedAt,
+  cold.dataset,
+  discovery,
+);
 const coldProviderMetrics = {
   requestsAttempted: cold.dataset.telemetry.requestsAttempted,
   retries: cold.dataset.telemetry.retries,
@@ -198,6 +225,34 @@ console.log(
         },
         patchRelevance: cold.dataset.patchRelevance,
         errors: cold.dataset.errors,
+        discovery: {
+          boardsAnalyzed: discovery.boardsAnalyzed,
+          invalidBoards: discovery.invalidBoards,
+          clusters: discovery.clusterCount,
+          knownFamilyClusters: discovery.knownFamilyClusters,
+          variantClusters: discovery.variantClusters,
+          emergingClusters: discovery.emergingClusters,
+          experimentalClusters: discovery.experimentalClusters,
+          noiseBoards: discovery.noiseBoards,
+          candidatePairsCompared: discovery.candidatePairsCompared,
+          pairBudgetReached: discovery.candidatePairBudgetReached,
+          oversizedBlocksSkipped: discovery.oversizedBlocksSkipped,
+          warmStableClusterIds:
+            discovery.clusters.map((cluster) => cluster.id).join(',') ===
+            warmDiscovery.clusters.map((cluster) => cluster.id).join(','),
+          compatibleDatasetLoaded: loaded.discovery?.id === discovery.id,
+          entries: discovery.clusters.map((cluster) => ({
+            id: cluster.id,
+            support: cluster.stats.games,
+            cohesion: Number(cluster.stats.cohesion.toFixed(3)),
+            relation: cluster.relation.state,
+            parentFamilyId: cluster.relation.familyId,
+            relationSimilarity: Number(cluster.relation.similarity.toFixed(3)),
+            lifecycle: cluster.lifecycle,
+            recommendationEligible: cluster.recommendationEligible,
+            gates: cluster.recommendationGateReasons,
+          })),
+        },
       },
       cold: {
         ...coldProviderMetrics,

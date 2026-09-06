@@ -40,6 +40,10 @@ export function Playbook({
   const warnings = validatePlaybook(plan, data);
   const itemName = (id: string) => data.items.find((i) => i.id === id)?.name ?? id;
   const measured = state.meta?.familyStats.find((stat) => stat.familyId === plan.family.id);
+  const discovered = plan.discovery
+    ? state.discovery?.clusters.find((cluster) => cluster.id === plan.discovery?.clusterId)
+    : undefined;
+  const championName = (id: string) => data.champions.find((unit) => unit.id === id)?.name ?? id;
   return (
     <>
       <button className="back-button" onClick={onBack}>
@@ -48,7 +52,8 @@ export function Playbook({
       <div className="detail-heading">
         <div>
           <div className="eyebrow">
-            {plan.features.style.toUpperCase()} <span> / </span> SOURCE PLAYBOOK
+            {plan.features.style.toUpperCase()} <span> / </span>{' '}
+            {discovered ? 'DISCOVERED STRUCTURE' : 'SOURCE PLAYBOOK'}
           </div>
           <h1>{plan.title}</h1>
           <p>
@@ -79,10 +84,12 @@ export function Playbook({
         <div>
           <span>LOOK FOR</span>
           <strong>
-            {plan.family.core
-              .slice(0, 2)
-              .map((id) => data.champions.find((c) => c.id === id)?.name)
-              .join(' + ')}
+            {plan.family.core.length
+              ? plan.family.core
+                  .slice(0, 2)
+                  .map((id) => data.champions.find((c) => c.id === id)?.name)
+                  .join(' + ')
+              : 'Representative board'}
           </strong>
         </div>
         <div>
@@ -154,7 +161,10 @@ export function Playbook({
         )}
         <div className="board-foot">
           <span>
-            <i className="core-dot" /> Core roles are guide-curated
+            <i className="core-dot" />{' '}
+            {discovered
+              ? 'Core slots reflect ≥80% cluster prevalence'
+              : 'Core roles are guide-curated'}
           </span>
           <span>Roster layout · positioning unverified</span>
         </div>
@@ -162,12 +172,74 @@ export function Playbook({
           {selectedStage.instruction.value ?? selectedStage.instruction.note}
         </p>
       </section>
+      {discovered && (
+        <section className="panel discovery-detail" aria-label="Discovery evidence detail">
+          <div className="panel-heading">
+            <GitBranch size={18} />
+            <h2>Discovery evidence</h2>
+            <span className="badge">Discovered · {discovered.lifecycle}</span>
+          </div>
+          <div className="discovery-evidence-grid">
+            <div>
+              <strong>{discovered.stats.games}</strong>
+              <span>boards</span>
+            </div>
+            <div>
+              <strong>{discovered.stats.effectiveSample.toFixed(1)}</strong>
+              <span>effective sample</span>
+            </div>
+            <div>
+              <strong>{Math.round(discovered.stats.cohesion * 100)}%</strong>
+              <span>cohesion</span>
+            </div>
+            <div>
+              <strong>{Math.round(discovered.relation.certainty * 100)}%</strong>
+              <span>relation certainty</span>
+            </div>
+          </div>
+          <p>
+            {discovered.relation.state === 'variant-candidate'
+              ? `Closest curated anchor: ${discovered.relation.familyId} · structural distance ${discovered.relation.diff?.structuralDistance.toFixed(2)}.`
+              : `Relation: ${discovered.relation.state} · nearest-anchor similarity ${discovered.relation.similarity.toFixed(2)}.`}
+          </p>
+          <div className="prevalence-list">
+            {discovered.unitPrevalence.map((unit) => (
+              <span key={unit.championId}>
+                <b>{Math.round(unit.prevalence * 100)}%</b> {championName(unit.championId)}
+              </span>
+            ))}
+          </div>
+          {discovered.relation.diff && (
+            <p className="fine-print">
+              Shared core:{' '}
+              {discovered.relation.diff.sharedCore.map(championName).join(', ') || 'none'}
+              <br />
+              Repeated additions:{' '}
+              {discovered.relation.diff.consistentlyAdded.map(championName).join(', ') || 'none'}
+              <br />
+              Repeated omissions:{' '}
+              {discovered.relation.diff.consistentlyOmitted.map(championName).join(', ') || 'none'}
+            </p>
+          )}
+          <p className="fine-print">
+            {discovered.recommendationEligible
+              ? 'Every configured legality, support, freshness, cohesion, relation, and outcome gate cleared.'
+              : `Not recommendation-eligible: ${discovered.recommendationGateReasons.join('; ') || 'lifecycle state is inspection-only'}.`}
+            <br />
+            Recent adoption:{' '}
+            {discovered.stats.adoption.mature
+              ? `${discovered.stats.adoption.delta >= 0 ? '+' : ''}${Math.round(discovered.stats.adoption.delta * 100)} percentage points`
+              : 'insufficient window support'}
+            . Patch relevance unavailable.
+          </p>
+        </section>
+      )}
       <div className="detail-grid">
         <section className="panel">
           <div className="panel-heading">
             <Swords size={18} />
             <h2>Item direction</h2>
-            <span className="badge">Guide-curated</span>
+            <span className="badge">{discovered ? 'Unavailable' : 'Guide-curated'}</span>
           </div>
           <div className="item-plans">
             {plan.items.map((itemPlan) => (
@@ -194,12 +266,17 @@ export function Playbook({
               </div>
             ))}
             {!plan.items.length && (
-              <p className="fine-print">Source-backed item roles unavailable.</p>
+              <p className="fine-print">
+                {discovered
+                  ? 'Final-board clustering does not establish item holders or priorities.'
+                  : 'Source-backed item roles unavailable.'}
+              </p>
             )}
           </div>
           <p className="fine-print">
-            Suggested items from the source guide. Alternatives and temporary holders are
-            unverified.
+            {discovered
+              ? 'No item direction is inferred from structural discovery.'
+              : 'Suggested items from the source guide. Alternatives and temporary holders are unverified.'}
           </p>
         </section>
         <section className="panel">
@@ -217,7 +294,11 @@ export function Playbook({
             </div>
           ))}
           {!plan.augments.length && (
-            <p className="fine-print">No specific augment branch was imported from this source.</p>
+            <p className="fine-print">
+              {discovered
+                ? 'No augment branch is inferred from structural discovery.'
+                : 'No specific augment branch was imported from this source.'}
+            </p>
           )}
           <div className="signal-list">
             <span>WHEN TO CONSIDER</span>
@@ -237,7 +318,7 @@ export function Playbook({
           <div className="panel-heading">
             <GitBranch size={18} />
             <h2>Decision Map</h2>
-            <span className="badge muted">Static guide</span>
+            <span className="badge muted">{discovered ? 'Unavailable' : 'Static guide'}</span>
           </div>
           <div className="decision-map">
             <div className="decision-start">{plan.decisionMap.nodes[0]?.label}</div>
@@ -251,8 +332,13 @@ export function Playbook({
               ))}
             </div>
           </div>
+          {discovered && (
+            <p className="fine-print">No Decision Map is inferred from final boards.</p>
+          )}
           <p className="fine-print">
-            Guide signal → route. Reassess is a navigation prompt; no live board or economy is read.
+            {discovered
+              ? 'A future curated playbook may add verified transitions without changing the observed structure.'
+              : 'Guide signal → route. Reassess is a navigation prompt; no live board or economy is read.'}
           </p>
         </section>
         <section className="panel">
@@ -261,8 +347,10 @@ export function Playbook({
             <h2>Variants & pivots</h2>
           </div>
           <div className="variant-line">
-            <span>Source board</span>
-            <span className="badge">{plan.target.capacity} units · Experimental</span>
+            <span>{discovered ? 'Observed representative' : 'Source board'}</span>
+            <span className="badge">
+              {plan.target.capacity} units · {discovered?.lifecycle ?? 'Experimental'}
+            </span>
           </div>
           <p className="fine-print">{plan.replacements.note}</p>
           <div className="pivot-list">
@@ -286,12 +374,22 @@ export function Playbook({
           <h2>Why this plan?</h2>
           <span className="badge muted">
             {Math.round(candidate.score)} / 100 ·{' '}
-            {measured?.quality === 'eligible' ? 'measured calibrated' : 'neutral meta fallback'}
+            {discovered?.recommendationEligible || measured?.quality === 'eligible'
+              ? 'measured calibrated'
+              : 'neutral meta fallback'}
           </span>
         </div>
         <div className="meta-evidence-detail">
           <strong>Aggregate meta evidence</strong>
-          {measured ? (
+          {discovered ? (
+            <span>
+              {discovered.stats.games} clustered boards ·{' '}
+              {discovered.stats.averagePlacement.toFixed(2)} avg ·{' '}
+              {Math.round(discovered.stats.topFour.shrunk * 100)}% top 4 ·{' '}
+              {Math.round(discovered.stats.wins.shrunk * 100)}% win ·{' '}
+              {Math.round(discovered.stats.confidence * 100)}% confidence
+            </span>
+          ) : measured ? (
             <span>
               {measured.games} classified games · {measured.shrunkAveragePlacement.toFixed(2)}
               {' avg · '}
@@ -303,9 +401,11 @@ export function Playbook({
             <span>Unavailable · recommendation outcome inputs fall back to neutral.</span>
           )}
           <small>
-            {state.meta
-              ? `${state.meta.platform} ${state.meta.rankCohort.join(' + ')} · Riot aggregate · patch relevance unavailable`
-              : 'No compatible stored aggregate dataset. Curated board metadata is not outcome evidence.'}
+            {discovered
+              ? `${state.discovery?.sourceType === 'fixture' ? 'Fixture' : 'Riot'} aggregate discovery · patch relevance unavailable`
+              : state.meta
+                ? `${state.meta.platform} ${state.meta.rankCohort.join(' + ')} · Riot aggregate · patch relevance unavailable`
+                : 'No compatible stored aggregate dataset. Curated board metadata is not outcome evidence.'}
           </small>
         </div>
         <div className="why-grid">
@@ -377,13 +477,15 @@ export function Playbook({
       <details className="source-details">
         <summary>Provenance & validation limits</summary>
         <p>{plan.provenance.note}</p>
-        <a href={plan.provenance.source} target="_blank" rel="noreferrer">
-          Read original public guide ↗
-        </a>
+        {plan.provenance.source.startsWith('http') && (
+          <a href={plan.provenance.source} target="_blank" rel="noreferrer">
+            Read original public guide ↗
+          </a>
+        )}
         <p>
-          Reviewed September 6, 2026 · patch 18.1 ·{' '}
-          {measured ? `${measured.games} classified observations.` : 'no measured sample.'}{' '}
-          “Experimental” reflects this app’s limited outcome evidence.
+          {discovered
+            ? `${discovered.stats.games} aggregate clustered observations · generated ${new Date(plan.provenance.fetchedAt).toLocaleString()}. Lifecycle remains evidence-gated.`
+            : `Reviewed September 6, 2026 · patch 18.1 · ${measured ? `${measured.games} classified observations.` : 'no measured sample.'} “Experimental” reflects this app’s limited outcome evidence.`}
         </p>
         {warnings.map((w, i) => (
           <p key={`${w.code}-${i}`}>{w.message}</p>

@@ -9,6 +9,7 @@ import type {
   Playbook,
   RecommendationCandidate,
   ScoreComponent,
+  DiscoveryDataset,
 } from '../domain/models';
 import { candidateContestFor } from './lobbyPressure';
 export const clamp = (n: number, lo = 0, hi = 1) =>
@@ -42,6 +43,7 @@ export interface ScoringContext {
   personal?: PersonalProfile;
   personalWeight?: number;
   meta?: AggregateMetaDataset | null;
+  discovery?: DiscoveryDataset | null;
 }
 export function personalAdjustment(p: Playbook, profile?: PersonalProfile, weight = 0.05): number {
   if (!profile || profile.set !== p.set || profile.effectiveGames < 5) return 0;
@@ -56,6 +58,9 @@ export function personalAdjustment(p: Playbook, profile?: PersonalProfile, weigh
 }
 export function confidenceFor(p: Playbook, context: ScoringContext): Confidence {
   const measured = context.meta?.familyStats.find((stat) => stat.familyId === p.family.id);
+  const discovered = p.discovery
+    ? context.discovery?.clusters.find((cluster) => cluster.id === p.discovery?.clusterId)
+    : undefined;
   const date = Math.min(
     Date.parse(p.provenance.fetchedAt),
     Date.parse(context.version.provenance.publishedAt ?? context.version.provenance.fetchedAt),
@@ -67,14 +72,19 @@ export function confidenceFor(p: Playbook, context: ScoringContext): Confidence 
       factor: { Proven: 1, Variant: 0.8, Emerging: 0.6, Experimental: 0.35 }[p.evidence],
     },
     { label: 'Source freshness', factor: Math.exp(-age / 14) },
-    measured
+    discovered
       ? {
-          label: `${measured.games} measured games · ${Math.round(measured.confidence * 100)}% meta confidence`,
-          factor: measured.confidence,
+          label: `${discovered.stats.games} clustered boards · ${Math.round(discovered.stats.confidence * 100)}% discovery confidence`,
+          factor: discovered.stats.confidence,
         }
-      : p.sampleSize
-        ? { label: `${p.sampleSize} observed games`, factor: clamp(p.sampleSize / 200, 0.15, 1) }
-        : { label: 'No compatible measured game sample', factor: 0.25 },
+      : measured
+        ? {
+            label: `${measured.games} measured games · ${Math.round(measured.confidence * 100)}% meta confidence`,
+            factor: measured.confidence,
+          }
+        : p.sampleSize
+          ? { label: `${p.sampleSize} observed games`, factor: clamp(p.sampleSize / 200, 0.15, 1) }
+          : { label: 'No compatible measured game sample', factor: 0.25 },
     {
       label:
         context.version.patchVerified && p.patch === context.version.patch
@@ -87,14 +97,16 @@ export function confidenceFor(p: Playbook, context: ScoringContext): Confidence 
       factor: 0.25 + 0.75 * clamp(context.lobby?.coverage ?? 0),
     },
     {
-      label:
-        measured?.quality === 'eligible'
+      label: discovered?.recommendationEligible
+        ? 'Discovery evidence eligible'
+        : measured?.quality === 'eligible'
           ? 'Measured strength eligible'
           : p.features.provenance.status === 'seeded'
             ? 'Seeded score metadata'
             : 'Derived / curated metadata',
-      factor:
-        measured?.quality === 'eligible'
+      factor: discovered?.recommendationEligible
+        ? 0.9
+        : measured?.quality === 'eligible'
           ? 0.9
           : p.features.provenance.status === 'seeded'
             ? 0.25
@@ -105,7 +117,11 @@ export function confidenceFor(p: Playbook, context: ScoringContext): Confidence 
   // Evidence class and seeded metadata are upper bounds; strong static data cannot promote a novel board.
   const bounded = Math.min(
     value,
-    p.evidence === 'Experimental' && measured?.quality !== 'eligible' ? 0.39 : 1,
+    p.evidence === 'Experimental' &&
+      measured?.quality !== 'eligible' &&
+      !discovered?.recommendationEligible
+      ? 0.39
+      : 1,
   );
   return {
     level: bounded >= 0.75 ? 'High' : bounded >= 0.5 ? 'Medium' : 'Low',
@@ -118,14 +134,34 @@ export function contestFor(p: Playbook, lobby?: LobbyPressure): CandidateContest
 }
 export function scoreCandidate(p: Playbook, context: ScoringContext): RecommendationCandidate {
   const measured = context.meta?.familyStats.find((stat) => stat.familyId === p.family.id);
-  const measuredEligible = measured?.quality === 'eligible';
-  const measuredValues: Partial<Record<FeatureKey, number>> = measuredEligible
+  const discovered = p.discovery
+    ? context.discovery?.clusters.find((cluster) => cluster.id === p.discovery?.clusterId)
+    : undefined;
+  const discoveryEligible = discovered?.recommendationEligible === true;
+  const measuredEligible = measured?.quality === 'eligible' || discoveryEligible;
+  const discoveredPlacementStrength = discovered
+    ? clamp((8.5 - discovered.stats.averagePlacement) / 7.5)
+    : 0;
+  const measuredValues: Partial<Record<FeatureKey, number>> = discoveryEligible
     ? {
-        meta: measured.measuredStrength,
-        floor: measured.measuredFloor,
-        ceiling: measured.measuredCeiling,
+        meta:
+          100 *
+          clamp(
+            0.5 * discoveredPlacementStrength +
+              0.35 * discovered!.stats.topFour.shrunk +
+              0.15 * discovered!.stats.wins.shrunk -
+              0.2 * (1 - discovered!.stats.confidence),
+          ),
+        floor: 100 * discovered!.stats.topFour.shrunk,
+        ceiling: 100 * clamp(discovered!.stats.wins.shrunk / 0.25),
       }
-    : {};
+    : measured?.quality === 'eligible'
+      ? {
+          meta: measured.measuredStrength,
+          floor: measured.measuredFloor,
+          ceiling: measured.measuredCeiling,
+        }
+      : {};
   const components: ScoreComponent[] = (Object.keys(weights) as FeatureKey[]).map((key) => {
     const isOutcome = key === 'meta' || key === 'floor' || key === 'ceiling';
     const input = measuredValues[key] ?? (isOutcome ? null : clamp(p.features.values[key], 0, 100));
@@ -139,7 +175,7 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
         input === null
           ? 'unavailable'
           : measuredValues[key] !== undefined
-            ? context.meta?.sourceType === 'fixture'
+            ? (discovered ? context.discovery?.sourceType : context.meta?.sourceType) === 'fixture'
               ? 'fixture'
               : 'measured'
             : p.features.provenance.status,
@@ -184,7 +220,9 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
     reasons: measuredEligible
       ? [
           `${positives[0]?.label ?? 'Measured evidence'} is the strongest positive driver.`,
-          `${measured.games} classified games · ${Math.round(measured.confidence * 100)}% aggregate-meta confidence.`,
+          discovered
+            ? `${discovered.stats.games} clustered boards · ${Math.round(discovered.stats.confidence * 100)}% discovery confidence.`
+            : `${measured!.games} classified games · ${Math.round(measured!.confidence * 100)}% aggregate-meta confidence.`,
         ]
       : [
           `${positives[0]?.label ?? 'Curated structure'} leads the available curated profile.`,

@@ -27,6 +27,8 @@ import { NativeRiotProvider } from '../providers/riot';
 import { createRiotPreviewProvider } from '../providers/riotPreview';
 import { openHistoryStore, type HistoryStore } from '../storage/history';
 import { CompLibrary } from '../features/CompLibrary';
+import { refreshMetaDiscovery } from '../services/discoveryRefresh';
+import { regionalRouteFor } from '../providers/riotRouting';
 type Page = 'home' | 'library' | 'data';
 export function App() {
   const [state, setState] = useState<ApplicationState | null>(null),
@@ -35,6 +37,7 @@ export function App() {
     [error, setError] = useState(''),
     [toast, setToast] = useState(''),
     [refreshing, setRefreshing] = useState(false),
+    [metaRefreshing, setMetaRefreshing] = useState(false),
     [attempt, setAttempt] = useState(0),
     [historyStore, setHistoryStore] = useState<HistoryStore | null>(null),
     [lobby, setLobby] = useState<LobbyPressure | null>(null);
@@ -109,7 +112,13 @@ export function App() {
       setState({
         ...state,
         settings,
-        ...createRecommendations(state.data, settings, new Date().toISOString(), state.meta),
+        ...createRecommendations(
+          state.data,
+          settings,
+          new Date().toISOString(),
+          state.meta,
+          state.discovery,
+        ),
       });
       if (
         settings.historyWindow !== state.settings.historyWindow ||
@@ -119,6 +128,44 @@ export function App() {
       setToast('Settings saved locally.');
     } catch {
       setToast('Settings could not be saved. Your previous settings are unchanged.');
+    }
+  };
+  const refreshMeta = async () => {
+    if (!state || !repository.current || !historyStore || !riotProvider || state.selection) return;
+    setMetaRefreshing(true);
+    try {
+      const refreshed = await refreshMetaDiscovery(
+        riotProvider,
+        historyStore,
+        repository.current,
+        state.data,
+        state.registry
+          .filter((entry) => entry.sourceKind === 'curated')
+          .map((entry) => entry.playbook),
+        {
+          platform: state.settings.riotPlatform,
+          regionalRoute: regionalRouteFor(state.settings.riotPlatform),
+          tiers: ['CHALLENGER'],
+          playersPerTier: 3,
+          matchesPerPlayer: 3,
+          set: state.data.version.set,
+        },
+      );
+      setState({
+        ...state,
+        ...createRecommendations(
+          state.data,
+          state.settings,
+          refreshed.discovery.generatedAt,
+          refreshed.meta,
+          refreshed.discovery,
+        ),
+      });
+      setToast(refreshed.status.message);
+    } catch {
+      setToast('Meta refresh unavailable. Existing cached evidence remains active.');
+    } finally {
+      setMetaRefreshing(false);
     }
   };
   const lock = async () => {
@@ -154,6 +201,7 @@ export function App() {
           lobby: lobby ?? undefined,
           personalWeight: state.settings.personalWeight,
           meta: state.meta,
+          discovery: state.discovery,
         }),
       ),
       now,
@@ -173,6 +221,7 @@ export function App() {
                 lobby: lobby ?? undefined,
                 personalWeight: state.settings.personalWeight,
                 meta: state.meta,
+                discovery: state.discovery,
               })
             : undefined;
         })())
@@ -310,6 +359,8 @@ export function App() {
                   onSave={saveSettings}
                   onRefresh={refresh}
                   refreshing={refreshing}
+                  onMetaRefresh={refreshMeta}
+                  metaRefreshing={metaRefreshing}
                   riotProvider={riotProvider}
                   historyStore={historyStore}
                   fixturePreview={fixturePreview}

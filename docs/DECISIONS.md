@@ -1,6 +1,10 @@
 # Decision Log & Open Questions
 
 ## Approved product decisions
+
+- M6 discovery uses versioned canonical champion-board structures, champion-first similarity and deterministic indexed density clustering with explicit noise; placement, player identity and family labels never enter structural features.
+- Curated comp families remain immutable anchors. Discovered variants/emerging structures are separately versioned derived registry entries with neutral generated labels, lifecycle history and fail-closed recommendation gates.
+- Meta/discovery refresh is an explicit bounded action. Immutable completed matches are reusable, while derived classifier/stat/discovery data is invalidated by set/static, family, sample or model/config fingerprints.
 - M5 aggregate outcome evidence is a versioned regional/rank-cohort sample, never "global meta"; it remains separate from M4 historical lobby unit pressure.
 - Completed-board family classification is retrospective and conservative: low-score and close-score boards remain unclassified or ambiguous.
 - Measured meta/floor/ceiling inputs replace the old seeded inputs only after explicit sample, freshness, and confidence gates; otherwise the outcome contribution is a visible neutral fallback.
@@ -33,7 +37,9 @@
 - One-day polished V1 is the working target; deeper discovery may continue into V1.5.
 
 ## Recommendation direction
+
 Major inputs:
+
 - current meta strength;
 - consistency/top-4 floor;
 - win/cap ceiling;
@@ -45,15 +51,19 @@ Major inputs:
 - stage/tempo safety.
 
 Smaller penalty:
+
 - dependency fragility.
 
 Intentionally small:
+
 - personal influence.
 
 Exact weights remain configuration and should be calibrated from outcomes.
 
 ## Opponent model
+
 Approved features:
+
 - recent comp-family frequency;
 - ForceIndex / FlexIndex;
 - reroll / Fast 8 / Fast 9 tendencies;
@@ -67,6 +77,7 @@ Approved features:
 Contest pressure must weight unit criticality and comp sensitivity rather than treating all shared units equally.
 
 ## Comp discovery model
+
 - Established real families are the safest baseline.
 - Families can have Standard, Low-Contest, High-Cap and other validated variants.
 - Flex-slot optimizer locks core units and searches legal active-set combinations.
@@ -76,6 +87,7 @@ Contest pressure must weight unit criticality and comp sensitivity rather than t
 - Experimental -> Emerging -> Proven only as evidence improves.
 
 ## UI direction
+
 - Dark premium desktop interface.
 - Real current-set visuals where available.
 - Three prominent recommendation cards.
@@ -87,6 +99,7 @@ Contest pressure must weight unit criticality and comp sensitivity rather than t
 - Avoid generic admin-dashboard appearance/data walls.
 
 ## Technical direction
+
 - Tauri 2 + React + TypeScript + Vite.
 - SQLite local cache/history/derived features.
 - Versioned JSON/rule fixtures.
@@ -99,8 +112,11 @@ Contest pressure must weight unit criticality and comp sensitivity rather than t
 - No secrets in logs.
 
 ## Open questions to verify during implementation
+
 ### Meta bootstrap
+
 V1 needs a practical current comp library before a large self-collected dataset exists. Choose between:
+
 - curated current-set seed playbooks from reliable strategy evidence;
 - bounded sampled Riot match dataset;
 - another permitted structured source.
@@ -108,30 +124,39 @@ V1 needs a practical current comp library before a large self-collected dataset 
 Do not permanently depend on scraping another companion's private data.
 
 ### Exact TFT rule values
+
 Shop odds, pool counts, XP/economy values, special units and active set mechanics must be sourced/validated before fixtures become authoritative.
 
 ### Team Planner code format
+
 Current set/patch encoder must be verified using known-good codes and a manual client paste.
 
 ### Riot API latency/rate limits
+
 Benchmark warm cache, cold cache, 10-game window, 20-game window, shared-match dedup and partial-confidence timeout.
 
 ### Recommendation freeze behavior
+
 Working default: recommendations can update while lobby scouting completes, then freeze when the user selects/locks a plan or active play begins. Test whether a manual refresh-before-game action helps.
 
 ### Evidence thresholds
+
 Define numeric Proven/Variant/Emerging/Experimental thresholds after the first dataset exists.
 
 ### Comp classifier
+
 Start with weighted core-unit/trait nearest-family classification. Add more complex clustering only if it materially improves unknown-board classification.
 
 ### Personal insights
+
 Define minimum sample size/shrinkage after observing real user data; small samples remain neutral.
 
 ### Runtime LLM
+
 Not needed for V1. Later evaluate only for explanation quality; it may receive structured validated facts but never own gameplay truth.
 
 ## First-build release gates
+
 - Current static data loads and validates.
 - Rules fixtures exist for every rule actually used by recommendations.
 - Several real current-set playbooks are represented structurally.

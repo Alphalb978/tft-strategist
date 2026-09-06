@@ -1,6 +1,11 @@
 import { useMemo, useState } from 'react';
 import { ChevronRight, Search, SlidersHorizontal } from 'lucide-react';
-import type { AggregateMetaDataset, Playbook, StaticData } from '../domain/models';
+import type {
+  AggregateMetaDataset,
+  CompRegistryEntry,
+  Playbook,
+  StaticData,
+} from '../domain/models';
 import type { ApplicationState } from '../services/application';
 import { Art } from '../components/Art';
 
@@ -25,10 +30,12 @@ export function filterAndSortComps(
   data: StaticData,
   meta: AggregateMetaDataset | null,
   query: CompLibraryQuery,
+  registry: CompRegistryEntry[] = [],
 ) {
   const stats = new Map(meta?.familyStats.map((value) => [value.familyId, value]) ?? []);
   const needle = query.search.trim().toLocaleLowerCase('en-US');
   const value = (playbook: Playbook) => stats.get(playbook.family.id);
+  const entries = new Map(registry.map((entry) => [entry.playbook.id, entry]));
   const text = (playbook: Playbook) => {
     const unitIds = new Set(playbook.target.units.map((unit) => unit.championId));
     const units = data.champions.filter((unit) => unitIds.has(unit.id));
@@ -75,7 +82,12 @@ export function filterAndSortComps(
   };
   return playbooks
     .filter((playbook) => !needle || text(playbook).includes(needle))
-    .filter((playbook) => query.evidence === 'all' || playbook.evidence === query.evidence)
+    .filter((playbook) => {
+      if (query.evidence === 'all') return true;
+      const entry = entries.get(playbook.id);
+      if (query.evidence === 'Curated') return entry?.sourceKind === 'curated';
+      return (entry?.lifecycle ?? playbook.evidence) === query.evidence;
+    })
     .filter((playbook) => query.style === 'all' || playbook.features.style.includes(query.style))
     .sort(compare);
 }
@@ -96,17 +108,22 @@ export function CompLibrary({
     sort: 'name',
   });
   const filtered = useMemo(
-    () => filterAndSortComps(state.playbooks, state.data, state.meta, query),
+    () => filterAndSortComps(state.playbooks, state.data, state.meta, query, state.registry),
     [query, state],
   );
   const stats = new Map(state.meta?.familyStats.map((value) => [value.familyId, value]) ?? []);
+  const entries = new Map(state.registry.map((entry) => [entry.playbook.id, entry]));
+  const clusters = new Map(state.discovery?.clusters.map((cluster) => [cluster.id, cluster]) ?? []);
   return (
     <>
       <div className="page-heading comps-heading">
         <div>
           <div className="eyebrow">CURRENT SET · ATTRIBUTED BOARDS</div>
           <h1>Comp Library</h1>
-          <p>{state.playbooks.length} legal Set 18 families with source and evidence limits.</p>
+          <p>
+            {state.playbooks.length} legal Set {state.data.version.set} curated and discovered
+            structures with evidence limits.
+          </p>
         </div>
         <div className="library-count">
           <strong>{filtered.length}</strong>
@@ -132,11 +149,13 @@ export function CompLibrary({
             value={query.evidence}
             onChange={(event) => setQuery({ ...query, evidence: event.target.value })}
           >
-            <option value="all">All classes</option>
-            <option value="Proven">Proven</option>
+            <option value="all">All sources & states</option>
+            <option value="Curated">Curated</option>
             <option value="Variant">Variant</option>
             <option value="Emerging">Emerging</option>
             <option value="Experimental">Experimental</option>
+            <option value="Stale">Stale</option>
+            <option value="Retired">Retired</option>
           </select>
         </label>
         <label>
@@ -179,6 +198,8 @@ export function CompLibrary({
       <div className="library-grid expanded-library">
         {filtered.map((playbook) => {
           const stat = stats.get(playbook.family.id);
+          const entry = entries.get(playbook.id);
+          const cluster = entry?.clusterId ? clusters.get(entry.clusterId) : undefined;
           return (
             <button className="library-card" key={playbook.id} onClick={() => onOpen(playbook.id)}>
               <Art
@@ -190,7 +211,27 @@ export function CompLibrary({
                 <span className="eyebrow">{playbook.features.style}</span>
                 <h2>{playbook.title}</h2>
                 <p>{playbook.subtitle}</p>
-                {stat ? (
+                {cluster ? (
+                  <div className="library-metrics">
+                    <span>
+                      <b>{cluster.stats.averagePlacement.toFixed(2)}</b> avg
+                    </span>
+                    <span>
+                      <b>{percent(cluster.stats.topFour.shrunk)}</b> top 4
+                    </span>
+                    <span>
+                      <b>{cluster.stats.games}</b> boards
+                    </span>
+                    <span>
+                      <b>
+                        {cluster.stats.adoption.mature
+                          ? `${cluster.stats.adoption.delta >= 0 ? '+' : ''}${percent(cluster.stats.adoption.delta)}`
+                          : '—'}
+                      </b>{' '}
+                      trend
+                    </span>
+                  </div>
+                ) : stat ? (
                   <div className="library-metrics">
                     <span>
                       <b>{stat.shrunkAveragePlacement.toFixed(2)}</b> avg
@@ -208,7 +249,10 @@ export function CompLibrary({
                 ) : (
                   <div className="library-metrics unavailable">Measured outcomes unavailable</div>
                 )}
-                <span className="badge">{playbook.evidence} · public board</span>
+                <span className="badge">
+                  {entry?.sourceKind === 'discovered' ? 'Discovered' : 'Curated'} ·{' '}
+                  {entry?.lifecycle ?? playbook.evidence}
+                </span>
               </div>
               <ChevronRight />
             </button>

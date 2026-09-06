@@ -201,6 +201,7 @@ export interface Playbook {
   variants: CompVariant[];
   features: StrategyFeatures;
   planner: TeamPlannerSupport;
+  discovery?: { clusterId: ID; parentFamilyId: ID | null };
 }
 export interface Confidence {
   level: 'Low' | 'Medium' | 'High';
@@ -236,6 +237,215 @@ export interface MetaObservation {
   completedAt: string;
   placement: number;
   classification: CompClassification;
+}
+
+export type DiscoveryLifecycleState =
+  | 'Experimental'
+  | 'Emerging'
+  | 'Variant'
+  | 'Proven'
+  | 'Stale'
+  | 'Retired';
+
+export interface CanonicalBoardUnit {
+  championId: ID;
+  cost: number;
+  traitIds: ID[];
+  stars: number | null;
+  ordinaryCopies: number | null;
+}
+
+export interface CanonicalBoard {
+  schemaVersion: 1;
+  modelVersion: string;
+  set: number;
+  capacity: number;
+  boardSize: number;
+  units: CanonicalBoardUnit[];
+  traitIds: ID[];
+  fingerprint: string;
+}
+
+export interface CanonicalizationResult {
+  state: 'canonical' | 'invalid';
+  board: CanonicalBoard | null;
+  unresolvedUnitIds: ID[];
+  reasons: string[];
+}
+
+export interface BoardSimilarity {
+  value: number;
+  unitStructure: number;
+  boardSize: number;
+  traits: number;
+  starPattern: number;
+  modelVersion: string;
+}
+
+export interface DiscoveryObservation {
+  observationId: ID;
+  matchId: ID;
+  completedAt: string;
+  placement: number;
+  board: CanonicalBoard;
+}
+
+export interface ClusterUnitPrevalence {
+  championId: ID;
+  observations: number;
+  prevalence: number;
+}
+
+export interface AdoptionAcceleration {
+  recentFrequency: number;
+  priorFrequency: number;
+  delta: number;
+  recentBoards: number;
+  priorBoards: number;
+  recentClusterBoards: number;
+  priorClusterBoards: number;
+  mature: boolean;
+}
+
+export type ClusterRelationState =
+  | 'known-family'
+  | 'variant-candidate'
+  | 'emerging-candidate'
+  | 'noise/insufficient';
+
+export interface VariantDiff {
+  sharedCore: ID[];
+  consistentlyAdded: ID[];
+  consistentlyOmitted: ID[];
+  structuralDistance: number;
+  capacityDelta: number;
+}
+
+export interface ClusterRelation {
+  state: ClusterRelationState;
+  familyId: ID | null;
+  similarity: number;
+  runnerUpFamilyId: ID | null;
+  runnerUpSimilarity: number;
+  margin: number;
+  certainty: number;
+  diff: VariantDiff | null;
+  modelVersion: string;
+}
+
+export interface LifecycleTransition {
+  previousState: DiscoveryLifecycleState | null;
+  newState: DiscoveryLifecycleState;
+  at: string;
+  evidenceModelVersion: string;
+  drivers: string[];
+}
+
+export interface DiscoveryClusterStats {
+  games: number;
+  uniqueMatches: number;
+  effectiveSample: number;
+  averagePlacement: number;
+  topFour: BinomialEstimate;
+  wins: BinomialEstimate;
+  freshestGameAt: string;
+  ageDays: number;
+  cohesion: number;
+  separation: number;
+  confidence: number;
+  adoption: AdoptionAcceleration;
+}
+
+export interface DiscoveryCluster {
+  id: ID;
+  memberFingerprints: string[];
+  representative: CanonicalBoard;
+  unitPrevalence: ClusterUnitPrevalence[];
+  stats: DiscoveryClusterStats;
+  relation: ClusterRelation;
+  lifecycle: DiscoveryLifecycleState;
+  transitions: LifecycleTransition[];
+  recommendationEligible: boolean;
+  recommendationGateReasons: string[];
+}
+
+export interface DiscoveryConfigSnapshot {
+  minimumClusterSupport: number;
+  neighborhoodSimilarity: number;
+  blockingUnitCount: number;
+  maximumBlockSize: number;
+  maximumCandidatePairs: number;
+  relationKnownThreshold: number;
+  relationVariantThreshold: number;
+  relationMinimumMargin: number;
+  emergingMinimumGames: number;
+  variantMinimumGames: number;
+  minimumConfidence: number;
+  maximumAgeDays: number;
+  minimumCohesion: number;
+  accelerationRecentDays: number;
+  accelerationPriorDays: number;
+}
+
+export interface DiscoveryDataset {
+  id: ID;
+  schemaVersion: 1;
+  set: number;
+  state: 'complete' | 'partial' | 'unavailable' | 'incompatible';
+  sourceType: 'riot-api' | 'fixture';
+  source: string;
+  generatedAt: string;
+  windowStart: string | null;
+  windowEnd: string | null;
+  boardsAnalyzed: number;
+  invalidBoards: number;
+  clusterCount: number;
+  knownFamilyClusters: number;
+  variantClusters: number;
+  emergingClusters: number;
+  experimentalClusters: number;
+  noiseBoards: number;
+  candidatePairsCompared: number;
+  candidatePairBudgetReached: boolean;
+  oversizedBlocksSkipped: number;
+  clusters: DiscoveryCluster[];
+  noiseObservationIds: ID[];
+  canonicalModelVersion: string;
+  similarityModelVersion: string;
+  clusteringModelVersion: string;
+  relationModelVersion: string;
+  lifecycleModelVersion: string;
+  statisticsVersion: string;
+  staticSourceVersion: string;
+  familyDefinitionsFingerprint: string;
+  sampleDefinitionFingerprint: string;
+  configurationFingerprint: string;
+  derivationFingerprint: string;
+  config: DiscoveryConfigSnapshot;
+  patchRelevance: 'unavailable';
+  errors: string[];
+}
+
+export interface CompRegistryEntry {
+  id: ID;
+  sourceKind: 'curated' | 'discovered';
+  lifecycle: DiscoveryLifecycleState;
+  playbook: Playbook;
+  structuralFingerprint: string;
+  clusterId: ID | null;
+  parentFamilyId: ID | null;
+  recommendationEligible: boolean;
+  support: number | null;
+  effectiveSample: number | null;
+  trendDelta: number | null;
+  provenance: Provenance;
+}
+
+export interface DiscoveryRefreshStatus {
+  state: 'idle' | 'refreshing' | 'complete' | 'partial' | 'unavailable' | 'incompatible';
+  lastRefreshAt: string | null;
+  activeDatasetId: ID | null;
+  message: string;
 }
 export interface BinomialEstimate {
   raw: number;

@@ -151,6 +151,40 @@ test('M5 Comp Library searches, filters, sorts, and opens attributed evidence', 
   await expect(page.getByText(/Unavailable · recommendation outcome inputs/)).toBeVisible();
   expect(errors).toEqual([]);
 });
+for (const width of [1440, 1000, 860])
+  test(`M6 discovery refresh and detail fit at ${width}px`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/?riot-fixture=1');
+    await expect(
+      page.getByRole('heading', { name: 'Three plans. More possibilities.' }),
+    ).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Comp discovery', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Refresh meta & discovery', exact: true }).click();
+    await expect(page.getByText(/boards analyzed across/)).toBeVisible();
+    await expect(page.getByLabel('Comp discovery refresh status')).toContainText('21 boards');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: `artifacts/m6-data-${width}.png`, fullPage: true });
+    await page.getByRole('button', { name: 'Comps', exact: true }).click();
+    await page.getByLabel('Evidence filter').selectOption('Curated');
+    await expect(page.locator('.library-card')).toHaveCount(13);
+    await page.getByLabel('Evidence filter').selectOption('all');
+    await page.getByLabel('Search comps, units, or traits').fill('Variant of Adaptors');
+    await expect(page.locator('.library-card')).toHaveCount(1);
+    await expect(page.getByText(/Discovered · Experimental/)).toBeVisible();
+    await page.locator('.library-card').click();
+    await expect(page.getByRole('heading', { name: 'Discovery evidence' })).toBeVisible();
+    await expect(page.getByText(/Not recommendation-eligible/)).toBeVisible();
+    expect(
+      await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    await page.screenshot({ path: `artifacts/m6-detail-${width}.png`, fullPage: true });
+    expect(errors).toEqual([]);
+  });
 for (const width of [1000, 860])
   test(`desktop layout at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });

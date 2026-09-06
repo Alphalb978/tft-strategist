@@ -1,6 +1,7 @@
 # Technical Architecture & Data Pipeline
 
 ## Working stack
+
 - Tauri 2 desktop shell
 - React
 - TypeScript
@@ -11,10 +12,13 @@
 Most strategy logic should stay in TypeScript initially for development speed and inspectability. Move work to Rust/native code only when a measured need appears.
 
 ## Layering
+
 `providers -> domain -> rules/validation -> strategy -> application services -> UI`
 
 ### Providers
+
 Responsibilities:
+
 - CommunityDragon/static current-set data;
 - Riot account/rank/spectator-current-game participant discovery where available;
 - Riot completed-match history;
@@ -25,7 +29,9 @@ Responsibilities:
 Providers should return typed source records plus provenance/version metadata.
 
 ### Domain
+
 Core stable entities:
+
 - Champion
 - Trait
 - Item
@@ -44,7 +50,9 @@ Core stable entities:
 Domain objects should not depend on React.
 
 ### Rules/validation
+
 Own:
+
 - current-set legality checks;
 - board capacity/unit membership;
 - trait computation/breakpoint validation;
@@ -55,7 +63,9 @@ Own:
 Rules must be explicit and testable.
 
 ### Strategy
+
 Suggested modules:
+
 - candidate scoring;
 - confidence calibration;
 - portfolio optimizer;
@@ -69,7 +79,9 @@ Suggested modules:
 - post-game analyzer.
 
 ### Application services
+
 Coordinate use cases such as:
+
 - refresh active set;
 - load recommendation context;
 - scan lobby;
@@ -79,9 +91,11 @@ Coordinate use cases such as:
 - rebuild derived features.
 
 ### UI
+
 Consumes application/domain view models. UI should not recreate strategy formulas or query external APIs directly.
 
 ## Suggested repository shape
+
 ```text
 src/
   app/
@@ -110,7 +124,9 @@ tasks/
 Exact names may vary if the implementation stays equally clear.
 
 ## SQLite
+
 Store at minimum where useful:
+
 - settings;
 - source/cache metadata;
 - Riot account identifiers needed by the app;
@@ -125,28 +141,36 @@ Store at minimum where useful:
 Do not store API keys in plain logs. Use environment/config/secure local mechanism appropriate to the eventual app.
 
 ## Cache strategy
+
 Opponent scanning depends on fast cache-first behavior.
 
 ### Immutable match payloads
+
 Completed match payloads can be cached long-term by match ID.
 
 ### Player recent-match lists
+
 Cache with a short freshness window. Refresh only when needed.
 
 ### Opponent derived profile
+
 Cache with:
+
 - generated-at time;
 - source match IDs;
 - patch/set relevance;
 - classifier/feature version.
 
 ### Shared-match dedup
+
 When multiple lobby members were in the same historical match, fetch/parse that match once.
 
 ## Parallel opponent scan
+
 Use bounded concurrency consistent with actual Riot API limits.
 
 Desired pipeline:
+
 1. resolve seven opponents;
 2. load warm cached profile immediately if usable;
 3. fetch missing/stale recent-match IDs in parallel;
@@ -161,7 +185,9 @@ Desired pipeline:
 Never wait minutes just to claim a complete scan.
 
 ## Recommendation context contract
+
 Conceptual shape:
+
 ```ts
 interface RecommendationContext {
   activeSet: ActiveSetVersion;
@@ -176,7 +202,9 @@ interface RecommendationContext {
 The engine returns candidates with inspectable score components and then a portfolio with pairwise compatibility/diversity reasoning.
 
 ## Team Planner module
+
 Keep isolated behind a narrow interface such as:
+
 ```ts
 interface TeamPlannerCodec {
   supportStatus(set: ActiveSetVersion): TeamPlannerSupport;
@@ -187,7 +215,9 @@ interface TeamPlannerCodec {
 Tests must include known-good fixtures. Unsupported formats must fail clearly.
 
 ## Meta / comp discovery pipeline
+
 V1 may use seeded curated playbooks, but preserve a path to data-derived evolution:
+
 1. ingest completed match boards;
 2. normalize active-set units/items/traits;
 3. classify to nearest known family;
@@ -202,10 +232,19 @@ V1 may use seeded curated playbooks, but preserve a path to data-derived evoluti
 Start with simple weighted core-unit/trait family matching before introducing complex ML.
 
 ### M5 aggregate evidence boundary
+
 The implemented M5 path is `tft-league-v1 cohort -> documented summoner identifier resolution -> tft-match-v1 IDs/details -> immutable match cache -> current-set filter -> versioned retrospective classifier -> uncertainty-aware family statistics -> quality-gated recommendation calibration`. Aggregate popularity is never reused as M4 lobby contest pressure. Derived datasets retain classifier, family-definition, static-source, cohort, and statistics fingerprints; incompatible cache entries are ignored and recomputed from immutable source matches.
 
+### M6 discovery and lifecycle boundary
+
+The implemented M6 path extends the same aggregate matches with `fail-closed canonical board -> champion-combination index -> bounded density graph -> medoid/consensus -> curated-anchor relation -> lifecycle/eligibility -> generic registry`. Exact board shapes are collapsed before neighbor search; fixed-width champion blocks generate bounded candidate pairs, so the clustering path does not perform an unconditional all-pairs comparison over observations. Noise remains unclustered. Curated anchors are never mutated by observed clusters.
+
+Discovery datasets are keyed by active set/static source, canonical/similarity/clustering/relation/lifecycle/statistics versions, centralized configuration, family definitions and aggregate sample definition. Static/set refresh ignores incompatible derived evidence, reuses compatible immutable matches, revalidates registry boards, and keeps patch relevance unavailable unless a verified mapping exists. M4 lobby pressure is supplied independently at recommendation time and is not a discovery feature.
+
 ## Testing
+
 Critical unit/integration tests should cover:
+
 - active-set normalization;
 - board legality;
 - trait calculation/breakpoints used by playbooks;
@@ -222,7 +261,9 @@ Critical unit/integration tests should cover:
 Use fixtures rather than network calls for deterministic tests.
 
 ## Observability
+
 Development diagnostics may show:
+
 - source version/freshness;
 - cache hits/misses;
 - opponent scan timings;
@@ -234,4 +275,5 @@ Development diagnostics may show:
 Never log tokens, API keys, auth headers, or private connector credentials.
 
 ## Protected-process boundary
+
 This architecture intentionally does not require memory reading, injection, packet interception, automated input, kernel access, or Vanguard bypass. If a future feature proposal requires one of those, it is outside current project authority and must not be added silently.

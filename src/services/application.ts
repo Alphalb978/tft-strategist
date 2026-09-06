@@ -1,5 +1,7 @@
 import type {
   AggregateMetaDataset,
+  CompRegistryEntry,
+  DiscoveryDataset,
   Playbook,
   RecommendationPortfolio,
   SelectedPlan,
@@ -17,6 +19,12 @@ import { auditStaticData } from '../rules/ruleSet';
 import { COMP_CLASSIFIER } from '../strategy/compClassifier';
 import { META_STATISTICS, compatibleMetaDataset } from '../strategy/metaStatistics';
 import { familyDefinitionsFingerprint } from './metaPipeline';
+import { buildCompRegistry } from './compRegistry';
+import {
+  compatibleDiscoveryDataset,
+  DEFAULT_DISCOVERY_CONFIG,
+  discoveryConfigurationFingerprint,
+} from '../strategy/compDiscovery';
 export interface ApplicationState {
   data: StaticData;
   playbooks: Playbook[];
@@ -27,12 +35,15 @@ export interface ApplicationState {
   notices: string[];
   assets: Record<string, string>;
   meta: AggregateMetaDataset | null;
+  discovery: DiscoveryDataset | null;
+  registry: CompRegistryEntry[];
 }
 export function createRecommendations(
   data: StaticData,
   settings: Settings,
   now = new Date().toISOString(),
   meta: AggregateMetaDataset | null = null,
+  discovery: DiscoveryDataset | null = null,
 ) {
   const dataIssues = auditStaticData(data);
   if (dataIssues.length)
@@ -57,27 +68,52 @@ export function createRecommendations(
     : null;
   if (meta && !usableMeta)
     notices.push('Incompatible aggregate-meta cache ignored and queued for recomputation.');
+  const familyFingerprint = familyDefinitionsFingerprint(playbooks);
+  const usableDiscovery = compatibleDiscoveryDataset(discovery, {
+    set: data.version.set,
+    staticSourceVersion: data.version.sourceVersion,
+    familyDefinitionsFingerprint: familyFingerprint,
+    configurationFingerprint: discoveryConfigurationFingerprint(DEFAULT_DISCOVERY_CONFIG),
+  })
+    ? discovery
+    : null;
+  if (discovery && !usableDiscovery)
+    notices.push('Incompatible discovery cache ignored and queued for recomputation.');
+  const registry = buildCompRegistry(playbooks, data, usableDiscovery);
+  const recommendationPlaybooks = registry
+    .filter((entry) => entry.recommendationEligible)
+    .map((entry) => entry.playbook);
   const portfolio = optimizePortfolio(
-    playbooks.map((p) =>
+    recommendationPlaybooks.map((p) =>
       scoreCandidate(p, {
         version: data.version,
         now,
         personalWeight: settings.personalWeight,
         meta: usableMeta,
+        discovery: usableDiscovery,
       }),
     ),
     now,
   );
-  return { playbooks, portfolio, notices, meta: usableMeta };
+  return {
+    playbooks: registry.map((entry) => entry.playbook),
+    portfolio,
+    notices,
+    meta: usableMeta,
+    discovery: usableDiscovery,
+    registry,
+  };
 }
 export async function loadApplication(repository: Repository): Promise<ApplicationState> {
-  const [cached, savedSettings, selection, savedMeta, assetResponse] = await Promise.all([
-    repository.get<StaticData>('static'),
-    repository.get<Settings>('settings'),
-    repository.get<SelectedPlan>('selection'),
-    repository.get<AggregateMetaDataset>('aggregate-meta'),
-    fetch('/data/asset-manifest.json').catch(() => null),
-  ]);
+  const [cached, savedSettings, selection, savedMeta, savedDiscovery, assetResponse] =
+    await Promise.all([
+      repository.get<StaticData>('static'),
+      repository.get<Settings>('settings'),
+      repository.get<SelectedPlan>('selection'),
+      repository.get<AggregateMetaDataset>('aggregate-meta'),
+      repository.get<DiscoveryDataset>('comp-discovery'),
+      fetch('/data/asset-manifest.json').catch(() => null),
+    ]);
   const settings = normalizeSettings(savedSettings);
   let cacheUsable = isStaticData(cached);
   if (cacheUsable) {
@@ -95,7 +131,13 @@ export async function loadApplication(repository: Repository): Promise<Applicati
   const assets: Record<string, string> = assetResponse?.ok
     ? await assetResponse.json().catch(() => ({}))
     : {};
-  const result = createRecommendations(data, settings, new Date().toISOString(), savedMeta);
+  const result = createRecommendations(
+    data,
+    settings,
+    new Date().toISOString(),
+    savedMeta,
+    savedDiscovery,
+  );
   let usableSelection: SelectedPlan | null = null;
   try {
     if (
@@ -104,7 +146,7 @@ export async function loadApplication(repository: Repository): Promise<Applicati
       selection.sourceVersion === data.version.sourceVersion &&
       Array.isArray(selection.snapshot?.plans) &&
       selection.snapshot.plans.length === 3 &&
-      selection.snapshot.version === 'portfolio-v3-m5-measured-meta' &&
+      selection.snapshot.version === 'portfolio-v4-m6-discovery' &&
       selection.snapshot.plans.some((p) => p.candidate.playbook.id === selection.playbookId) &&
       selection.snapshot.plans.every(
         (p) =>
@@ -138,6 +180,7 @@ export async function refreshApplication(
     current.settings,
     new Date().toISOString(),
     current.meta,
+    current.discovery,
   );
   if (!result.playbooks.length)
     throw new Error('Refreshed roster failed playbook validation; previous cache retained.');

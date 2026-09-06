@@ -11,6 +11,7 @@ import type { HistoryStore } from '../storage/history';
 import type { Repository } from '../storage/repository';
 import { COMP_CLASSIFIER, classifyFinalBoard } from '../strategy/compClassifier';
 import { META_STATISTICS, deriveFamilyStatistics } from '../strategy/metaStatistics';
+import { familyDefinitionsFingerprint, stableFingerprint } from '../domain/fingerprint';
 
 export interface MetaSampleConfig {
   platform: string;
@@ -30,39 +31,19 @@ export const DEFAULT_META_SAMPLE: MetaSampleConfig = {
   set: 18,
 };
 
-export function stableFingerprint(value: unknown): string {
-  const stable = (input: unknown): string => {
-    if (Array.isArray(input)) return `[${input.map(stable).join(',')}]`;
-    if (input && typeof input === 'object')
-      return `{${Object.entries(input as Record<string, unknown>)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`)
-        .join(',')}}`;
-    return JSON.stringify(input);
-  };
-  let hash = 2166136261;
-  for (const character of stable(value)) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, '0')}`;
-}
-
-export function familyDefinitionsFingerprint(playbooks: Playbook[]) {
-  return stableFingerprint(
-    playbooks.map((playbook) => ({
-      id: playbook.family.id,
-      core: [...playbook.family.core].sort(),
-      board: playbook.target.units.map((unit) => unit.championId).sort(),
-      roles: playbook.roles.map((role) => `${role.role}:${role.championId}`).sort(),
-    })),
-  );
-}
+export { familyDefinitionsFingerprint, stableFingerprint } from '../domain/fingerprint';
 
 export interface MetaCollectionResult {
   dataset: AggregateMetaDataset;
   observations: MetaObservation[];
   matches: CompletedMatch[];
+}
+
+export function redactProviderError(error: unknown): string {
+  const message = error instanceof Error ? error.message : 'unavailable';
+  return message
+    .replace(/RGAPI-[A-Za-z0-9-]+/gi, '[redacted]')
+    .replace(/X-Riot-Token\s*[:=]\s*\S+/gi, 'X-Riot-Token: [redacted]');
 }
 
 export async function collectAggregateMeta(
@@ -80,7 +61,7 @@ export async function collectAggregateMeta(
     try {
       cohort.push(...(await provider.ladderPlayers(tier, config.playersPerTier)));
     } catch (error) {
-      errors.push(`${tier}: ${error instanceof Error ? error.message : 'unavailable'}`);
+      errors.push(`${tier}: ${redactProviderError(error)}`);
     }
   }
   const sampledPlayers = cohort.slice(0, config.playersPerTier * config.tiers.length);
@@ -89,7 +70,7 @@ export async function collectAggregateMeta(
     try {
       allIds.push(...(await provider.recentMatchIds(puuid, 0, config.matchesPerPlayer)));
     } catch (error) {
-      errors.push(`match index: ${error instanceof Error ? error.message : 'unavailable'}`);
+      errors.push(`match index: ${redactProviderError(error)}`);
     }
   }
   const matchIds = [...new Set(allIds)];
@@ -110,7 +91,7 @@ export async function collectAggregateMeta(
       uniqueMatchDetailsFetched++;
       matches.push(match);
     } catch (error) {
-      errors.push(`match detail: ${error instanceof Error ? error.message : 'unavailable'}`);
+      errors.push(`match detail: ${redactProviderError(error)}`);
     }
   }
   const current = matches.filter((match) => match.set === config.set);

@@ -12,6 +12,8 @@ export function DataSettings({
   onSave,
   onRefresh,
   refreshing,
+  onMetaRefresh,
+  metaRefreshing,
   riotProvider,
   historyStore,
   fixturePreview,
@@ -22,6 +24,8 @@ export function DataSettings({
   onSave: (s: Settings) => void;
   onRefresh: () => void;
   refreshing: boolean;
+  onMetaRefresh: () => void;
+  metaRefreshing: boolean;
   riotProvider: RiotProvider;
   historyStore: HistoryStore;
   fixturePreview: boolean;
@@ -83,6 +87,63 @@ export function DataSettings({
             <a href={state.data.version.provenance.source} target="_blank" rel="noreferrer">
               CommunityDragon source <ExternalLink size={12} />
             </a>
+          </p>
+        </section>
+        <section className="panel discovery-status" aria-label="Comp discovery refresh status">
+          <div className="panel-heading">
+            <RefreshCw size={18} className={metaRefreshing ? 'spin' : ''} />
+            <h2>Comp discovery</h2>
+            <span className="badge muted">M6</span>
+          </div>
+          {state.discovery ? (
+            <>
+              <p>
+                <strong>{state.discovery.boardsAnalyzed}</strong> boards ·{' '}
+                <strong>{state.discovery.clusterCount}</strong> clusters ·{' '}
+                <strong>{state.discovery.noiseBoards}</strong> noise
+              </p>
+              <div className="data-counts discovery-counts">
+                {[
+                  ['Known', state.discovery.knownFamilyClusters],
+                  ['Variants', state.discovery.variantClusters],
+                  ['Emerging', state.discovery.emergingClusters],
+                  ['Experimental', state.discovery.experimentalClusters],
+                ].map(([label, count]) => (
+                  <div key={label}>
+                    <strong>{count}</strong>
+                    <span>{label}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="fine-print">
+                Last refresh {new Date(state.discovery.generatedAt).toLocaleString()}
+                <br />
+                Dataset {state.discovery.id} · {state.discovery.state}
+                <br />
+                Patch relevance unavailable; set membership and recency only.
+              </p>
+            </>
+          ) : (
+            <p className="fine-print">
+              No compatible discovery dataset is loaded. Experimental and noise states remain
+              explicit after refresh.
+            </p>
+          )}
+          <button
+            className="secondary"
+            onClick={onMetaRefresh}
+            disabled={metaRefreshing || !!state.selection}
+          >
+            <RefreshCw size={15} className={metaRefreshing ? 'spin' : ''} />
+            {metaRefreshing
+              ? 'Refreshing meta…'
+              : state.selection
+                ? 'Unlock plan to refresh'
+                : 'Refresh meta & discovery'}
+          </button>
+          <p className="fine-print">
+            Bounded Challenger sample through the native Riot boundary. Completed matches stay
+            immutable; derived evidence is version-invalidated.
           </p>
         </section>
         <section className="panel">

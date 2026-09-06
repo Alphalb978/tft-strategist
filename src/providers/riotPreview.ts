@@ -48,6 +48,15 @@ export function createRiotPreviewProvider(data: StaticData): FixtureRiotProvider
   ]
     .filter((unit, index, all) => all.findIndex((candidate) => candidate.id === unit.id) === index)
     .slice(0, 18);
+  const discoveryBase = playbooks.find((playbook) => playbook.id === 'adaptor-reroll')!;
+  const discoveryReplacement = eligible.find(
+    (unit) => !discoveryBase.target.units.some((boardUnit) => boardUnit.championId === unit.id),
+  )!;
+  const discoveryVariant = discoveryBase.target.units.map((unit, index, all) =>
+    index === all.length - 1
+      ? discoveryReplacement
+      : eligible.find((entry) => entry.id === unit.championId)!,
+  );
   const matches: CompletedMatch[] = Array.from({ length: 20 }, (_, matchIndex) => {
     const completedAt = new Date(Date.UTC(2026, 8, 5 - matchIndex, 18)).toISOString();
     return {
@@ -71,23 +80,25 @@ export function createRiotPreviewProvider(data: StaticData): FixtureRiotProvider
         riotId: `${identity.gameName}#${identity.tagLine}`,
         placement: ((opponentIndex + matchIndex) % 7) + 1,
         level: 8,
-        units: units
-          .filter((_, unitIndex) => {
-            if (unitIndex === 0) return true;
-            if (unitIndex === 1) return matchIndex < 4 || matchIndex === 11;
-            if (unitIndex === 2) return matchIndex >= 5 && matchIndex % 2 === 0;
-            return (unitIndex + opponentIndex + matchIndex) % 4 === 0;
-          })
-          .slice(0, 8)
-          .map((unit, unitIndex) => ({
-            championId: unit.id,
-            items: [],
-            stars: unitIndex === 0 && matchIndex % 5 === 0 ? 2 : 1,
-            rarity: unit.cost,
-            rawName: unit.name,
-            unresolvedUnit: false,
-            unresolvedItems: [],
-          })),
+        units: (opponentIndex < 2
+          ? discoveryVariant
+          : units
+              .filter((_, unitIndex) => {
+                if (unitIndex === 0) return true;
+                if (unitIndex === 1) return matchIndex < 4 || matchIndex === 11;
+                if (unitIndex === 2) return matchIndex >= 5 && matchIndex % 2 === 0;
+                return (unitIndex + opponentIndex + matchIndex) % 4 === 0;
+              })
+              .slice(0, 8)
+        ).map((unit, unitIndex) => ({
+          championId: unit.id,
+          items: [],
+          stars: unitIndex === 0 && matchIndex % 5 === 0 ? 2 : 1,
+          rarity: unit.cost,
+          rawName: unit.name,
+          unresolvedUnit: false,
+          unresolvedItems: [],
+        })),
         traits: [],
         augmentIds: [],
         unresolvedAugmentIds: [],
