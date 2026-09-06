@@ -27,7 +27,7 @@ export function summarizeCompletedMatch(
     provenance: {
       source: match.source,
       fetchedAt: match.completedAt,
-      patch: match.patch,
+      patch: match.tftContentPatch,
       status: 'verified',
       note: 'End-state comparison only; no causal attribution.',
     },

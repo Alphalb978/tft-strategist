@@ -242,7 +242,12 @@ export interface OpponentProfile {
     average: number | null;
     topFourRate: number | null;
   };
-  samePatchGames: number;
+  patchRelevance: {
+    status: 'same' | 'mixed' | 'different' | 'unavailable';
+    comparableGames: number;
+    samePatchGames: number | null;
+    note: string;
+  };
   unresolvedIds: {
     units: ID[];
     items: ID[];
@@ -260,6 +265,12 @@ export interface OpponentProfile {
     family: 'unavailable';
     style: 'unavailable';
     note: string;
+  };
+  confidenceFactors: {
+    sampleCoverage: number;
+    recencyQuality: number;
+    modeQuality: number;
+    patchQuality: number | null;
   };
   confidence: number;
 }
@@ -344,8 +355,11 @@ export interface CompletedMatch {
   id: ID;
   set: number;
   setCoreName: string | null;
-  patch: string;
-  gameVersion: string;
+  /** Raw `info.game_version`: Riot documents this as the game client version. */
+  riotGameVersion: string;
+  /** Product TFT content patch only when supplied by a verified mapping or fixture. */
+  tftContentPatch: string | null;
+  tftContentPatchSource: 'verified-mapping' | 'fixture' | 'unavailable';
   dataVersion: string;
   gameTimestamp: string;
   completedAt: string;

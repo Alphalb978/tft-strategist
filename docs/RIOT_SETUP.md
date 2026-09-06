@@ -39,6 +39,8 @@ Official current-game discovery calls spectator-tft-v5 only on listed platforms 
 
 The app requests history in pages until it obtains the requested number of relevant games or reaches the bounded history horizon. Completed matches are normalized once and cached immutably; recent indexes have a five-minute TTL. Shared lobby matches are fetched once, partial scans remain usable, and a cached profile is kept visible while refresh runs.
 
+Riot's `info.game_version` is stored as the raw game-client build. It is not treated as the TFT content patch shown by the app. Until a public, verified mapping exists, scouting displays patch relevance as unavailable and does not penalize confidence for that missing mapping.
+
 ## Storage migration
 
 Tauri migration 2 adds dedicated tables for Riot accounts, recent match indexes, immutable completed matches, versioned opponent profiles, and scan snapshots. It uses `CREATE TABLE IF NOT EXISTS` and does not modify or delete M1/M2 data. The API key is never stored in these tables.

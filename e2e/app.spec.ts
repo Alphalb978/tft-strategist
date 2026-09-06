@@ -49,6 +49,11 @@ test('refresh failure keeps usable plans and settings persist', async ({ page })
 });
 test('M3 manual Riot identity and history flow is operable with fixtures', async ({ page }) => {
   await page.goto('/?riot-fixture=1');
+  await expect(page.getByRole('heading', { name: 'Three plans. More possibilities.' })).toBeVisible(
+    {
+      timeout: 15_000,
+    },
+  );
   await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
   await expect(page.getByText('Fixture preview', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Riot ID', { exact: true })).toHaveValue('Strategist#M3');
@@ -59,6 +64,26 @@ test('M3 manual Riot identity and history flow is operable with fixtures', async
   await expect(page.getByText('105/105 relevant games')).toBeVisible();
   await expect(page.locator('.opponent-profile-grid article')).toHaveCount(7);
   await page.screenshot({ path: 'artifacts/m3-scouting-1440.png', fullPage: true });
+});
+test('M3.1 manual self-entry is explicitly ignored without a history scan', async ({ page }) => {
+  await page.goto('/?riot-fixture=1');
+  await expect(page.getByRole('heading', { name: 'Three plans. More possibilities.' })).toBeVisible(
+    {
+      timeout: 15_000,
+    },
+  );
+  await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Resolve', exact: true }).click();
+  await expect(page.getByText('Account resolved through the native Riot boundary.')).toBeVisible();
+  await page
+    .getByLabel('One Riot ID per line, or comma-separated', { exact: true })
+    .fill('Strategist#M3');
+  await page.getByRole('button', { name: 'Resolve & scan history', exact: true }).click();
+  await expect(page.getByText('your account — ignored', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Your account was ignored; no opponent history requests were started.'),
+  ).toBeVisible();
+  await expect(page.locator('.scout-result')).toHaveCount(0);
 });
 test('M3 no-key state exposes no credential value', async ({ page }) => {
   await page.goto('/');

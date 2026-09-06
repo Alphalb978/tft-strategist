@@ -43,8 +43,55 @@ describe('future opponent path with explicitly synthetic fixtures', () => {
     expect(recent.relevantGames).toBe(1);
     expect(recent.effectiveSample).toBe(1);
     expect(deriveOpponent('a', [old], 18, '18.1', NOW).effectiveSample).toBe(0.25);
+    const unmapped = deriveOpponent('a', [match('unmapped', ['a'], null)], 18, '18.1', NOW);
+    expect(unmapped.effectiveSample).toBe(1);
+    expect(unmapped.patchRelevance).toMatchObject({
+      status: 'unavailable',
+      comparableGames: 0,
+      samePatchGames: null,
+    });
+    expect(unmapped.confidenceFactors.patchQuality).toBeNull();
     current.completedAt = '2026-08-01T00:00:00Z';
     expect(deriveOpponent('a', [current], 18, '18.1', NOW).effectiveSample).toBeLessThan(0.1);
+  });
+  it('keeps sensible inspectable confidence for 15 recent games with unmapped Riot builds', () => {
+    const games = Array.from({ length: 15 }, (_, index) => {
+      const value = match(`live-shape-${index}`, ['a'], null);
+      value.completedAt = new Date(Date.parse(NOW) - index * 86_400_000).toISOString();
+      return value;
+    });
+    const profile = deriveOpponent('a', games, 18, '18.1', NOW, 15);
+    const expectedRecency =
+      Array.from({ length: 15 }, (_, index) => Math.exp(-index / 14)).reduce(
+        (total, weight) => total + weight,
+        0,
+      ) / 15;
+    expect(profile.relevantGames).toBe(15);
+    expect(profile.patchRelevance.status).toBe('unavailable');
+    expect(profile.confidenceFactors).toMatchObject({
+      sampleCoverage: 1,
+      modeQuality: 1,
+      patchQuality: null,
+    });
+    expect(profile.confidenceFactors.recencyQuality).toBeCloseTo(expectedRecency, 8);
+    expect(profile.confidence).toBeCloseTo(expectedRecency, 8);
+    expect(profile.confidence).toBeGreaterThan(0.6);
+  });
+  it('keeps an 11-of-15 live-shaped sample partial', async () => {
+    const source = Array.from({ length: 11 }, (_, index) =>
+      match(`partial-live-shape-${index}`, ['a'], null),
+    );
+    const result = await scanLobby(
+      ['a'],
+      new FixtureRiotProvider(source, []),
+      new MemoryHistoryStore(),
+      { set: 18, patch: '18.1', now: NOW, historyWindow: 15 },
+    );
+    expect(result.state).toBe('partial');
+    expect(result.relevantGamesAvailable).toBe(11);
+    expect(result.relevantGamesTarget).toBe(15);
+    expect(result.coverage).toBeCloseTo(11 / 15);
+    expect(result.profiles[0].patchRelevance.status).toBe('unavailable');
   });
   it('returns partial results when one match fails', async () => {
     const provider = new FixtureRiotProvider([match('good'), match('bad')], []);
@@ -148,6 +195,30 @@ describe('future opponent path with explicitly synthetic fixtures', () => {
     expect(result.entries.map((entry) => entry.state)).toEqual(
       expect.arrayContaining(['resolved', 'failed', 'invalid']),
     );
+  });
+  it('marks the resolved own account as ignored and never offers it for history fetching', async () => {
+    const own = {
+      puuid: 'own-puuid',
+      gameName: 'Strategist',
+      tagLine: 'M3',
+      platform: 'EUW1',
+      routing: 'EUROPE',
+    };
+    const provider = new FixtureRiotProvider([], [own]);
+    const history = vi.spyOn(provider, 'recentMatchIds');
+    const result = await resolveOpponentIdentities(
+      'Strategist#M3',
+      provider,
+      new MemoryHistoryStore(),
+      'EUW1',
+      NOW,
+      own.puuid,
+    );
+    expect(result.resolved).toEqual([]);
+    expect(result.entries).toEqual([
+      expect.objectContaining({ input: 'Strategist#M3', state: 'ignored-self' }),
+    ]);
+    expect(history).not.toHaveBeenCalled();
   });
   it('keeps derivation classification explicitly unavailable', () => {
     const profile = deriveOpponent('a', [match('evidence', ['a'])], 18, '18.1', NOW);

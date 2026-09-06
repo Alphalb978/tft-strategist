@@ -178,11 +178,6 @@ const matchSchema = z
   })
   .passthrough();
 
-function parsePatch(gameVersion: string): string {
-  const match = gameVersion.match(/(?:^|\s)(\d{1,2}\.\d{1,2})(?:\.|\s|$)/u);
-  return match?.[1] ?? 'unverified';
-}
-
 export function normalizeRiotMatch(
   payload: unknown,
   catalog: RiotNormalizationCatalog,
@@ -197,8 +192,9 @@ export function normalizeRiotMatch(
     id: metadata.match_id,
     set: info.tft_set_number,
     setCoreName: info.tft_set_core_name ?? null,
-    patch: parsePatch(info.game_version),
-    gameVersion: info.game_version,
+    riotGameVersion: info.game_version,
+    tftContentPatch: null,
+    tftContentPatchSource: 'unavailable',
     dataVersion: metadata.data_version,
     gameTimestamp: timestamp,
     completedAt: timestamp,

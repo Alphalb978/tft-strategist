@@ -46,6 +46,44 @@ const identityKey = (gameName: string, tagLine: string, platform: string) =>
 const profileKey = (puuid: string, set: number, patch: string, version: string) =>
   `${puuid}:${set}:${patch}:${version}`;
 
+/**
+ * M3 cached a client-build prefix as `patch`. M3.1 deliberately discards that
+ * derived value while retaining the raw Riot build from the immutable payload.
+ */
+export function upgradeStoredCompletedMatch(value: unknown): CompletedMatch | null {
+  if (!value || typeof value !== 'object') return null;
+  const stored = { ...(value as Record<string, unknown>) };
+  const riotGameVersion =
+    typeof stored.riotGameVersion === 'string'
+      ? stored.riotGameVersion
+      : typeof stored.gameVersion === 'string'
+        ? stored.gameVersion
+        : null;
+  if (
+    typeof stored.id !== 'string' ||
+    typeof stored.set !== 'number' ||
+    typeof stored.completedAt !== 'string' ||
+    !Array.isArray(stored.participants) ||
+    !riotGameVersion
+  )
+    return null;
+  delete stored.patch;
+  delete stored.gameVersion;
+  stored.riotGameVersion = riotGameVersion;
+  const patchSource =
+    stored.tftContentPatchSource === 'verified-mapping' ||
+    stored.tftContentPatchSource === 'fixture'
+      ? stored.tftContentPatchSource
+      : 'unavailable';
+  const contentPatch =
+    patchSource !== 'unavailable' && typeof stored.tftContentPatch === 'string'
+      ? stored.tftContentPatch
+      : null;
+  stored.tftContentPatch = contentPatch;
+  stored.tftContentPatchSource = contentPatch ? patchSource : 'unavailable';
+  return stored as unknown as CompletedMatch;
+}
+
 export class MemoryHistoryStore implements HistoryStore {
   mode = 'Memory' as const;
   private identities = new Map<string, StoredIdentity>();
@@ -186,7 +224,7 @@ export class SqlHistoryStore implements HistoryStore {
       [id],
     );
     try {
-      return rows[0] ? (JSON.parse(rows[0].payload) as CompletedMatch) : null;
+      return rows[0] ? upgradeStoredCompletedMatch(JSON.parse(rows[0].payload)) : null;
     } catch {
       return null;
     }
@@ -194,7 +232,14 @@ export class SqlHistoryStore implements HistoryStore {
   async putCompletedMatch(match: CompletedMatch, fetchedAt: string) {
     await this.db.execute(
       'INSERT OR IGNORE INTO riot_completed_matches (match_id,payload,set_number,patch,game_timestamp,fetched_at) VALUES ($1,$2,$3,$4,$5,$6)',
-      [match.id, JSON.stringify(match), match.set, match.patch, match.gameTimestamp, fetchedAt],
+      [
+        match.id,
+        JSON.stringify(match),
+        match.set,
+        match.tftContentPatch ?? 'unavailable',
+        match.gameTimestamp,
+        fetchedAt,
+      ],
     );
   }
   async getProfile(puuid: string, set: number, patch: string, derivationVersion: string) {

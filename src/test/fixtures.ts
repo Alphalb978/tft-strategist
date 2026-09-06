@@ -13,13 +13,19 @@ export const provenance: Provenance = {
 };
 export const data = normalizeCommunityDragon(raw, provenance);
 export const playbooks = loadPlaybooks(data);
-export function match(id: string, people = ['a', 'b'], patch = '18.1', set = 18): CompletedMatch {
+export function match(
+  id: string,
+  people = ['a', 'b'],
+  contentPatch: string | null = '18.1',
+  set = 18,
+): CompletedMatch {
   return {
     id,
     set,
     setCoreName: `TFTSet${set}`,
-    patch,
-    gameVersion: `Version ${patch}.fixture`,
+    riotGameVersion: 'Version 16.18.702.1234 (Sep 03 2026/12:00:00) [PUBLIC]',
+    tftContentPatch: contentPatch,
+    tftContentPatchSource: contentPatch === null ? 'unavailable' : 'fixture',
     dataVersion: 'fixture-v2',
     gameTimestamp: NOW,
     completedAt: NOW,

@@ -23,7 +23,7 @@ const rawMatch = () => ({
   },
   info: {
     game_datetime: Date.parse('2026-09-05T20:00:00Z'),
-    game_version: 'Version 18.1.123.456',
+    game_version: 'Version 16.18.702.1234 (Sep 03 2026/12:00:00) [PUBLIC]',
     queue_id: 1234,
     tft_game_type: 'fixture-value-not-classified',
     tft_set_core_name: 'TFTSet18',
@@ -99,7 +99,9 @@ describe('official match DTO normalization', () => {
     expect(match).toMatchObject({
       id: 'EUW1_123',
       set: 18,
-      patch: '18.1',
+      riotGameVersion: 'Version 16.18.702.1234 (Sep 03 2026/12:00:00) [PUBLIC]',
+      tftContentPatch: null,
+      tftContentPatchSource: 'unavailable',
       queueId: 1234,
       gameType: 'fixture-value-not-classified',
       modeSupport: 'unverified',

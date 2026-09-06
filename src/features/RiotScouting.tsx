@@ -126,6 +126,11 @@ export function RiotScouting({
         { deadlineAt: Date.now() + 8_000 },
       );
       setEntries(resolved.entries);
+      const ignoredSelf = resolved.entries.some((entry) => entry.state === 'ignored-self');
+      if (!resolved.resolved.length && ignoredSelf) {
+        setMessage('Your account was ignored; no opponent history requests were started.');
+        return;
+      }
       if (resolved.duplicates.length || resolved.overflow)
         setMessage(
           `${resolved.duplicates.length} duplicate entr${resolved.duplicates.length === 1 ? 'y' : 'ies'} ignored${resolved.overflow ? `; ${resolved.overflow} over the seven-opponent limit ignored` : ''}.`,
@@ -301,7 +306,9 @@ export function RiotScouting({
                 <TriangleAlert size={13} />
               )}
               <span>{entry.input}</span>
-              <strong>{entry.state}</strong>
+              <strong>
+                {entry.state === 'ignored-self' ? 'your account — ignored' : entry.state}
+              </strong>
               {entry.error && <small>{entry.error}</small>}
             </div>
           ))}
@@ -349,8 +356,11 @@ export function RiotScouting({
                   <span>{profile.freshness}</span>
                 </div>
                 <p>
-                  {profile.relevantGames} games · {profile.samePatchGames} same patch · avg{' '}
-                  {profile.placement.average?.toFixed(1) ?? '—'}
+                  {profile.relevantGames} games ·{' '}
+                  {profile.patchRelevance.status === 'unavailable'
+                    ? 'patch relevance unavailable'
+                    : `${profile.patchRelevance.samePatchGames}/${profile.patchRelevance.comparableGames} same content patch`}{' '}
+                  · avg {profile.placement.average?.toFixed(1) ?? '—'}
                 </p>
                 <small>
                   Repeated units:{' '}
@@ -360,6 +370,14 @@ export function RiotScouting({
                   <i style={{ width: `${Math.round(profile.confidence * 100)}%` }} />
                 </div>
                 <em>{Math.round(profile.confidence * 100)}% evidence confidence</em>
+                <small>
+                  Sample {Math.round(profile.confidenceFactors.sampleCoverage * 100)}% · recency{' '}
+                  {Math.round(profile.confidenceFactors.recencyQuality * 100)}% · mode{' '}
+                  {Math.round(profile.confidenceFactors.modeQuality * 100)}% · patch{' '}
+                  {profile.confidenceFactors.patchQuality === null
+                    ? 'unavailable'
+                    : `${Math.round(profile.confidenceFactors.patchQuality * 100)}%`}
+                </small>
               </article>
             ))}
           </div>

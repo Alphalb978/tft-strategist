@@ -10,7 +10,7 @@ import { RiotProviderError, type RiotProvider } from '../providers/riot';
 import type { HistoryStore, RecentMatchIndex } from '../storage/history';
 import { clamp } from '../strategy/scoring';
 
-export const OPPONENT_DERIVATION_VERSION = 'opponent-evidence-v2';
+export const OPPONENT_DERIVATION_VERSION = 'opponent-evidence-v3';
 export const RECENT_INDEX_TTL_MS = 5 * 60 * 1000;
 export const IDENTITY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const PAGE_SIZE = 20;
@@ -66,18 +66,26 @@ export function deriveOpponent(
     augments: new Set<string>(),
   };
   let effectiveSample = 0;
+  let recencyEffectiveSample = 0;
   let placementWeight = 0;
   let placementTotal = 0;
   let topFourWeight = 0;
   let samePatchGames = 0;
+  let comparablePatchGames = 0;
   let unverifiedModeGames = 0;
   for (const match of sample) {
     const participant = match.participants.find((candidate) => candidate.puuid === puuid)!;
     const ageDays = Math.max(0, Date.parse(now) - Date.parse(match.completedAt)) / 86_400_000;
-    const patchWeight = match.patch === patch ? 1 : 0.25;
-    const weight = Math.exp(-ageDays / 14) * patchWeight;
+    const recencyWeight = Math.exp(-ageDays / 14);
+    const patchComparable =
+      match.tftContentPatch !== null && match.tftContentPatchSource !== 'unavailable';
+    const samePatch = patchComparable && match.tftContentPatch === patch;
+    const patchWeight = patchComparable && !samePatch ? 0.25 : 1;
+    const weight = recencyWeight * patchWeight;
     if (!Number.isFinite(weight)) continue;
-    if (match.patch === patch) samePatchGames++;
+    recencyEffectiveSample += recencyWeight;
+    if (patchComparable) comparablePatchGames++;
+    if (samePatch) samePatchGames++;
     if (match.modeSupport === 'unverified') unverifiedModeGames++;
     effectiveSample += weight;
     placementTotal += participant.placement * weight;
@@ -102,7 +110,18 @@ export function deriveOpponent(
   }
   for (const frequency of [unitFrequency, traitFrequency, augmentFrequency])
     for (const key of Object.keys(frequency)) frequency[key] /= effectiveSample || 1;
-  const patchQuality = sample.length ? 0.4 + 0.6 * (samePatchGames / sample.length) : 0;
+  const patchQuality = comparablePatchGames
+    ? 0.4 + 0.6 * (samePatchGames / comparablePatchGames)
+    : null;
+  const patchStatus: OpponentProfile['patchRelevance']['status'] = !comparablePatchGames
+    ? 'unavailable'
+    : samePatchGames === comparablePatchGames
+      ? 'same'
+      : samePatchGames === 0
+        ? 'different'
+        : 'mixed';
+  const sampleCoverage = target ? clamp(sample.length / target) : 0;
+  const recencyQuality = sample.length ? clamp(recencyEffectiveSample / sample.length) : 0;
   const modeQuality = sample.length ? 1 - 0.25 * (unverifiedModeGames / sample.length) : 0;
   return {
     puuid,
@@ -122,7 +141,14 @@ export function deriveOpponent(
       average: placementWeight ? placementTotal / placementWeight : null,
       topFourRate: placementWeight ? topFourWeight / placementWeight : null,
     },
-    samePatchGames,
+    patchRelevance: {
+      status: patchStatus,
+      comparableGames: comparablePatchGames,
+      samePatchGames: comparablePatchGames ? samePatchGames : null,
+      note: comparablePatchGames
+        ? 'Compared only matches carrying an explicitly sourced TFT content patch.'
+        : 'Riot game client builds are not mapped to TFT content patches; relevance is unavailable.',
+    },
     unresolvedIds: {
       units: [...unresolved.units].sort(),
       items: [...unresolved.items].sort(),
@@ -139,13 +165,19 @@ export function deriveOpponent(
       style: 'unavailable',
       note: 'M3 does not infer composition families or strategic styles from final boards.',
     },
-    confidence: clamp((effectiveSample / target) * patchQuality * modeQuality),
+    confidenceFactors: {
+      sampleCoverage,
+      recencyQuality,
+      modeQuality,
+      patchQuality,
+    },
+    confidence: clamp(sampleCoverage * recencyQuality * modeQuality * (patchQuality ?? 1)),
   };
 }
 
 export interface OpponentResolution {
   input: string;
-  state: 'resolved' | 'cached' | 'invalid' | 'failed';
+  state: 'resolved' | 'cached' | 'ignored-self' | 'invalid' | 'failed';
   identity?: RiotIdentity;
   error?: string;
 }
@@ -204,8 +236,15 @@ export async function resolveOpponentIdentities(
       parsed.valid.map((id) => resolveOne(id, provider, store, platform, now, options)),
     )),
   );
+  if (ownPuuid)
+    for (const entry of entries) {
+      if (entry.identity?.puuid === ownPuuid) {
+        entry.state = 'ignored-self';
+        entry.error = undefined;
+      }
+    }
   const identities = entries.flatMap((entry) =>
-    entry.identity && entry.identity.puuid !== ownPuuid ? [entry.identity] : [],
+    entry.identity && entry.state !== 'ignored-self' ? [entry.identity] : [],
   );
   return {
     requested: parsed.valid.length + parsed.invalid.length,

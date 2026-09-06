@@ -1,6 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
+import { upgradeStoredCompletedMatch } from '../storage/history';
+import { match } from './fixtures';
 it('runs the real SQLite migration and enforces immutable match identity', () => {
   const db = new DatabaseSync(':memory:');
   db.exec(readFileSync(new URL('../storage/schema.sql', import.meta.url), 'utf8'));
@@ -57,4 +59,20 @@ it('runs the real SQLite migration and enforces immutable match identity', () =>
     false,
   );
   db.close();
+});
+
+it('upgrades M3 immutable matches without preserving the invalid derived patch', () => {
+  const current = match('legacy-cache');
+  const legacy = { ...current } as Record<string, unknown>;
+  legacy.gameVersion = current.riotGameVersion;
+  legacy.patch = '16.18';
+  delete legacy.riotGameVersion;
+  delete legacy.tftContentPatch;
+  delete legacy.tftContentPatchSource;
+  expect(upgradeStoredCompletedMatch(legacy)).toMatchObject({
+    id: 'legacy-cache',
+    riotGameVersion: current.riotGameVersion,
+    tftContentPatch: null,
+    tftContentPatchSource: 'unavailable',
+  });
 });

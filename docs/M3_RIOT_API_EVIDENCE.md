@@ -35,6 +35,16 @@ The current spectator-tft-v5 reference lists BR1, EUN1, EUW1, JP1, KR, LA1, LA2,
 
 The match adapter validates the current `metadata` and `info` envelope and retains match ID, data version, game datetime/length/version, queue/TFT game type/set identifiers, and every participant's PUUID, placement, augments, traits, and units. Units retain character ID, rarity/tier, item names, and unresolved identifiers. Unknown current-set unit, item, augment, or trait IDs are evidence, not silently discarded or fuzzy-mapped.
 
+### M3.1 version-semantics correction
+
+The official tft-match-v1 schema describes `info.game_version` as the **game client version**. It does not describe it as the TFT content-patch label. The product's `data.version.patch` is the TFT content label verified from Riot's published [Teamfight Tactics patch 18.1 notes](https://teamfighttactics.leagueoflegends.com/en-sg/news/game-updates/teamfight-tactics-patch-18-1/).
+
+Those namespaces are not compared as strings. Riot's TFT documentation also notes that static-data versions are not always equivalent to the client version used by a region. A public issue in RiotGames' developer-relations tracker, [return TFT B-patches as part of tft_match](https://github.com/RiotGames/developer-relations/issues/820), records that `game_version` remained on the base client build after a TFT B-patch and therefore could not identify the content hotfix.
+
+No current public source reviewed on 2026-09-06 provides a complete, reliable Riot-build-to-TFT-content-patch mapping. Normalized Riot matches consequently retain the exact raw `riotGameVersion` but set `tftContentPatch` to `null` with source `unavailable`. Patch relevance is neutral and displayed as unavailable unless a future verified mapping supplies a TFT content patch. Synthetic fixtures may supply an explicit fixture content patch to test the comparable path.
+
+M3 caches written before this correction are upgraded on read: their raw `gameVersion` is retained as `riotGameVersion`, while the regex-derived `patch` value is discarded rather than trusted. The opponent derivation version is bumped so profiles carrying the former penalty are not reused.
+
 The current DTO does not establish a repository comp family or a strategic style. M3 therefore does not derive family, reroll, Fast 8, AD/AP, or meta classifications from final boards.
 
 ## Rate-limit and failure evidence
