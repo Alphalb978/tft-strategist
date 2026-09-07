@@ -838,6 +838,16 @@ export interface OpponentProfile {
     patchQuality: number | null;
   };
   confidence: number;
+  historicalBoards?: OpponentHistoricalBoard[];
+}
+
+export interface OpponentHistoricalBoard {
+  matchId: ID;
+  completedAt: string;
+  ordinal: number;
+  weight: number;
+  placement: number;
+  championIds: ID[];
 }
 
 export type UnitTrend = 'rising' | 'stable' | 'falling' | 'unavailable';
@@ -898,6 +908,24 @@ export interface CandidateContestUnit {
   contribution: number;
 }
 
+export interface CandidateRouteOpponent {
+  puuid: string;
+  riotId?: string;
+  confidence: number;
+  routeOverlap: number;
+  stronglyMatchingBoards: number;
+  recentFiveStrongMatches: number;
+  recentWindowGames: number;
+  totalBoards: number;
+}
+
+export interface CandidateRouteEvidence {
+  routeContest: number;
+  opponentsWithRouteMatch: number;
+  matchingOpponents: CandidateRouteOpponent[];
+  summary: string;
+}
+
 export interface CandidateContest {
   state: 'Unavailable' | 'Low' | 'Medium' | 'High';
   value: number | null;
@@ -908,6 +936,9 @@ export interface CandidateContest {
   pressuredUnits: CandidateContestUnit[];
   note: string;
   provenance: 'unavailable' | 'seeded-criticality-and-m4-history';
+  unitContest?: number | null;
+  routeContest?: number | null;
+  routeEvidence?: CandidateRouteEvidence | null;
 }
 export interface RiotTelemetry {
   requestsAttempted: number;

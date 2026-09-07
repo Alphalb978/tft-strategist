@@ -1,6 +1,7 @@
 import type {
   CompletedMatch,
   LobbyPressure,
+  OpponentHistoricalBoard,
   OpponentProfile,
   RiotIdentity,
   RiotTelemetry,
@@ -94,6 +95,7 @@ export function deriveOpponent(
   const copyWeightedTotals: Record<string, number> = {};
   const copyPresenceWeights: Record<string, number> = {};
   const copyEvidenceGames: Record<string, number> = {};
+  const historicalBoards: OpponentHistoricalBoard[] = [];
   const unresolved = {
     units: new Set<string>(),
     items: new Set<string>(),
@@ -125,6 +127,21 @@ export function deriveOpponent(
     placementTotal += participant.placement * weight;
     placementWeight += weight;
     if (participant.placement <= 4) topFourWeight += weight;
+    const boardChampionIds = [
+      ...new Set(
+        participant.units
+          .filter((unit) => !unit.unresolvedUnit)
+          .map((unit) => unit.championId),
+      ),
+    ];
+    historicalBoards.push({
+      matchId: match.id,
+      completedAt: match.completedAt,
+      ordinal,
+      weight,
+      placement: participant.placement,
+      championIds: boardChampionIds,
+    });
     const unitsById = new Map<string, typeof participant.units>();
     for (const unit of participant.units) {
       const group = unitsById.get(unit.championId) ?? [];
@@ -277,6 +294,7 @@ export function deriveOpponent(
       patchQuality,
     },
     confidence: clamp(sampleCoverage * recencyQuality * modeQuality * (patchQuality ?? 1)),
+    historicalBoards,
   };
 }
 

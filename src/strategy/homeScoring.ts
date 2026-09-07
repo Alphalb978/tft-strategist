@@ -273,13 +273,29 @@ export function lobbyAdjustment(
 ) {
   if (contest.value === null || contest.provenance === 'unavailable') return 0;
   const value = clamp(contest.value);
-  const nominal =
-    value < 0.2
-      ? config.maxCleanLobbyBonus * (1 - value / 0.2)
-      : value < 0.5
-        ? -config.maxMediumContestPenalty * ((value - 0.2) / 0.3)
-        : -config.maxMediumContestPenalty -
-          (config.maxHighContestPenalty - config.maxMediumContestPenalty) * ((value - 0.5) / 0.5);
+  const hasObservedRouteContest =
+    (contest.routeEvidence?.opponentsWithRouteMatch ?? 0) > 0 ||
+    (contest.routeContest !== null && contest.routeContest !== undefined && contest.routeContest > 0);
+  const hasObservedUnitContest =
+    (contest.unitContest !== null && contest.unitContest !== undefined && contest.unitContest >= 0.15) ||
+    (contest.pressuredUnits ?? []).some((u) => u.membership === 'core' && u.lobbyPressure >= 0.15);
+
+  let nominal = 0;
+  if (value < 0.2) {
+    if (hasObservedRouteContest || hasObservedUnitContest) {
+      // Meaningful observed contest exists, but low confidence or elasticity reduced it.
+      // Uncertainty reduces the penalty toward neutral (0), but never awards a clean-lobby bonus.
+      nominal = 0;
+    } else {
+      nominal = config.maxCleanLobbyBonus * (1 - value / 0.2);
+    }
+  } else if (value < 0.5) {
+    nominal = -config.maxMediumContestPenalty * ((value - 0.2) / 0.3);
+  } else {
+    nominal =
+      -config.maxMediumContestPenalty -
+      (config.maxHighContestPenalty - config.maxMediumContestPenalty) * ((value - 0.5) / 0.5);
+  }
   const coverage = clamp(contest.evidenceCoverage) ** config.lobbyCoverageExponent;
   return round(nominal * coverage);
 }

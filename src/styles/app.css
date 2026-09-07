@@ -1740,6 +1740,21 @@ select {
 .unit-evidence-list .trend.falling strong {
   color: #d4ad88;
 }
+.card-route-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 4px 0 6px;
+}
+.card-route-evidence span {
+  border: 1px solid rgba(224, 155, 95, 0.35);
+  background: rgba(224, 155, 95, 0.12);
+  color: #e5be9e;
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-size: 8.5px;
+  font-weight: 500;
+}
 .card-pressure-units {
   display: flex;
   flex-wrap: wrap;

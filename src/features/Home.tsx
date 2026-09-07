@@ -264,6 +264,13 @@ export function Home({
                   <Radio size={13} /> Historical contest: {c.contest.state.toLowerCase()}
                 </span>
                 <p className="card-reason">{c.reasons[1]}</p>
+                {c.contest.routeEvidence && c.contest.routeEvidence.opponentsWithRouteMatch > 0 && (
+                  <div className="card-route-evidence" aria-label="Route overlap evidence">
+                    <span>
+                      {c.contest.routeEvidence.opponentsWithRouteMatch} opponent{c.contest.routeEvidence.opponentsWithRouteMatch === 1 ? '' : 's'} with whole-route history
+                    </span>
+                  </div>
+                )}
                 {c.contest.pressuredUnits.length > 0 && (
                   <div className="card-pressure-units" aria-label="Pressured critical units">
                     {c.contest.pressuredUnits.slice(0, 3).map((unit) => (
@@ -397,6 +404,11 @@ export function Home({
                   Avg {candidate.home?.averagePlacement.raw?.toFixed(2) ?? '—'} · Win{' '}
                   {percent(candidate.home?.winRate.raw ?? null)} · Pick Rate {pickRate(candidate)}
                 </small>
+                {candidate.contest.routeEvidence && candidate.contest.routeEvidence.opponentsWithRouteMatch > 0 && (
+                  <small>
+                    Route history: {candidate.contest.routeEvidence.opponentsWithRouteMatch} matching opponent{candidate.contest.routeEvidence.opponentsWithRouteMatch === 1 ? '' : 's'}
+                  </small>
+                )}
                 {candidate.contest.pressuredUnits.length > 0 && (
                   <small>
                     Main pressure:{' '}
