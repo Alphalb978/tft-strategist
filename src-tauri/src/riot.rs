@@ -1,3 +1,4 @@
+use crate::credentials::{CredentialStore, WindowsCredentialStore};
 use reqwest::{header::HeaderMap, Client, StatusCode};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
@@ -75,36 +76,87 @@ struct LimiterState {
 
 pub struct RiotState {
     client: Client,
-    key: Option<SecretString>,
+    credentials: Mutex<Credentials>,
+    store: Box<dyn CredentialStore>,
     limiter: Mutex<LimiterState>,
     cancellations: Mutex<HashMap<String, CancellationToken>>,
 }
 
 impl RiotState {
     pub fn from_environment() -> Self {
-        let key = std::env::var("RIOT_API_KEY")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .map(SecretString::from);
+        Self::with_store(
+            Box::new(WindowsCredentialStore::default()),
+            std::env::var("RIOT_API_KEY")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .map(SecretString::from),
+            true,
+        )
+    }
+    fn with_store(
+        store: Box<dyn CredentialStore>,
+        environment: Option<SecretString>,
+        https: bool,
+    ) -> Self {
+        let loaded = store.load();
+        let storage_failed = loaded.is_err();
         Self {
             client: Client::builder()
-                .https_only(true)
+                .https_only(https)
                 .build()
                 .expect("native HTTPS client should initialize"),
-            key,
+            credentials: Mutex::new(Credentials {
+                environment,
+                stored: loaded.ok().flatten(),
+                status: "configured",
+                last_success: None,
+                generation: 0,
+                storage_failed,
+            }),
+            store,
             limiter: Mutex::new(LimiterState::default()),
             cancellations: Mutex::new(HashMap::new()),
         }
     }
-
     #[cfg(test)]
     fn for_test() -> Self {
-        Self {
-            client: Client::new(),
-            key: Some(SecretString::from("RGAPI-test-secret")),
-            limiter: Mutex::new(LimiterState::default()),
-            cancellations: Mutex::new(HashMap::new()),
+        Self::with_store(
+            Box::new(TestStore::default()),
+            Some(SecretString::from("RGAPI-test-secret")),
+            false,
+        )
+    }
+    async fn save_key(&self, key: SecretString) -> Result<ConnectionStatus, &'static str> {
+        let value = key.expose_secret();
+        if !value.starts_with("RGAPI-")
+            || value.len() < 12
+            || value.len() > 512
+            || !value.bytes().all(|b| b.is_ascii_graphic())
+        {
+            return Err("Enter a valid Riot API key");
         }
+        let mut credentials = self.credentials.lock().await;
+        self.store.save(&key)?;
+        credentials.stored = Some(key);
+        credentials.storage_failed = false;
+        if credentials.environment.is_none() {
+            credentials.status = "configured";
+            credentials.last_success = None;
+            credentials.generation += 1;
+        }
+        Ok(credentials.status())
+    }
+    async fn remove_key(&self) -> Result<ConnectionStatus, &'static str> {
+        let mut credentials = self.credentials.lock().await;
+        self.store.remove()?;
+        credentials.stored = None;
+        credentials.storage_failed = false;
+        if credentials.environment.is_none() {
+            credentials.status = "missing-key";
+            credentials.last_success = None;
+            credentials.generation += 1;
+        }
+        Ok(credentials.status())
     }
 
     async fn cancel(&self, request_id: &str) {
@@ -206,10 +258,16 @@ impl RiotState {
         method: &str,
         url: String,
     ) -> Result<Value, SafeRiotError> {
-        let key = self
-            .key
-            .as_ref()
-            .ok_or_else(|| SafeRiotError::new("missing-key", None, false))?;
+        let (key, generation) = {
+            let credentials = self.credentials.lock().await;
+            (
+                credentials
+                    .active()
+                    .cloned()
+                    .ok_or_else(|| SafeRiotError::new("missing-key", None, false))?,
+                credentials.generation,
+            )
+        };
         let token = CancellationToken::new();
         self.cancellations
             .lock()
@@ -306,6 +364,23 @@ impl RiotState {
         }
         .await;
         self.cancellations.lock().await.remove(&request_id);
+        let mut credentials = self.credentials.lock().await;
+        if credentials.generation == generation {
+            match &result {
+                Ok(_) => {
+                    credentials.status = "connected";
+                    credentials.last_success = Some(
+                        SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64,
+                    );
+                }
+                Err(error) => {
+                    credentials.status = error.code;
+                }
+            }
+        }
         result
     }
 
@@ -425,23 +500,85 @@ fn platform_host(platform: &str) -> Result<String, SafeRiotError> {
     Ok(format!("{}.api.riotgames.com", platform.to_lowercase()))
 }
 
+struct Credentials {
+    environment: Option<SecretString>,
+    stored: Option<SecretString>,
+    status: &'static str,
+    last_success: Option<u64>,
+    generation: u64,
+    storage_failed: bool,
+}
+impl Credentials {
+    fn active(&self) -> Option<&SecretString> {
+        self.environment.as_ref().or(self.stored.as_ref())
+    }
+    fn status(&self) -> ConnectionStatus {
+        ConnectionStatus {
+            key_detected: self.active().is_some(),
+            stored_configured: self.stored.is_some(),
+            source: if self.environment.is_some() {
+                "native-environment"
+            } else if self.stored.is_some() {
+                "secure-storage"
+            } else {
+                "unavailable"
+            },
+            status: if self.active().is_some() {
+                self.status
+            } else if self.storage_failed {
+                "storage-unavailable"
+            } else {
+                "missing-key"
+            },
+            last_success: self.last_success,
+        }
+    }
+}
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionStatus {
     key_detected: bool,
+    stored_configured: bool,
     source: &'static str,
+    status: &'static str,
+    last_success: Option<u64>,
 }
-
 #[tauri::command]
-pub fn riot_connection_status(state: tauri::State<'_, RiotState>) -> ConnectionStatus {
-    ConnectionStatus {
-        key_detected: state.key.is_some(),
-        source: if state.key.is_some() {
-            "native-environment"
-        } else {
-            "unavailable"
-        },
-    }
+pub async fn riot_connection_status(
+    state: tauri::State<'_, RiotState>,
+) -> Result<ConnectionStatus, String> {
+    Ok(state.credentials.lock().await.status())
+}
+#[tauri::command]
+pub async fn riot_save_key(
+    state: tauri::State<'_, RiotState>,
+    key: String,
+) -> Result<ConnectionStatus, &'static str> {
+    state.save_key(SecretString::from(key)).await
+}
+#[tauri::command]
+pub async fn riot_remove_key(
+    state: tauri::State<'_, RiotState>,
+) -> Result<ConnectionStatus, &'static str> {
+    state.remove_key().await
+}
+#[tauri::command]
+pub async fn riot_test_connection(
+    state: tauri::State<'_, RiotState>,
+    platform: String,
+    request_id: String,
+    deadline_epoch_ms: u64,
+) -> Result<ConnectionStatus, SafeRiotError> {
+    let host = platform_host(&platform)?;
+    state
+        .get_json(
+            request_id,
+            deadline_epoch_ms,
+            "tft.status",
+            format!("https://{host}/tft/status/v1/platform-data"),
+        )
+        .await?;
+    Ok(state.credentials.lock().await.status())
 }
 
 #[tauri::command]
@@ -693,5 +830,98 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.code, "transient");
         assert_eq!(state.limiter.lock().await.metrics.requests_attempted, 3);
+    }
+    #[tokio::test]
+    async fn credential_connection_status_tracks_success_and_expiry_without_secrets() {
+        let state = RiotState::for_test();
+        let url = server(vec!["HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"ok\":true}"]).await;
+        state
+            .get_json("good".into(), deadline(), "test", url)
+            .await
+            .unwrap();
+        assert!(state
+            .credentials
+            .lock()
+            .await
+            .status()
+            .last_success
+            .is_some());
+        let url = server(vec!["HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"]).await;
+        let error = state
+            .get_json("expired".into(), deadline(), "test", url)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "auth");
+        let status = state.credentials.lock().await.status();
+        assert_eq!(status.status, "auth");
+        assert!(status.last_success.is_some());
+        assert!(!serde_json::to_string(&status).unwrap().contains("RGAPI"));
+    }
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct TestStore(std::sync::Mutex<Option<SecretString>>);
+#[cfg(test)]
+impl CredentialStore for TestStore {
+    fn load(&self) -> Result<Option<SecretString>, &'static str> {
+        Ok(self.0.lock().unwrap().clone())
+    }
+    fn save(&self, key: &SecretString) -> Result<(), &'static str> {
+        *self.0.lock().unwrap() = Some(key.clone());
+        Ok(())
+    }
+    fn remove(&self) -> Result<(), &'static str> {
+        *self.0.lock().unwrap() = None;
+        Ok(())
+    }
+}
+#[cfg(test)]
+mod credential_tests {
+    use super::*;
+    #[tokio::test]
+    async fn stored_fallback_save_remove_and_safe_status() {
+        let state = RiotState::with_store(Box::new(TestStore::default()), None, false);
+        assert!(!state.credentials.lock().await.status().key_detected);
+        let status = state
+            .save_key(SecretString::from("RGAPI-fixture-secret"))
+            .await
+            .unwrap();
+        assert_eq!(status.source, "secure-storage");
+        assert!(status.stored_configured);
+        assert!(!serde_json::to_string(&status).unwrap().contains("RGAPI"));
+        assert_eq!(
+            state.store.load().unwrap().unwrap().expose_secret(),
+            "RGAPI-fixture-secret"
+        );
+        assert!(!state.remove_key().await.unwrap().key_detected);
+        assert!(state.store.load().unwrap().is_none());
+    }
+    #[tokio::test]
+    async fn environment_wins_without_being_persisted() {
+        let state = RiotState::with_store(
+            Box::new(TestStore::default()),
+            Some(SecretString::from("RGAPI-env-secret")),
+            false,
+        );
+        assert!(state.store.load().unwrap().is_none());
+        state
+            .save_key(SecretString::from("RGAPI-stored-secret"))
+            .await
+            .unwrap();
+        assert_eq!(
+            state
+                .credentials
+                .lock()
+                .await
+                .active()
+                .unwrap()
+                .expose_secret(),
+            "RGAPI-env-secret"
+        );
+        assert_eq!(
+            state.remove_key().await.unwrap().source,
+            "native-environment"
+        );
     }
 }

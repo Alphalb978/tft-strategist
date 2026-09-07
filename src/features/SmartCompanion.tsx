@@ -53,9 +53,12 @@ export function CurrentGameEditor({
           Level
           <select
             aria-label="Current level"
-            value={game.level}
-            onChange={(e) => change({ level: Number(e.target.value) })}
+            value={(game.levelKnown ?? game.level > 1) ? game.level : ''}
+            onChange={(e) =>
+              change({ level: Number(e.target.value) || 1, levelKnown: e.target.value !== '' })
+            }
           >
+            <option value="">Unknown</option>
             {Array.from({ length: 10 }, (_, i) => (
               <option key={i + 1}>{i + 1}</option>
             ))}

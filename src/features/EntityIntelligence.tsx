@@ -1,3 +1,4 @@
+import { cleanMechanics } from '../components/intelligenceDisplay';
 import { useEffect, useRef } from 'react';
 import type { StaticData, Playbook } from '../domain/models';
 import type { IntelligenceModel } from '../domain/intelligence';
@@ -49,9 +50,7 @@ export function EntityIntelligence({
         </p>
       )}
       <h3>{entity?.abilityName ?? 'Effect'}</h3>
-      <p>
-        {entity?.description ?? 'Effect description unavailable in the selected structured source.'}
-      </p>
+      <p>{cleanMechanics(entity?.description)}</p>
       <p>{entity?.tags.map((t) => t.tag).join(' · ') || 'Advanced semantic tags unavailable'}</p>
       {entity?.unresolvedTokens.length ? (
         <p className="fine-print">

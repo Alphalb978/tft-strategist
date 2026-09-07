@@ -83,6 +83,9 @@ for (const width of [1440, 1000, 860])
       .locator('.library-card')
       .filter({ has: page.getByRole('heading', { name: fixture.title, exact: true }) })
       .click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByRole('heading', { name: fixture.title, exact: true })).toBeVisible();
     const intelligence = page.getByLabel('Smart strategy intelligence');
     await expect(intelligence.locator('.observed-sample')).toContainText(
@@ -128,6 +131,9 @@ for (const width of [1440, 1000, 860])
       .locator('.library-card')
       .filter({ has: page.getByRole('heading', { name: fixture.curated, exact: true }) })
       .click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.locator('.observed-sample')).toContainText('40 boards');
     await page.getByLabel('Smart strategy intelligence').scrollIntoViewIfNeeded();
     await capture(page, { path: `artifacts/m11/acceptance-curated-${width}.png` });
@@ -145,7 +151,9 @@ for (const width of [1440, 1000, 860])
     await page.getByLabel('Add completed item').selectOption(fixture.item);
     await page.getByLabel('Add augment', { exact: true }).selectOption(fixture.augment);
     await expect.poll(() => page.locator('.plan-grid').innerText()).not.toBe(before);
-    await expect(page.getByLabel('Contextual reasons').first()).toContainText('Context-aware');
+    await expect(page.getByLabel('Contextual reasons').first()).toContainText(
+      'Fit with your current game',
+    );
     await expect(page.locator('.plan-grid')).toContainText('Supported item direction:');
     await expect(page.locator('.plan-grid')).toContainText(`5 ${fixture.unit} copies`);
     await page.locator('.plan-grid').scrollIntoViewIfNeeded();
@@ -153,7 +161,13 @@ for (const width of [1440, 1000, 860])
     await page.reload();
     await expect(page.getByLabel('Current level', { exact: true })).toHaveValue('7');
     await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await page.getByRole('button', { name: 'Lock this plan', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByText('ACTIVE MATCH PLAN', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Current level', { exact: true })).toHaveValue('7');
     await page.getByLabel('Current game state').scrollIntoViewIfNeeded();

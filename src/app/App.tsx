@@ -117,6 +117,8 @@ export function App() {
                           meta,
                           current.discovery,
                           current.personal,
+
+                          current.external,
                         ),
                       }
                     : current,
@@ -209,6 +211,8 @@ export function App() {
           state.meta,
           state.discovery,
           state.personal,
+
+          state.external,
         ),
       });
       if (
@@ -246,6 +250,8 @@ export function App() {
                 meta,
                 current.discovery,
                 current.personal,
+
+                current.external,
               ),
             }
           : current,
@@ -314,6 +320,8 @@ export function App() {
                 refreshed.meta,
                 refreshed.discovery,
                 current.personal,
+
+                current.external,
               ),
             }
           : current,
@@ -458,6 +466,7 @@ export function App() {
                 meta: state.meta,
                 discovery: state.discovery,
                 personal: state.personal ?? undefined,
+                external: state.external,
               })
             : undefined;
         })())
@@ -711,6 +720,8 @@ export function App() {
                                 bundle.meta,
                                 bundle.discovery,
                                 current.personal,
+
+                                current.external,
                               ),
                             }
                           : current,

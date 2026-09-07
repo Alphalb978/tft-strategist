@@ -1,5 +1,11 @@
 import { capture } from './capture';
 import { expect, test } from '@playwright/test';
+// Legacy acceptance explicitly exercises the external-disabled fallback.
+test.beforeEach(async ({ page }) => {
+  await page.route('**/data/external/current.json', (r) =>
+    r.fulfill({ status: 503, body: 'Unavailable' }),
+  );
+});
 test('three plans, real art, readable detail and safe planner status', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -16,17 +22,20 @@ test('three plans, real art, readable detail and safe planner status', async ({ 
   ).toBe(true);
   await capture(page, { path: 'artifacts/home-1440.png', fullPage: true });
   await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+  await page.getByRole('button', { name: 'Details · stages / items / stats', exact: true }).click();
   await expect(page.getByRole('button', { name: /Copy Team Code/ })).toBeEnabled();
   await expect(page.getByRole('heading', { name: 'Build toward this board' })).toBeVisible();
   await capture(page, { path: 'artifacts/playbook-1440.png', fullPage: true });
   await page.getByRole('tab', { name: /Level 7 roll/ }).click();
   await expect(page.getByText('Exact board unavailable')).toBeVisible();
   await page.getByRole('button', { name: 'Lock this plan' }).click();
+  await page.getByRole('button', { name: 'Details · stages / items / stats', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Plan active', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Active plan', exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText(/Active ·/)).toBeVisible();
   await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  await page.getByRole('button', { name: 'Details · stages / items / stats', exact: true }).click();
   await expect(page.getByText('ACTIVE MATCH PLAN', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'End session', exact: true }).click();
   await page.getByRole('button', { name: 'End session & save', exact: true }).click();
@@ -84,6 +93,7 @@ test('M4 unit-history, lobby pressure, and recommendation fit are inspectable', 
   await expect(page.getByText(/Historical contest:/).first()).toBeVisible();
   await expect(page.getByLabel('Pressured critical units').first()).toBeVisible();
   await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+  await page.getByRole('button', { name: 'Details · stages / items / stats', exact: true }).click();
   await page.locator('.why-panel > summary').click();
   await expect(page.locator('.contest-explanation').getByText('Lobby / contest fit')).toBeVisible();
   await expect(page.getByText(/equivalent historical users/).first()).toBeVisible();
@@ -151,6 +161,7 @@ test('M5 Comp Library searches, filters, sorts, and opens attributed evidence', 
   await page.getByLabel('Sort comps').selectOption('strength');
   await expect(page.getByText(/Outcome statistics are unavailable/)).toBeVisible();
   await page.locator('.library-card').first().click();
+  await page.getByRole('button', { name: 'Details · stages / items / stats', exact: true }).click();
   await page.locator('.why-panel > summary').click();
   await expect(page.getByText('Aggregate meta evidence', { exact: true })).toBeVisible();
   await expect(page.getByText(/Unavailable · recommendation outcome inputs/)).toBeVisible();
@@ -182,6 +193,9 @@ for (const width of [1440, 1000, 860])
     await expect(page.locator('.library-card')).toHaveCount(1);
     await expect(page.getByText(/Discovered · Experimental/)).toBeVisible();
     await page.locator('.library-card').click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByRole('heading', { name: 'Discovery evidence' })).toBeVisible();
     await expect(page.getByText(/Not recommendation-eligible/)).toBeVisible();
     await expect(page.getByText('Positioning not verified', { exact: true })).toBeVisible();
@@ -206,12 +220,18 @@ for (const width of [1440, 1000, 860])
       timeout: 15_000,
     });
     await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByRole('button', { name: /Copy Team Code/ })).toBeEnabled();
     await expect(page.getByRole('button', { name: /Copy Team Code/ })).toHaveAttribute(
       'title',
       /Client paste verified/i,
     );
     await page.getByRole('button', { name: 'Lock this plan' }).click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByText('ACTIVE MATCH PLAN', { exact: true })).toBeVisible();
     await expect(page.getByText(/Local snapshot · safe to resume offline/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Active plan', exact: true })).toBeVisible();
@@ -223,17 +243,26 @@ for (const width of [1440, 1000, 860])
     await page.getByRole('button', { name: 'Comps', exact: true }).click();
     await expect(page.getByText(/Active ·/)).toBeVisible();
     await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByRole('tab').first()).toHaveAttribute('aria-selected', 'true');
     expect(await page.getByRole('tab').first().textContent()).toBe(firstStageLabel);
 
     await page.reload();
     await expect(page.getByText(/Active ·/)).toBeVisible();
     await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByRole('tab').first()).toHaveAttribute('aria-selected', 'true');
     await page.locator('.pivot-edges > button').first().click();
     await expect(page.getByRole('button', { name: 'Switch to this plan' })).toBeVisible();
     await page.getByRole('button', { name: 'Switch to this plan' }).click();
     await page.getByRole('button', { name: 'Confirm switch', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByRole('status')).toContainText('previous session remains in history');
     await expect(page.getByText('ACTIVE MATCH PLAN', { exact: true })).toBeVisible();
     expect(
@@ -264,6 +293,9 @@ for (const width of [1440, 1000, 860])
     await page.reload();
     await expect(page.getByText(/historical snapshot/)).toBeVisible();
     await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByText('Showing the exact historical snapshot.')).toBeVisible();
     await expect(page.getByRole('button', { name: /Copy Team Code/ })).toBeDisabled();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -306,10 +338,19 @@ for (const width of [1440, 1000, 860])
     ).toBeVisible();
     await page.getByRole('button', { name: 'Your plans', exact: true }).click();
     await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await page.getByRole('button', { name: 'Lock this plan' }).click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await page.locator('.pivot-edges > button').first().click();
     await page.getByRole('button', { name: 'Switch to this plan' }).click();
     await page.getByRole('button', { name: 'Confirm switch', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await page.getByRole('button', { name: 'Post-game', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Recent games & reviews' })).toBeVisible();
     await expect(page.getByText(/Sample too small/)).toBeVisible();
@@ -452,6 +493,9 @@ for (const width of [1440, 1000, 860])
     await page.getByRole('button', { name: 'Comps', exact: true }).click();
     await page.getByLabel('Search comps, units, or traits').fill('Adaptors');
     await page.locator('.library-card').click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByRole('heading', { name: 'Build toward this board' })).toBeVisible();
     await expect(page.getByLabel('Unpositioned target roster')).toBeVisible();
     await expect(
@@ -482,6 +526,9 @@ for (const width of [1440, 1000, 860])
     await page.getByRole('button', { name: 'Comps', exact: true }).click();
     await page.getByLabel('Search comps, units, or traits').fill('Apex Predator');
     await page.locator('.library-card').click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByRole('tab', { name: /Sourced target only/ })).toBeVisible();
     await expect(page.getByText('Item guidance unavailable')).toBeVisible();
     await expect(page.getByText('Decision Map unavailable', { exact: true })).toBeVisible();
@@ -505,6 +552,9 @@ for (const width of [1000, 860])
     );
     await capture(page, { path: `artifacts/home-${width}.png`, fullPage: true });
     await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     expect(await page.locator('main').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
       true,
     );

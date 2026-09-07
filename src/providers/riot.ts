@@ -31,7 +31,7 @@ const SAFE_MESSAGES: Record<RiotErrorCode, string> = {
   'missing-key': 'Riot API access is unavailable in the native process.',
   'invalid-route': 'The selected Riot platform or regional route is unsupported.',
   'not-found': 'Riot could not find that account or completed match.',
-  auth: 'Riot rejected the native API credential.',
+  auth: 'Invalid or expired Riot API key. Replace it in Data & settings.',
   'rate-limited': 'Riot is rate limiting requests. Try again after the wait period.',
   transient: 'Riot is temporarily unavailable.',
   deadline: 'The scouting time budget was reached.',
@@ -88,11 +88,70 @@ export interface RiotRequestOptions {
 
 export interface RiotConnectionStatus {
   keyDetected: boolean;
-  source: 'native-environment' | 'unavailable';
+  source: 'native-environment' | 'secure-storage' | 'unavailable';
+  storedConfigured?: boolean;
+  status?: string;
+  lastSuccess?: number | null;
+}
+
+export function safeConnectionStatus(value: unknown): RiotConnectionStatus {
+  const v = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const states = [
+    'configured',
+    'connected',
+    'missing-key',
+    'auth',
+    'rate-limited',
+    'transient',
+    'deadline',
+    'cancelled',
+    'unavailable',
+    'storage-unavailable',
+    'not-found',
+    'malformed-response',
+  ];
+  return {
+    keyDetected: v.keyDetected === true,
+    storedConfigured: v.storedConfigured === true,
+    source:
+      v.source === 'native-environment' || v.source === 'secure-storage' ? v.source : 'unavailable',
+    status:
+      typeof v.status === 'string' && states.includes(v.status)
+        ? v.status
+        : v.keyDetected === true
+          ? 'configured'
+          : 'missing-key',
+    lastSuccess:
+      typeof v.lastSuccess === 'number' && Number.isFinite(v.lastSuccess) ? v.lastSuccess : null,
+  };
+}
+export function riotStatusLabel(status?: string) {
+  switch (status) {
+    case 'connected':
+      return 'Connected';
+    case 'configured':
+      return 'Key configured · not tested';
+    case 'auth':
+      return 'Invalid / expired';
+    case 'rate-limited':
+      return 'Rate limited';
+    case 'transient':
+    case 'deadline':
+      return 'Network unavailable';
+    case 'storage-unavailable':
+      return 'Secure storage unavailable';
+    case 'missing-key':
+      return 'Key required';
+    default:
+      return 'Provider unavailable';
+  }
 }
 
 export interface RiotProvider {
   connectionStatus(): Promise<RiotConnectionStatus>;
+  saveCredential?(key: string): Promise<RiotConnectionStatus>;
+  removeCredential?(): Promise<RiotConnectionStatus>;
+  testConnection?(): Promise<RiotConnectionStatus>;
   resolveAccount(
     gameName: string,
     tagLine: string,
@@ -329,10 +388,22 @@ export class NativeRiotProvider implements RiotProvider {
   async connectionStatus(): Promise<RiotConnectionStatus> {
     try {
       const bridge = await this.bridgeFactory();
-      return await bridge.invoke<RiotConnectionStatus>('riot_connection_status');
+      return safeConnectionStatus(await bridge.invoke('riot_connection_status'));
     } catch {
       return { keyDetected: false, source: 'unavailable' };
     }
+  }
+
+  async saveCredential(key: string): Promise<RiotConnectionStatus> {
+    return safeConnectionStatus(await this.invoke('riot_save_key', { key }));
+  }
+  async removeCredential(): Promise<RiotConnectionStatus> {
+    return safeConnectionStatus(await this.invoke('riot_remove_key', {}));
+  }
+  async testConnection(): Promise<RiotConnectionStatus> {
+    return safeConnectionStatus(
+      await this.invoke('riot_test_connection', { platform: this.platform }),
+    );
   }
 
   async resolveAccount(

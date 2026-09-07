@@ -1,3 +1,4 @@
+import { evaluateCalibration } from '../strategy/calibration';
 import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Clock3, History, Link2, RefreshCw, ShieldCheck } from 'lucide-react';
 import type { PersonalProfile, PlanSession } from '../domain/models';
@@ -162,6 +163,10 @@ export function PostGameHistory({
       </div>
     );
 
+  const calibration = evaluateCalibration(
+    history.chains.flatMap((c) => c.sessions),
+    history.reviews,
+  );
   const eligibleGames = history.personal.sourceReviewIds?.length ?? 0;
   return (
     <section className="postgame-page" aria-label="Post-game history">
@@ -183,6 +188,16 @@ export function PostGameHistory({
           </div>
         </div>
       </header>
+      <details className="panel">
+        <summary>Model calibration · offline evaluation</summary>
+        <p>{calibration.rows.length} attributed outcomes · weights unchanged</p>
+        {calibration.buckets.map((bucket) => (
+          <p key={bucket.key}>
+            {bucket.key} · {bucket.games} games · avg {bucket.averagePlacement.toFixed(2)}
+          </p>
+        ))}
+        <p className="fine-print">{calibration.limitations.join(' ')}</p>
+      </details>
       {message && (
         <div className="validation-notice" role="status">
           {message}

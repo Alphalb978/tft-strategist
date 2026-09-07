@@ -66,14 +66,18 @@ export function RiotScouting({
 
   useEffect(() => {
     let active = true;
-    provider
-      .connectionStatus()
-      .then((next) => active && setStatus(next))
-      .catch(() => active && setStatus({ keyDetected: false, source: 'unavailable' }));
+    const refresh = () =>
+      void provider
+        .connectionStatus()
+        .then((next) => active && setStatus(next))
+        .catch(() => active && setStatus({ keyDetected: false, source: 'unavailable' }));
+    refresh();
+    window.addEventListener('riot-credential-status', refresh);
     return () => {
       active = false;
+      window.removeEventListener('riot-credential-status', refresh);
     };
-  }, [provider]);
+  }, [provider, working]);
 
   const resolveOwn = async () => {
     if (busy.current) return;
@@ -217,7 +221,9 @@ export function RiotScouting({
           {fixturePreview
             ? 'Fixture preview'
             : status.keyDetected
-              ? 'API key detected'
+              ? status.status === 'auth'
+                ? 'Key expired / invalid'
+                : 'API key detected'
               : 'API key unavailable'}
         </span>
       </div>

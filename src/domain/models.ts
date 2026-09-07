@@ -611,7 +611,9 @@ export interface DiscoveryDataset {
 
 export interface CompRegistryEntry {
   id: ID;
-  sourceKind: 'curated' | 'discovered';
+  sourceKind: 'curated' | 'discovered' | 'external';
+  externalId?: string;
+  externalRelation?: 'strong' | 'variant';
   lifecycle: DiscoveryLifecycleState;
   playbook: Playbook;
   structuralFingerprint: string;
@@ -727,6 +729,7 @@ export interface LadderPlayer {
   leaguePoints: number;
 }
 export interface RecommendationCandidate {
+  fusion?: import('../strategy/evidenceFusion').FusedEstimate;
   scenarios?: { id: string; fit: number; evidence: string }[];
   playbook: Playbook;
   score: number;
@@ -993,6 +996,7 @@ export interface PlanSessionCompatibility {
   reasons: string[];
 }
 export interface PlanSessionManualState {
+  currentGameHistory?: CurrentGameState[];
   currentGame?: CurrentGameState;
   stageId: ID | null;
   decisionNodeId: ID | null;
@@ -1034,6 +1038,13 @@ export interface VerifiedTeamPlannerSnapshot {
   manualPasteVerifiedAt: string;
 }
 export interface PlanSessionSnapshot {
+  calibration?: {
+    engine: string;
+    baselines?: Record<string, { id: string; score: number; average: number | null }[]>;
+    externalHash: string | null;
+    knowledgePatch: string | null;
+    initialState: CurrentGameState | null;
+  };
   knowledgeFingerprint?: string;
   playbook: Playbook;
   candidate: RecommendationCandidate;

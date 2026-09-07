@@ -100,11 +100,33 @@ export function Home({
                   {Math.round(c.score)}
                   <small>/100</small>
                 </strong>
-                <span>Plan score</span>
+                <span>Fit score</span>
                 <b>{c.confidence.level} confidence</b>
               </div>
               <div className="plan-outcomes">
-                {measured?.quality === 'eligible' ? (
+                {c.fusion && c.fusion.externalWeight >= 30 ? (
+                  <>
+                    <div>
+                      <strong>{c.fusion.average?.toFixed(2)}</strong>
+                      <span>Fused avg</span>
+                    </div>
+                    <div>
+                      <strong>
+                        {c.fusion.top4 === null ? '—' : `${Math.round(c.fusion.top4 * 100)}%`}
+                      </strong>
+                      <span>Top 4</span>
+                    </div>
+                    <div>
+                      <strong>
+                        {c.fusion.win === null ? '—' : `${Math.round(c.fusion.win * 100)}%`}
+                      </strong>
+                      <span>Win</span>
+                    </div>
+                    <small title={c.fusion.sources.join(' · ')}>
+                      External aggregate + compatible direct observations
+                    </small>
+                  </>
+                ) : measured?.quality === 'eligible' ? (
                   <>
                     <div>
                       <strong>{measured.averagePlacement.toFixed(2)}</strong>
@@ -147,20 +169,11 @@ export function Home({
                 )}
                 {(state.activeSession?.manualState.currentGame ?? state.currentGame) && (
                   <div className="context-reasons" aria-label="Contextual reasons">
-                    <strong>
-                      Context-aware · Context{' '}
-                      {c.components
-                        .filter((x) => x.key.startsWith('context-'))
-                        .reduce((s, x) => s + x.contribution, 0)
-                        .toFixed(1)}
-                    </strong>
+                    <strong>Fit with your current game</strong>
                     {c.components
                       .filter((x) => x.key.startsWith('context-') && x.contribution !== 0)
                       .map((x) => (
-                        <p key={x.key}>
-                          {x.contribution > 0 ? '+' : ''}
-                          {x.contribution.toFixed(1)} · {x.label}
-                        </p>
+                        <p key={x.key}>{x.label}</p>
                       ))}
                   </div>
                 )}

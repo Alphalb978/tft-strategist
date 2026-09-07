@@ -11,6 +11,7 @@ export const currentGameSchema = z.object({
   version: z.literal(1),
   set: z.number().int(),
   stage: z.string().regex(/^$|^[1-9]-[1-9]$/),
+  levelKnown: z.boolean().optional(),
   level: z.number().int().min(1).max(10),
   health: z.enum(['healthy', 'pressured', 'critical']),
   economy: z.enum(['strong', 'normal', 'weak']),
@@ -28,6 +29,7 @@ export function emptyCurrentGame(set: number, now: string): CurrentGameState {
     set,
     stage: '',
     level: 1,
+    levelKnown: false,
     health: 'healthy',
     economy: 'normal',
     copies: {},
@@ -69,7 +71,10 @@ export function targetGap(plan: Playbook, game?: CurrentGameState) {
     retained: target.filter((id) => owned.has(id)),
     missingCore: plan.family.core.filter((id) => !owned.has(id)),
     availableFlex: target.filter((id) => !plan.family.core.includes(id)),
-    levelGap: game ? Math.max(0, plan.target.targetLevel - game.level) : null,
+    levelGap:
+      game && (game.levelKnown ?? game.level > 1)
+        ? Math.max(0, plan.target.targetLevel - game.level)
+        : null,
     transitionBurden: game?.board.length
       ? 1 - game.board.filter((id) => target.includes(id)).length / game.board.length
       : null,

@@ -47,6 +47,7 @@ export interface CurrentGameState {
   set: number;
   stage: string;
   level: number;
+  levelKnown?: boolean;
   health: 'healthy' | 'pressured' | 'critical';
   economy: 'strong' | 'normal' | 'weak';
   copies: Record<string, number>;

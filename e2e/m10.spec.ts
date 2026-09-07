@@ -13,7 +13,13 @@ for (const width of [1440, 1000, 860])
     await capture(page, { path: `artifacts/m10-auto-${width}.png` });
     await page.getByRole('button', { name: 'Your plans', exact: true }).click();
     await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await page.getByRole('button', { name: 'Lock this plan', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByText('ACTIVE MATCH PLAN', { exact: true })).toBeVisible();
     const snapshot = await page.evaluate(
       () => JSON.parse(localStorage.getItem('strategist:v1:plan-sessions')!)[0].snapshotFingerprint,
@@ -32,6 +38,9 @@ for (const width of [1440, 1000, 860])
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-accent', 'Purple');
     await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByRole('tab').first()).toHaveAttribute('aria-selected', 'true');
     expect(
       await page.evaluate(
@@ -42,6 +51,9 @@ for (const width of [1440, 1000, 860])
     await page.route(/^https:\/\//, (route) => route.abort());
     await page.reload();
     await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByRole('button', { name: /Copy Team Code/ })).toBeEnabled();
     await page.locator('.planner-verification>summary').click();
     await expect(page.getByLabel('Verified roster code')).toHaveValue(/^02[0-9a-f]{30}TFTSet18$/);

@@ -1,3 +1,4 @@
+import { scoreCandidate } from '../strategy/scoring';
 import {
   candidatePlannerCode,
   teamPlanner,
@@ -135,6 +136,37 @@ export function createPlanSession(
     ),
   );
   const snapshot = clone({
+    calibration: {
+      engine: 'm12-fusion-v1',
+      baselines: Object.fromEntries(
+        (['internal-only', 'external-only', 'fused'] as const).map((outcomeMode) => [
+          outcomeMode,
+          portfolio.plans.map(({ candidate: c }) => {
+            const scored = scoreCandidate(c.playbook, {
+              outcomeMode,
+              data: state.data,
+              version: state.data.version,
+              now,
+              external: state.external,
+              meta: state.meta,
+              discovery: state.discovery,
+              personal: state.personal ?? undefined,
+              personalWeight: state.settings.personalWeight,
+              lobby: lobby ?? undefined,
+              currentGame: state.activeSession?.manualState.currentGame ?? state.currentGame,
+            });
+            return {
+              id: c.playbook.id,
+              score: scored.score,
+              average: scored.fusion?.average ?? null,
+            };
+          }),
+        ]),
+      ),
+      externalHash: state.external?.manifest.contentHash ?? null,
+      knowledgePatch: state.data.knowledge?.balancePatch ?? null,
+      initialState: state.activeSession?.manualState.currentGame ?? state.currentGame ?? null,
+    },
     playbook: candidate.playbook,
     candidate,
     portfolio,
@@ -242,6 +274,11 @@ export function updateManualState(
   const manualState = { ...session.manualState, ...change, updatedAt: now };
   if (change.currentGame)
     manualState.currentGame = validateCurrentGame(change.currentGame, session.snapshot.staticData);
+  if (change.currentGame)
+    manualState.currentGameHistory = [
+      ...(session.manualState.currentGameHistory ?? []),
+      clone(manualState.currentGame!),
+    ].slice(-100);
   const playbook = session.snapshot.playbook;
   if (
     manualState.stageId !== null &&

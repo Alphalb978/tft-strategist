@@ -1,3 +1,7 @@
+import type { ExternalSnapshot } from '../domain/externalMeta';
+import { matchExternal } from '../strategy/evidenceFusion';
+import { externalStatus } from '../providers/externalMeta';
+import { sparseGuidance } from '../strategy/guidanceInheritance';
 import { teamPlanner } from '../rules/teamPlanner';
 import type {
   CompRegistryEntry,
@@ -186,6 +190,7 @@ export function buildCompRegistry(
   data: StaticData,
   discovery?: DiscoveryDataset | null,
   intelligence?: IntelligenceModel,
+  external?: ExternalSnapshot | null,
 ): CompRegistryEntry[] {
   const entries: CompRegistryEntry[] = curated.map((playbook) => {
     const canonical = canonicalizeBoard(playbook.target, data);
@@ -248,6 +253,141 @@ export function buildCompRegistry(
         entry.playbook.family.name = naming.name;
       }
       entry.playbook.subtitle = 'Observed final-board structure; adaptation uses target gaps.';
+    }
+  }
+  if (external && externalStatus(external, data).startsWith('Compatible')) {
+    for (const comp of external.comps) {
+      const matches = entries
+        .filter((e) => e.sourceKind !== 'external')
+        .map((entry) => ({
+          entry,
+          ...matchExternal(
+            entry.playbook.target.units.map((u) => u.championId),
+            entry.playbook.family.core,
+            comp,
+          ),
+        }))
+        .sort((a, b) => b.score - a.score || a.entry.id.localeCompare(b.entry.id));
+      for (const match of matches.filter((m) => m.relation === 'variant')) {
+        if (!match.entry.externalId) {
+          match.entry.externalId = comp.id;
+          match.entry.externalRelation = 'variant';
+        }
+      }
+      const exact = matches.filter((m) => m.relation === 'strong');
+      if (exact.length) {
+        for (const { entry } of exact) {
+          entry.externalId = comp.id;
+          entry.externalRelation = 'strong';
+        }
+        continue;
+      }
+      const template = curated[0];
+      if (!template) continue;
+      const id = `external-${data.version.set}-${comp.id}`;
+      const provenance = {
+        source: 'https://www.metatft.com/comps',
+        fetchedAt: external.manifest.retrievedAt,
+        patch: external.manifest.scope.patch,
+        status: 'measured' as const,
+        note: 'Public MetaTFT reference roster. Strategy timing and core roles are unknown unless separately sourced.',
+        hash: external.manifest.contentHash,
+      };
+      const target = {
+        ...template.target,
+        id,
+        units: comp.units.map((championId) => ({
+          championId,
+          items: [],
+          slot: comp.core.includes(championId) ? ('core' as const) : ('flex' as const),
+        })),
+        requiredUnits: comp.core,
+        capacity: comp.units.length,
+        targetLevel: comp.units.length,
+        augmentIds: [],
+        traitClaims: [],
+        provenance,
+      };
+      const plan: Playbook = {
+        ...template,
+        id,
+        family: { id, name: comp.name, core: comp.core },
+        title: comp.name,
+        subtitle: 'External Reference · observed roster; partial guide',
+        hero: comp.core[0] ?? comp.units[0],
+        evidence: 'Experimental',
+        provenance,
+        sampleSize: undefined,
+        target,
+        stages: [],
+        roles: [],
+        items: [],
+        components: [],
+        augments: [],
+        playSignals: unavailable('Play signals unavailable'),
+        avoidSignals: unavailable('Avoid signals unavailable'),
+        levelPlan: unavailable('Timing unavailable'),
+        decisionMap: { nodes: [], edges: [] },
+        replacements: unavailable('Replacements unavailable'),
+        pivots: [],
+        variants: [],
+        observed: undefined,
+        naming: undefined,
+        discovery: undefined,
+        features: {
+          ...template.features,
+          values: Object.fromEntries(
+            Object.keys(template.features.values).map((k) => [k, 50]),
+          ) as Playbook['features']['values'],
+          provenance: { ...provenance, status: 'unverified' },
+          style: comp.style ?? 'Style unavailable',
+          itemCoverage: [],
+          openingCoverage: [],
+          unitCriticality: {},
+        },
+      };
+      plan.strategy = sparseGuidance(plan, data);
+      plan.strategy.sources = [
+        {
+          id: provenance.source,
+          url: provenance.source,
+          title: 'MetaTFT public comp reference',
+          reviewedAt: provenance.fetchedAt,
+          sourceVersion: provenance.hash,
+          scope: 'Roster reference only',
+          note: provenance.note,
+        },
+      ];
+      // Reference structure is externally measured, never an internal discovery or a sourced timing guide.
+      for (const stage of plan.strategy.stages) {
+        stage.roster.sourceIds = [provenance.source];
+        stage.roster.note = provenance.note;
+        stage.targetLevel.sourceIds = [provenance.source];
+      }
+      const canonical = canonicalizeBoard(target, data);
+      const legal =
+        Boolean(canonical.board) &&
+        validatePlaybook(plan, data).every((i) => i.severity !== 'error');
+      if (!legal) continue;
+      const parent = matches.find((m) => m.relation === 'variant');
+      entries.push({
+        id,
+        sourceKind: 'external',
+        externalId: comp.id,
+        externalRelation: 'strong',
+        lifecycle: 'Experimental',
+        playbook: plan,
+        structuralFingerprint: canonical.board!.fingerprint,
+        clusterId: null,
+        parentFamilyId: parent?.entry.playbook.family.id ?? null,
+        recommendationEligible:
+          (comp.stats.sample ?? 0) >= 500 &&
+          Boolean(external.manifest.scope.rank && external.manifest.scope.window),
+        support: null,
+        effectiveSample: null,
+        trendDelta: null,
+        provenance,
+      });
     }
   }
   return entries.sort(

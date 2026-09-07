@@ -88,6 +88,7 @@ test('M11 autonomous discovered profile is visible through the production worker
     .getByRole('button')
     .filter({ has: page.getByRole('heading', { name: title, exact: true }) })
     .click();
+  await page.getByRole('button', { name: 'Details · stages / items / stats', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Observed core', exact: true })).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Observed holders, items and packages' }),
@@ -104,7 +105,13 @@ for (const width of [1440, 1000, 860])
     await page.goto('/');
     await expect(page.locator('.plan-card')).toHaveCount(3, { timeout: 20000 });
     await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await page.getByRole('button', { name: 'Lock this plan', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByText('ACTIVE MATCH PLAN', { exact: true })).toBeVisible();
     const before = await page.evaluate(
       () => JSON.parse(localStorage.getItem('strategist:v1:plan-sessions')!)[0].snapshotFingerprint,
@@ -125,6 +132,9 @@ for (const width of [1440, 1000, 860])
     await capture(page, { path: `artifacts/m11/current-game-${width}.png` });
     await page.reload();
     await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByLabel('Current level', { exact: true })).toHaveValue('6');
     await expect(page.getByLabel('Current stage', { exact: true })).toHaveValue('3-2');
     expect(

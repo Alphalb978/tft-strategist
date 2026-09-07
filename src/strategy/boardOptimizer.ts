@@ -1,3 +1,6 @@
+import type { ExternalSnapshot } from '../domain/externalMeta';
+import { matchExternal, relatedExternal } from './evidenceFusion';
+import { externalStatus } from '../providers/externalMeta';
 import type { Board, Playbook, StaticData, LobbyPressure } from '../domain/models';
 import type { BoardAlternative, CurrentGameState, IntelligenceModel } from '../domain/intelligence';
 import { validateBoard, boardTraitCounts } from '../rules/validation';
@@ -10,6 +13,7 @@ export const BOARD_OPTIMIZER = {
   steps: 3,
 } as const;
 export function optimizeBoards(input: {
+  external?: ExternalSnapshot | null;
   data: StaticData;
   plan: Playbook;
   intelligence?: IntelligenceModel;
@@ -20,6 +24,9 @@ export function optimizeBoards(input: {
   targetLevel?: number;
 }): BoardAlternative[] {
   const { data, plan, intelligence, game, lobby } = input;
+  const external = externalStatus(input.external, data).startsWith('Compatible')
+    ? input.external
+    : null;
   const level = input.targetLevel ?? plan.target.targetLevel;
   const capacity = baseCapacityForLevel(level);
   if (capacity === null) return [];
@@ -44,7 +51,9 @@ export function optimizeBoards(input: {
   );
   const pressure = (id: string) =>
     lobby?.unitPressure.find((u) => u.championId === id)?.normalizedPressure ?? 0;
+  const reference = relatedExternal(plan, external)?.comp;
   const affinity = (id: string) =>
+    (reference?.units.includes(id) ? 4 : 0) +
     (observed?.units.find((u) => u.id === id)?.estimate.frequency ?? 0) * 4 +
     (intelligence?.graph
       .filter(
@@ -155,6 +164,23 @@ export function optimizeBoards(input: {
             (s, id) => s + Math.max(0, (data.champions.find((c) => c.id === id)?.cost ?? 0) - 3),
             0,
           ) - (observed?.estimate.eligible ? 0 : 8),
+      },
+      {
+        label: 'Related external board support (association)',
+        value: Math.min(
+          5,
+          Math.max(
+            0,
+            ...(external?.comps ?? [])
+              .filter((c) => (c.stats.sample ?? 0) >= 500)
+              .map((c) => {
+                const match = matchExternal(ids, required, c);
+                return match.relation === 'strong' || match.relation === 'variant'
+                  ? 5 * match.score
+                  : 0;
+              }),
+          ),
+        ),
       },
       { label: 'Unfilled capacity', value: -Math.max(0, capacity - usedBoardSlots(board)) * 8 },
     ];

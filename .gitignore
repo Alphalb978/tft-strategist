@@ -11,3 +11,5 @@ artifacts/
 *.tsbuildinfo
 src-tauri/icons/android/
 src-tauri/icons/ios/
+
+/public/data/external/archive/

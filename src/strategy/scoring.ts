@@ -1,3 +1,5 @@
+import type { ExternalSnapshot } from '../domain/externalMeta';
+import { fusedForPlan } from './evidenceFusion';
 import type {
   ActiveSetVersion,
   AggregateMetaDataset,
@@ -40,6 +42,9 @@ const labels: Record<FeatureKey, string> = {
   fragility: 'Dependency fragility',
 };
 export interface ScoringContext {
+  outcomeMode?: 'internal-only' | 'external-only' | 'fused';
+  scenarioPressure?: string[];
+  external?: ExternalSnapshot | null;
   currentGame?: CurrentGameState;
   data?: StaticData;
   version: ActiveSetVersion;
@@ -166,6 +171,22 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
           ceiling: measured.measuredCeiling,
         }
       : {};
+  if (context.outcomeMode === 'external-only')
+    for (const key of ['meta', 'floor', 'ceiling'] as const) delete measuredValues[key];
+  const fused =
+    context.data && context.outcomeMode !== 'internal-only'
+      ? fusedForPlan(
+          context.outcomeMode === 'external-only' ? { ...p, observed: undefined } : p,
+          context.external,
+          context.data,
+          context.now,
+        )
+      : null;
+  if (fused && fused.externalWeight >= 30 && fused.average !== null) {
+    measuredValues.meta = 100 * clamp((8.5 - fused.average) / 7.5);
+    if (fused.top4 !== null) measuredValues.floor = 100 * fused.top4;
+    if (fused.win !== null) measuredValues.ceiling = 100 * clamp(fused.win / 0.25);
+  }
   const components: ScoreComponent[] = (Object.keys(weights) as FeatureKey[]).map((key) => {
     const isOutcome = key === 'meta' || key === 'floor' || key === 'ceiling';
     const learned = p.observed?.features[key];
@@ -174,7 +195,11 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
       (isOutcome ? null : (learned?.value ?? clamp(p.features.values[key], 0, 100)));
     return {
       key,
-      label: labels[key],
+      label:
+        labels[key] +
+        (fused && fused.externalWeight >= 30 && isOutcome
+          ? ' · fused external/direct estimate'
+          : ''),
       input,
       weight: weights[key],
       contribution: (input ?? 50) * weights[key],
@@ -191,10 +216,14 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
     };
   });
   const contest = contestFor(p, context.lobby);
-  const lobbyValue = contest.lobbyFit;
+  const scenarioOverlap = context.scenarioPressure
+    ? p.family.core.filter((id) => context.scenarioPressure!.includes(id)).length /
+      Math.max(1, p.family.core.length)
+    : null;
+  const lobbyValue = scenarioOverlap === null ? contest.lobbyFit : 100 * (1 - scenarioOverlap);
   components.push({
     key: 'lobby',
-    label: 'Lobby / contest fit',
+    label: scenarioOverlap === null ? 'Lobby / contest fit' : 'Hypothetical core contest fit',
     input: lobbyValue,
     weight: 0.1,
     contribution: (lobbyValue ?? 50) * 0.1,
@@ -227,37 +256,58 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
   const positives = components
     .filter((c) => c.key !== 'personal' && c.key !== 'lobby' && c.weight > 0 && c.input !== null)
     .sort((a, b) => (b.input ?? 0) - (a.input ?? 0));
+  const confidence = confidenceFor(p, context);
+  if (fused && fused.externalWeight >= 30) {
+    confidence.drivers.push({
+      label: 'External aggregate support · scope/freshness discounted; hotfix parity unverified',
+      factor: fused.confidence,
+    });
+    confidence.value = Math.min(1, 0.2 * confidence.value + 0.8 * fused.confidence);
+    confidence.level =
+      confidence.value >= 0.75 ? 'High' : confidence.value >= 0.5 ? 'Medium' : 'Low';
+  }
   return {
     playbook: p,
     score,
     components,
-    confidence: confidenceFor(p, context),
+    confidence,
+    fusion: fused ?? undefined,
     contest,
     scenarios: strategicScenarios(p, context.currentGame, context.data, contest),
-    reasons: measuredEligible
-      ? [
-          contextual.length
-            ? contextual
-                .map(
-                  (c) => `${c.contribution >= 0 ? '+' : ''}${c.contribution.toFixed(1)} ${c.label}`,
-                )
-                .join(' · ')
-            : `${positives[0]?.label ?? 'Measured evidence'} is the strongest positive driver.`,
-          discovered
-            ? `${discovered.stats.games} clustered boards · ${Math.round(discovered.stats.confidence * 100)}% discovery confidence.`
-            : `${measured!.games} classified games · ${Math.round(measured!.confidence * 100)}% aggregate-meta confidence.`,
-        ]
-      : [
-          contextual.length
-            ? contextual
-                .map(
-                  (c) => `${c.contribution >= 0 ? '+' : ''}${c.contribution.toFixed(1)} ${c.label}`,
-                )
-                .join(' · ')
-            : `${positives[0]?.label ?? 'Curated structure'} leads the available curated profile.`,
-          measured
-            ? `${measured.games} classified games do not clear the M5 quality gate.`
-            : 'Measured outcome evidence is unavailable; neutral outcome fallback is explicit.',
-        ],
+    reasons:
+      fused && fused.externalWeight >= 30
+        ? [
+            contextual.length
+              ? contextual.map((c) => `${c.label}: ${c.contribution.toFixed(1)}`).join(' · ')
+              : 'Compatible external aggregate informs outcome strength.',
+            ...fused.sources,
+          ]
+        : measuredEligible
+          ? [
+              contextual.length
+                ? contextual
+                    .map(
+                      (c) =>
+                        `${c.contribution >= 0 ? '+' : ''}${c.contribution.toFixed(1)} ${c.label}`,
+                    )
+                    .join(' · ')
+                : `${positives[0]?.label ?? 'Measured evidence'} is the strongest positive driver.`,
+              discovered
+                ? `${discovered.stats.games} clustered boards · ${Math.round(discovered.stats.confidence * 100)}% discovery confidence.`
+                : `${measured!.games} classified games · ${Math.round(measured!.confidence * 100)}% aggregate-meta confidence.`,
+            ]
+          : [
+              contextual.length
+                ? contextual
+                    .map(
+                      (c) =>
+                        `${c.contribution >= 0 ? '+' : ''}${c.contribution.toFixed(1)} ${c.label}`,
+                    )
+                    .join(' · ')
+                : `${positives[0]?.label ?? 'Curated structure'} leads the available curated profile.`,
+              measured
+                ? `${measured.games} classified games do not clear the M5 quality gate.`
+                : 'Measured outcome evidence is unavailable; neutral outcome fallback is explicit.',
+            ],
   };
 }

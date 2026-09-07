@@ -1,3 +1,7 @@
+import { RiotApiSettings } from './RiotApiSettings';
+import { compactCount, compactRank } from '../components/intelligenceDisplay';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { externalStatus } from '../providers/externalMeta';
 import { teamPlanner } from '../rules/teamPlanner';
 import { useState } from 'react';
 import {
@@ -49,6 +53,7 @@ export function DataSettings({
   onLobby: (lobby: LobbyPressure) => void;
   onRebuildIntelligence?: () => void;
 }) {
+  const [externalRefresh, setExternalRefresh] = useState('');
   const [collectionMode, setCollectionMode] = useState<keyof typeof META_BUDGETS>('standard');
   const [region, setRegion] = useState(state.settings.riotPlatform);
   const [cohort, setCohort] = useState<keyof typeof META_COHORTS>('Challenger');
@@ -63,6 +68,55 @@ export function DataSettings({
           <p>Make Strategist yours. Manage your account and data.</p>
         </div>
       </div>
+      <section className="panel external-meta-settings" aria-label="External Meta status">
+        <h2>External Meta · MetaTFT</h2>
+        <button
+          className="secondary"
+          disabled={externalRefresh === 'Refreshing…'}
+          onClick={async () => {
+            if (!isTauri()) {
+              setExternalRefresh('Run Refresh MetaTFT Data.cmd, then reload this preview.');
+              return;
+            }
+            setExternalRefresh('Refreshing…');
+            try {
+              await invoke('refresh_external_meta');
+              location.reload();
+            } catch (error) {
+              setExternalRefresh(`Failed · last good snapshot retained. ${String(error)}`);
+            }
+          }}
+        >
+          Refresh MetaTFT Data
+        </button>
+        {externalRefresh && <p role="status">{externalRefresh}</p>}
+        <p>{state.externalNotice ?? externalStatus(state.external, state.data)}</p>
+        <p>
+          {state.external
+            ? `Set ${state.external.manifest.scope.set} · Patch ${state.external.manifest.scope.patch}${state.external.manifest.scope.hotfix ?? ''} · ${compactRank(state.external.manifest.scope.rank)} · ${state.external.manifest.scope.window ?? 'Unknown window'} · ${compactCount(state.external.manifest.population)} analyzed boards · ${state.external.comps.length} mapped comps`
+            : 'Run Refresh MetaTFT Data.cmd in the project folder, then reload.'}
+        </p>
+        {state.external && (
+          <details>
+            <summary>Update times, scope and evidence</summary>
+            <p>
+              Provider updated: {state.external.manifest.providerUpdated ?? 'Unknown'} · Local
+              refresh: {new Date(state.external.manifest.retrievedAt).toLocaleString()}
+            </p>
+            <p>
+              Snapshot {state.external.manifest.contentHash} · {state.external.manifest.scope.rank}{' '}
+              · {state.external.manifest.scope.window}
+            </p>
+            {state.external.manifest.warnings.map((w) => (
+              <p key={w}>{w}</p>
+            ))}
+          </details>
+        )}
+        <p className="fine-print">
+          Refresh weekly or after a patch. Failed refreshes retain the last good snapshot.
+        </p>
+      </section>
+      <RiotApiSettings provider={riotProvider} settings={state.settings} />
       <Appearance />
       <div className="settings-layout">
         <RiotScouting

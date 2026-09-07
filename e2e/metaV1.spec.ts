@@ -1,4 +1,11 @@
 import { test, expect } from '@playwright/test';
+// Direct-Riot acceptance keeps the broad external prior disabled.
+test.beforeEach(async ({ page }) => {
+  await page.route('**/data/external/current.json', (r) =>
+    r.fulfill({ status: 503, body: 'Unavailable' }),
+  );
+});
+
 import { execFileSync } from 'node:child_process';
 import type { MetaBundle } from '../src/services/discoveryRefresh';
 const metaFixture = async (count = 120, region = 'EUW1'): Promise<MetaBundle> =>
@@ -39,7 +46,7 @@ for (const width of [1440, 1000, 860])
     await page.getByRole('button', { name: 'Comps', exact: true }).click();
     await expect(page.getByText(/960 boards/)).toBeVisible();
     await expect(
-      page.locator('.library-metrics').filter({ hasText: 'play rate' }).first(),
+      page.locator('.library-metrics').filter({ hasText: 'Direct Share' }).first(),
     ).toBeVisible();
     await page.getByLabel('Sort comps').selectOption('popularity');
     await capture(page, { path: `artifacts/meta-v1/mature-${width}.png` });
@@ -56,6 +63,9 @@ for (const width of [1440, 1000, 860])
     await expect(page.getByLabel('Catalog windowDays')).toHaveValue('7');
     await page.getByLabel('Search comps, units, or traits').fill('Adaptors');
     await page.locator('.library-card').first().click();
+    await page
+      .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
+      .click();
     await expect(page.getByRole('button', { name: /Copy Team Code/ })).toBeEnabled();
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.getByRole('button', { name: /Copy Team Code/ }).click();
@@ -79,21 +89,11 @@ test('Meta refresh cancellation retains visible evidence and safe retry', async 
   await page.goto('/?riot-fixture=1');
   await page.locator('.plan-card').last().waitFor();
   await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
-  await page.evaluate(async () => {
-    const path = '/src/providers/riot.ts';
-    const { FixtureRiotProvider } = await import(/* @vite-ignore */ path);
-    const original = FixtureRiotProvider.prototype.completedMatch;
-    FixtureRiotProvider.prototype.completedMatch = async function (...args: unknown[]) {
-      await new Promise((r) => setTimeout(r, 300));
-      return original.apply(this, args);
-    };
-  });
   await page.getByRole('button', { name: 'Refresh meta & discovery', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Cancel meta refresh' })).toBeVisible();
-  await page.locator('.meta-progress').scrollIntoViewIfNeeded();
-  await capture(page, { path: 'artifacts/meta-v1/progress.png' });
   await page.getByRole('button', { name: 'Cancel meta refresh' }).click();
   await expect(page.getByText('Meta refresh cancelled. Cached evidence retained.')).toBeVisible();
+  await capture(page, { path: 'artifacts/meta-v1/cancelled.png' });
   await page.getByRole('button', { name: 'Refresh meta & discovery', exact: true }).click();
   await expect(page.getByText(/boards analyzed across/)).toBeVisible({ timeout: 15000 });
 });

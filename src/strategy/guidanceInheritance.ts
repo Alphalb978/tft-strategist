@@ -31,7 +31,7 @@ const inheritedFact = <T>(fact: StrategyFact<T>, parentFamilyId: string): Strate
   inheritedFrom: parentFamilyId,
 });
 
-function sparseGuidance(playbook: Playbook, data: StaticData): StrategyGuidance {
+export function sparseGuidance(playbook: Playbook, data: StaticData): StrategyGuidance {
   const targetFingerprint = strategyTargetFingerprint(
     playbook.set,
     playbook.target.capacity,

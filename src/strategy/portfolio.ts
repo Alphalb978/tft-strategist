@@ -10,9 +10,10 @@ export function portfolioInteractions(candidates: RecommendationCandidate[]) {
     for (let j = i + 1; j < candidates.length; j++) {
       const a = candidates[i].playbook,
         b = candidates[j].playbook;
-      const union = new Set([...a.family.core, ...b.family.core]);
-      shared +=
-        a.family.core.filter((id) => b.family.core.includes(id)).length / Math.max(1, union.size);
+      const aCore = a.family.core.length ? a.family.core : a.target.units.map((u) => u.championId);
+      const bCore = b.family.core.length ? b.family.core : b.target.units.map((u) => u.championId);
+      const union = new Set([...aCore, ...bCore]);
+      shared += aCore.filter((id) => bCore.includes(id)).length / Math.max(1, union.size);
       pivots += [
         ...a.pivots.filter((p) => p.destination === b.id),
         ...b.pivots.filter((p) => p.destination === a.id),

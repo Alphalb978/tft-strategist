@@ -8,6 +8,7 @@ import { Portrait } from '../components/Art';
 
 export function SmartCompBuilder({
   plan,
+  external,
   data,
   intelligence,
   game,
@@ -15,6 +16,7 @@ export function SmartCompBuilder({
   assets,
   onClose,
 }: {
+  external?: import('../domain/externalMeta').ExternalSnapshot | null;
   plan: Playbook;
   data: StaticData;
   intelligence?: IntelligenceModel;
@@ -144,6 +146,7 @@ export function SmartCompBuilder({
         onClick={() =>
           setBoards(
             optimizeBoards({
+              external,
               plan,
               data,
               intelligence,

@@ -1,3 +1,8 @@
+import { AdoptionMetric } from '../components/AdoptionMetric';
+import { compactCount, compactRank } from '../components/intelligenceDisplay';
+import { fusedForPlan, relatedExternal } from '../strategy/evidenceFusion';
+import type { ExternalSnapshot } from '../domain/externalMeta';
+import { externalStatus } from '../providers/externalMeta';
 import { familyRepresentation, familyTrend, metaCohortLabel } from '../strategy/metaCatalog';
 import { openRepository } from '../storage/repository';
 import type { MetaBundle } from '../services/discoveryRefresh';
@@ -38,6 +43,7 @@ export function filterAndSortComps(
   query: CompLibraryQuery,
   registry: CompRegistryEntry[] = [],
   discovery: DiscoveryDataset | null = null,
+  external?: ExternalSnapshot | null,
 ) {
   const stats = new Map(meta?.familyStats.map((value) => [value.familyId, value]) ?? []);
   const clusters = new Map(discovery?.clusters.map((c) => [c.id, c]) ?? []);
@@ -61,6 +67,24 @@ export function filterAndSortComps(
     const left = value(a);
     const right = value(b);
     const metric = (stat: typeof left, playbook: Playbook) => {
+      const fusion = fusedForPlan(playbook, external, data, new Date().toISOString());
+      if (fusion.externalWeight >= 30) {
+        switch (query.sort) {
+          case 'placement':
+          case 'strength':
+            return -(fusion.average ?? 8);
+          case 'top4':
+            return fusion.top4;
+          case 'wins':
+            return fusion.win;
+          case 'confidence':
+            return fusion.confidence;
+          case 'sample':
+            return relatedExternal(playbook, external)?.comp.stats.sample ?? null;
+          case 'popularity':
+            return relatedExternal(playbook, external)?.comp.stats.playRate ?? null;
+        }
+      }
       const cluster = clusters.get(entries.get(playbook.id)?.clusterId ?? '');
       if (!stat && cluster) {
         if (
@@ -128,6 +152,10 @@ export function filterAndSortComps(
     .filter((playbook) => {
       if (query.evidence === 'all') return true;
       const entry = entries.get(playbook.id);
+      if (query.evidence === 'External') return entry?.sourceKind === 'external';
+      if (query.evidence === 'Fused')
+        return Boolean(entry?.externalId && entry.sourceKind !== 'external');
+      if (query.evidence === 'Discovered') return entry?.sourceKind === 'discovered';
       if (query.evidence === 'Curated') return entry?.sourceKind === 'curated';
       return (entry?.lifecycle ?? playbook.evidence) === query.evidence;
     })
@@ -174,6 +202,7 @@ export function CompLibrary({
         query,
         state.registry,
         state.discovery,
+        state.external,
       ),
     [query, state],
   );
@@ -193,11 +222,30 @@ export function CompLibrary({
           <span>shown</span>
         </div>
       </div>
+      <section className="meta-catalog-scope" aria-label="External meta scope">
+        <strong>
+          MetaTFT · {compactCount(state.external?.manifest.population)} analyzed boards · broad
+          statistical prior
+        </strong>
+        <span>
+          {externalStatus(state.external, state.data)} ·{' '}
+          {compactRank(state.external?.manifest.scope.rank)} ·{' '}
+          {state.external?.manifest.scope.window} · Patch {state.external?.manifest.scope.patch}
+          {state.external?.manifest.scope.hotfix}
+        </span>
+        <small>
+          Updated {state.external?.manifest.providerUpdated ?? 'Unknown'} · Refreshed{' '}
+          {state.external
+            ? new Date(state.external.manifest.retrievedAt).toLocaleString()
+            : 'Never'}
+          . Manage in Data & settings.
+        </small>
+      </section>
       <div className="meta-catalog-scope">
         <strong>
           {state.meta
-            ? `${state.meta.sourceType === 'fixture' ? 'Fixture sample' : 'Riot self-collected'} · ${state.meta.platform} · ${metaCohortLabel(state.meta.rankCohort)}`
-            : 'No collected meta'}
+            ? `${state.meta.sourceType === 'fixture' ? 'Fixture sample' : 'Direct Riot verification'} · ${state.meta.platform} · ${metaCohortLabel(state.meta.rankCohort)}`
+            : 'Direct Riot · no collected sample'}
         </strong>
         {state.meta && (
           <span>
@@ -259,7 +307,7 @@ export function CompLibrary({
         </div>
         <small>
           Collect another region, rank or rolling window in Data & settings. Patch mapping
-          unavailable. Play rate is among classified boards; popularity sorting uses share of all
+          unavailable. Direct Share is among classified boards; popularity sorting uses share of all
           sampled boards; co-participant ranks are unverified.
         </small>
       </div>
@@ -283,6 +331,9 @@ export function CompLibrary({
             onChange={(event) => setQuery({ ...query, evidence: event.target.value })}
           >
             <option value="all">All sources & states</option>
+            <option value="Fused">Fused</option>
+            <option value="External">External Reference</option>
+            <option value="Discovered">Discovered</option>
             <option value="Curated">Curated</option>
             <option value="Variant">Variant</option>
             <option value="Emerging">Emerging</option>
@@ -318,18 +369,24 @@ export function CompLibrary({
             <option value="wins">Win rate</option>
             <option value="confidence">Confidence</option>
             <option value="sample">Sample size</option>
-            <option value="popularity">Popularity / board share</option>
+            <option value="popularity">Popularity (source share)</option>
             <option value="trend">Trend</option>
           </select>
         </label>
       </div>
-      {!state.meta && (
+      {!state.meta && !state.external && (
         <div className="meta-unavailable">
           Outcome statistics are unavailable. Curated playbooks are ready to explore.
         </div>
       )}
       <div className="library-grid expanded-library">
         {filtered.map((playbook) => {
+          const fused = fusedForPlan(
+            playbook,
+            state.external,
+            state.data,
+            new Date().toISOString(),
+          );
           const stat = stats.get(playbook.family.id);
           const entry = entries.get(playbook.id);
           const cluster = entry?.clusterId ? clusters.get(entry.clusterId) : undefined;
@@ -354,14 +411,39 @@ export function CompLibrary({
                       champion && (
                         <div key={unit.championId}>
                           <Portrait champion={champion} assets={state.assets} compact />
-                          <span>{champion.name}</span>
+                          <span>
+                            {champion.name}{' '}
+                            <small>{playbook.family.core.length ? unit.slot : ''}</small>
+                          </span>
                         </div>
                       )
                     );
                   })}
                 </div>
-                {(cluster && (cluster.lifecycle === 'Experimental' || cluster.stats.games < 20)) ||
-                (stat && stat.quality !== 'eligible') ? (
+                {fused.externalWeight >= 30 ? (
+                  <div className="library-metrics">
+                    <span>
+                      <b>{fused.average?.toFixed(2) ?? '—'}</b> avg
+                    </span>
+                    <span>
+                      <b>{fused.top4 == null ? '—' : percent(fused.top4)}</b> top 4
+                    </span>
+                    <span>
+                      <b>{fused.win == null ? '—' : percent(fused.win)}</b> win
+                    </span>
+                    <AdoptionMetric plan={playbook} state={state} />
+                    <span>
+                      {fused.confidence >= 0.75
+                        ? 'High'
+                        : fused.confidence >= 0.5
+                          ? 'Medium'
+                          : 'Limited'}{' '}
+                      evidence
+                    </span>
+                  </div>
+                ) : (cluster &&
+                    (cluster.lifecycle === 'Experimental' || cluster.stats.games < 20)) ||
+                  (stat && stat.quality !== 'eligible') ? (
                   <div className="library-metrics insufficient">
                     <strong>
                       {cluster?.stats.games ?? stat?.games}{' '}
@@ -369,6 +451,7 @@ export function CompLibrary({
                       Insufficient sample
                     </strong>
                     <span>Outcomes need more evidence</span>
+                    <AdoptionMetric plan={playbook} state={state} />
                   </div>
                 ) : cluster ? (
                   <div className="library-metrics">
@@ -384,25 +467,18 @@ export function CompLibrary({
                     <span>
                       <b>{percent(cluster.stats.wins.raw)}</b> win
                     </span>
-                    <span>
-                      <b>
-                        {state.discovery?.boardsAnalyzed
-                          ? percent(cluster.stats.games / state.discovery.boardsAnalyzed)
-                          : '—'}
-                      </b>{' '}
-                      of analyzed boards
-                    </span>
+                    <AdoptionMetric plan={playbook} state={state} />
                   </div>
                 ) : stat && state.meta ? (
                   <div
                     className="library-metrics"
-                    title={`Adjusted avg ${stat.shrunkAveragePlacement.toFixed(2)} · ${percent(stat.confidence)} confidence · Play rate confidence ${percent(familyRepresentation(stat, state.meta).confidence)} · Play rate denominator ${state.meta.classifiedBoards} classified boards`}
+                    title={`Adjusted avg ${stat.shrunkAveragePlacement.toFixed(2)} · ${percent(stat.confidence)} confidence · Direct Share confidence ${percent(familyRepresentation(stat, state.meta).confidence)} · Direct Share denominator ${state.meta.classifiedBoards} classified boards`}
                   >
                     <span>
                       <b>{stat.games}</b> games
                     </span>
                     <span>
-                      <b>{percent(familyRepresentation(stat, state.meta).rate)}</b> play rate
+                      <AdoptionMetric plan={playbook} state={state} />
                     </span>
                     <span>
                       <b>{stat.averagePlacement.toFixed(2)}</b> avg
@@ -420,14 +496,23 @@ export function CompLibrary({
                 )}
                 <small className="guidance-label">
                   {entry?.sourceKind === 'discovered'
-                    ? 'Partial / inherited guidance'
+                    ? 'Partial guide'
                     : playbook.strategy.coverage.supported === playbook.strategy.coverage.total
                       ? 'Full playbook'
-                      : 'Sourced playbook · partial coverage'}
+                      : 'Partial guide'}
                 </small>
                 <span className="badge">
-                  {entry?.sourceKind === 'discovered' ? 'Discovered' : 'Curated'} ·{' '}
-                  {entry?.lifecycle ?? playbook.evidence}
+                  {entry?.sourceKind === 'external'
+                    ? 'External Reference'
+                    : entry?.externalId
+                      ? 'Fused'
+                      : entry?.sourceKind === 'discovered'
+                        ? 'Discovered'
+                        : 'Curated'}{' '}
+                  ·{' '}
+                  {entry?.sourceKind === 'external'
+                    ? 'Partial guide'
+                    : (entry?.lifecycle ?? playbook.evidence)}
                 </span>
               </div>
               <ChevronRight />

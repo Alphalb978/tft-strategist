@@ -1,3 +1,7 @@
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import type { ExternalSnapshot } from '../domain/externalMeta';
+import { externalSnapshotSchema } from '../domain/externalMeta';
+import { validateExternal, externalHash } from '../providers/externalMeta';
 import type {
   AggregateMetaDataset,
   CompRegistryEntry,
@@ -44,6 +48,9 @@ import {
   upgradeLegacySelection,
 } from './planSession';
 export interface ApplicationState {
+  external?: ExternalSnapshot | null;
+  externalHistory?: ExternalSnapshot[];
+  externalNotice?: string;
   currentGame?: CurrentGameState;
   sessionKnowledge?: StaticData['knowledge'];
   data: StaticData;
@@ -66,6 +73,7 @@ export function createRecommendations(
   meta: AggregateMetaDataset | null = null,
   discovery: DiscoveryDataset | null = null,
   personal: PersonalProfile | null = null,
+  external: ExternalSnapshot | null = null,
 ) {
   const dataIssues = auditStaticData(data);
   if (dataIssues.length)
@@ -140,6 +148,7 @@ export function createRecommendations(
     data,
     usableDiscovery,
     intelligenceCurrent ? intelligence : undefined,
+    external,
   );
   const recommendationPlaybooks = registry
     .filter((entry) => entry.recommendationEligible)
@@ -154,6 +163,7 @@ export function createRecommendations(
         meta: usableMeta,
         discovery: usableDiscovery,
         personal: personal ?? undefined,
+        external,
       }),
     ),
     now,
@@ -173,6 +183,7 @@ export function rescoreRecommendations(
   state: ApplicationState,
   lobby?: LobbyPressure,
   now = new Date().toISOString(),
+  scenarioPressure?: string[],
 ) {
   return optimizePortfolio(
     state.registry
@@ -188,6 +199,8 @@ export function rescoreRecommendations(
           personal: state.personal ?? undefined,
           personalWeight: state.settings.personalWeight,
           currentGame: state.activeSession?.manualState.currentGame ?? state.currentGame,
+          external: state.external,
+          scenarioPressure,
         }),
       ),
     now,
@@ -251,7 +264,7 @@ export async function loadApplication(repository: Repository): Promise<Applicati
   const assets: Record<string, string> = assetResponse?.ok
     ? await assetResponse.json().catch(() => ({}))
     : {};
-  const result = createRecommendations(
+  let result = createRecommendations(
     data,
     settings,
     new Date().toISOString(),
@@ -266,6 +279,54 @@ export async function loadApplication(repository: Repository): Promise<Applicati
         `knowledge:${activeSession.snapshot.knowledgeFingerprint}`,
       )) ?? undefined)
     : undefined;
+  let external: ExternalSnapshot | null = null;
+  let externalNotice: string | undefined;
+  try {
+    const cachedExternal = await repository.get<ExternalSnapshot>('external-meta:v1');
+    const response = await fetch('/data/external/current.json').catch(() => null);
+    const incoming = isTauri()
+      ? ((await invoke<string>('external_meta_snapshot')
+          .then(JSON.parse)
+          .catch(() => null)) ?? (response?.ok ? await response.json().catch(() => null) : null))
+      : response?.ok
+        ? await response.json().catch(() => null)
+        : null;
+    external = validateExternal(incoming ?? cachedExternal, data);
+    await repository.set('external-meta:v1', external);
+  } catch (error) {
+    externalNotice = String(error).includes('Wrong set or patch')
+      ? 'External meta snapshot incompatible with current patch. Refresh required.'
+      : 'External refresh unavailable or invalid. Using compatible cached evidence when available.';
+    try {
+      external = validateExternal(await repository.get('external-meta:v1'), data);
+    } catch {
+      /* explicit offline fallback */
+    }
+  }
+  result = createRecommendations(
+    data,
+    settings,
+    new Date().toISOString(),
+    result.meta,
+    result.discovery,
+    result.personal,
+    external,
+  );
+  let externalHistory: ExternalSnapshot[] = [];
+  try {
+    const history: unknown = isTauri()
+      ? await invoke<string>('external_meta_history').then(JSON.parse)
+      : await fetch('/data/external/history.json').then((r) => r.json());
+    if (Array.isArray(history))
+      externalHistory = history.slice(-12).flatMap((raw) => {
+        const parsed = externalSnapshotSchema.safeParse(raw);
+        return parsed.success && externalHash(parsed.data) === parsed.data.manifest.contentHash
+          ? [parsed.data]
+          : [];
+      });
+  } catch {
+    /* Trend unavailable; current evidence remains usable. */
+  }
   const baseState: ApplicationState = {
     data,
     ...result,
@@ -308,6 +369,9 @@ export async function loadApplication(repository: Repository): Promise<Applicati
     activeSession,
     assets,
     sessionKnowledge,
+    external,
+    externalHistory,
+    externalNotice,
     currentGame: activeSession?.manualState.currentGame ?? currentGame,
   };
 }
@@ -350,6 +414,7 @@ export async function refreshApplication(
     meta,
     discovery,
     current.personal,
+    current.external,
   );
   if (!result.playbooks.length)
     throw new Error('Refreshed roster failed playbook validation; previous cache retained.');
@@ -379,6 +444,8 @@ export async function lockPlanSession(
   if (state.currentGame) session.manualState.currentGame = structuredClone(state.currentGame);
   if (state.data.knowledge)
     await repository.set(`knowledge:${state.data.knowledge.fingerprint}`, state.data.knowledge);
+  if (state.external)
+    await repository.set(`external:${state.external.manifest.contentHash}`, state.external);
   await repository.createPlanSession(session);
   return session;
 }
@@ -408,6 +475,8 @@ export async function switchPlanSession(
     await repository.set(`knowledge:${state.data.knowledge.fingerprint}`, state.data.knowledge);
   if (current.manualState.currentGame)
     next.manualState.currentGame = structuredClone(current.manualState.currentGame);
+  if (state.external)
+    await repository.set(`external:${state.external.manifest.contentHash}`, state.external);
   await repository.replacePlanSession(previous, next);
   return next;
 }
