@@ -2,6 +2,7 @@ import { ArrowRight, Layers3, Plus, Radio, ShieldQuestion, Trash2 } from 'lucide
 import { useMemo, useState } from 'react';
 import type {
   LobbyPressure,
+  LobbyScanState,
   RecommendationCandidate,
   RecommendationPortfolio,
 } from '../domain/models';
@@ -24,7 +25,15 @@ function supportedRole(
   index: number,
   candidates: RecommendationCandidate[],
   primary: RecommendationPortfolio['plans'],
+  scanState?: LobbyScanState,
 ) {
+  if (scanState?.stage === 'scanning' || scanState?.isProvisional) {
+    if (index === 0) return 'PROVISIONAL ROUTE';
+    return 'PROVISIONAL OPTION';
+  }
+  if (scanState?.stage === 'partial-complete' && index === 0) {
+    return `PARTIAL — ${scanState.opponentsAnalyzed}/${scanState.opponentsTotal} ROUTE`;
+  }
   const home = candidate.home;
   if (!home) return primary[index]?.role ?? 'Portfolio route';
   const bestTop4 = candidates
@@ -70,7 +79,13 @@ function exclusionReason(candidate: RecommendationCandidate, portfolio: Recommen
   return 'Outside primary three after portfolio optimization.';
 }
 
-function ScoreDecomposition({ candidate }: { candidate: RecommendationCandidate }) {
+function ScoreDecomposition({
+  candidate,
+  isProvisional,
+}: {
+  candidate: RecommendationCandidate;
+  isProvisional?: boolean;
+}) {
   const score = candidate.home;
   if (!score) return null;
   return (
@@ -82,10 +97,10 @@ function ScoreDecomposition({ candidate }: { candidate: RecommendationCandidate 
         Low-pick edge <strong>{signed(score.lowPickEdge)}</strong>
       </span>
       <span>
-        Lobby <strong>{signed(score.lobbyAdjustment)}</strong>
+        Lobby{isProvisional ? ' (prov.)' : ''} <strong>{signed(score.lobbyAdjustment)}</strong>
       </span>
       <span className="final">
-        Final Safety <strong>{score.finalSafety.toFixed(1)}</strong>
+        {isProvisional ? 'Provisional' : 'Final Safety'} <strong>{score.finalSafety.toFixed(1)}</strong>
       </span>
     </div>
   );
@@ -122,6 +137,7 @@ export function Home({
   onData,
   onScout,
   lobby,
+  scanState,
   onClearLobby = () => {},
 }: {
   state: ApplicationState;
@@ -132,9 +148,38 @@ export function Home({
   onData: () => void;
   onScout: () => void;
   lobby: LobbyPressure | null;
+  scanState?: LobbyScanState;
   onClearLobby?: () => void;
 }) {
   const { data, assets } = state;
+  const activeScan: LobbyScanState = useMemo(() => {
+    if (scanState) return scanState;
+    if (lobby) {
+      return {
+        stage: lobby.profilesCompleted >= 7 ? 'complete' : 'partial-complete',
+        opponentsAnalyzed: lobby.profilesCompleted,
+        opponentsTotal: lobby.expectedOpponents,
+        matchesProcessed: lobby.telemetry.uniqueMatchDetailsFetched + lobby.telemetry.cacheHits,
+        relevantGamesAvailable: lobby.relevantGamesAvailable,
+        relevantGamesTarget: lobby.relevantGamesTarget,
+        coverage: lobby.coverage,
+        lobby,
+        isProvisional: false,
+      };
+    }
+    return {
+      stage: 'idle',
+      opponentsAnalyzed: 0,
+      opponentsTotal: 0,
+      matchesProcessed: 0,
+      relevantGamesAvailable: 0,
+      relevantGamesTarget: 0,
+      coverage: 0,
+      lobby: null,
+      isProvisional: false,
+    };
+  }, [scanState, lobby]);
+
   const alternatives = useMemo(
     () => selectAlternativeCandidates(candidates, portfolio, 5),
     [candidates, portfolio],
@@ -158,22 +203,55 @@ export function Home({
           <h1>Your plans</h1>
           <p>Goal: Top 4 + low contest</p>
         </div>
-        <button className="secondary" onClick={onScout}>
-          <Radio size={16} /> Scan current lobby
+        <button
+          className="secondary"
+          onClick={onScout}
+          disabled={activeScan.stage === 'scanning'}
+          aria-label="Scan current lobby"
+        >
+          <Radio size={16} />
+          {activeScan.stage === 'scanning' ? 'Analyzing lobby…' : 'Scan current lobby'}
         </button>
       </div>
 
       <section className="home-lobby-strip" aria-label="Active lobby status">
         <div>
           <Radio size={15} />
-          <strong>Lobby</strong>
+          <strong>
+            {activeScan.stage === 'scanning'
+              ? `ANALYZING — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
+              : activeScan.stage === 'complete'
+                ? `LOBBY READY — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
+                : activeScan.stage === 'partial-complete'
+                  ? activeScan.opponentsAnalyzed >= 6
+                    ? `PARTIAL — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
+                    : 'PARTIAL LOBBY DATA'
+                  : activeScan.stage === 'failed'
+                    ? 'LOBBY SCAN FAILED'
+                    : 'NO CURRENT LOBBY'}
+          </strong>
           <span>
-            {lobby
-              ? `${lobby.profilesCompleted}/${lobby.expectedOpponents} scouted · ${Math.round(lobby.coverage * 100)}% evidence`
-              : 'Not scanned · neutral contest adjustment'}
+            {activeScan.stage === 'scanning'
+              ? `${activeScan.opponentsAnalyzed} / ${activeScan.opponentsTotal} opponents · ${activeScan.matchesProcessed} historical matches processed`
+              : activeScan.stage === 'complete'
+                ? `${activeScan.relevantGamesAvailable} / ${activeScan.relevantGamesTarget} relevant games · ${Math.round(activeScan.coverage * 100)}% coverage`
+                : activeScan.stage === 'partial-complete'
+                  ? activeScan.opponentsAnalyzed >= 6
+                    ? 'Lobby adjustment confidence reduced'
+                    : `${activeScan.opponentsAnalyzed} / ${activeScan.opponentsTotal} opponents analyzed · Ranking confidence incomplete`
+                  : activeScan.stage === 'not-in-game'
+                    ? `${activeScan.reason ?? 'No active TFT game detected'} · neutral contest adjustment`
+                    : activeScan.stage === 'failed'
+                      ? `${activeScan.error ?? 'Scouting unavailable'} · neutral contest adjustment`
+                      : 'Not scanned · neutral contest adjustment'}
           </span>
         </div>
-        {lobby && (
+        {activeScan.stage === 'scanning' && (
+          <strong className="scan-impact provisional">
+            Recommendations provisional — wait before locking a route
+          </strong>
+        )}
+        {activeScan.lobby && activeScan.stage !== 'scanning' && (
           <>
             <strong className="scan-impact">
               {orderChanged
@@ -222,10 +300,13 @@ export function Home({
                 <Art url={hero.splash} alt={`${hero.name} · Set 18 artwork`} assets={assets} />
                 <div className="art-shade" />
                 <span className="rank">0{index + 1}</span>
+                {(activeScan.stage === 'scanning' || activeScan.isProvisional) && (
+                  <span className="provisional-tag">PROVISIONAL</span>
+                )}
               </div>
               <div className="plan-identity">
                 <div className="plan-role">
-                  {supportedRole(c, index, candidates, portfolio.plans)}
+                  {supportedRole(c, index, candidates, portfolio.plans, activeScan)}
                   <span>{p.features.style}</span>
                 </div>
                 <h2>{p.title}</h2>
@@ -249,14 +330,21 @@ export function Home({
                   {c.home?.finalSafety.toFixed(1) ?? c.score}
                   <small>/100</small>
                 </strong>
-                <span>Final Safety</span>
+                <span>
+                  {activeScan.stage === 'scanning' || activeScan.isProvisional
+                    ? 'Provisional Safety'
+                    : 'Final Safety'}
+                </span>
                 <b>{c.confidence.level} confidence</b>
-                {lobby && prior && (
+                {activeScan.lobby && prior && (
                   <small className="score-delta">{signed(c.score - prior.score)} vs no lobby</small>
                 )}
               </div>
               <div className="plan-outcomes home-score-panel">
-                <ScoreDecomposition candidate={c} />
+                <ScoreDecomposition
+                  candidate={c}
+                  isProvisional={activeScan.stage === 'scanning' || activeScan.isProvisional}
+                />
                 <OutcomeLine candidate={c} />
               </div>
               <div className="plan-decision">

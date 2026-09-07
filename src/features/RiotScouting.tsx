@@ -9,7 +9,14 @@ import {
   TriangleAlert,
   Users,
 } from 'lucide-react';
-import type { LobbyPressure, RiotIdentity, StaticData } from '../domain/models';
+import type { LobbyPressure, LobbyScanState, RiotIdentity, StaticData } from '../domain/models';
+import {
+  completeScan,
+  failScan,
+  notInGameScan,
+  startScan,
+  updateScanProgress,
+} from '../services/lobbyScan';
 import {
   RiotProviderError,
   riotStatusLabel,
@@ -51,6 +58,8 @@ export function RiotScouting({
   fixturePreview,
   onSave,
   onLobby,
+  scanState,
+  onScanStateChange,
 }: {
   data: StaticData;
   assets: Record<string, string>;
@@ -60,6 +69,8 @@ export function RiotScouting({
   fixturePreview: boolean;
   onSave: (settings: Settings) => void;
   onLobby: (lobby: LobbyPressure | null) => void;
+  scanState?: LobbyScanState;
+  onScanStateChange?: (state: LobbyScanState) => void;
 }) {
   const [status, setStatus] = useState<RiotConnectionStatus>({
     keyDetected: false,
@@ -152,13 +163,28 @@ export function RiotScouting({
       staticSourceVersion: data.version.sourceVersion,
       timeoutMs: 8_000,
       requestedOpponents: requested,
+      onProgress: (prog) => {
+        onScanStateChange?.(updateScanProgress(scanState ?? startScan(), prog));
+        setMessage(
+          `Scouting opponents: ${prog.opponentsAnalyzed}/${prog.opponentsTotal} analyzed (${prog.matchesProcessed} matches)…`,
+        );
+      },
       onWarmResult: (warm) => {
         setResult(warm);
-        onLobby(warm);
+        // Do not call onLobby(warm) here; provisional cached results must not look like final recommendations.
       },
     });
     setResult(final);
-    onLobby(final);
+    const completed = completeScan(final);
+    onScanStateChange?.(completed);
+    if (
+      completed.stage === 'complete' ||
+      (completed.stage === 'partial-complete' && completed.opponentsAnalyzed >= 6)
+    ) {
+      onLobby(final);
+    } else {
+      onLobby(null);
+    }
     setMessage(
       final.state === 'complete'
         ? 'Opponent history refresh completed.'
@@ -210,6 +236,7 @@ export function RiotScouting({
     // profiles remain in HistoryStore and may be reused only if a fresh current lobby succeeds.
     setResult(null);
     onLobby(null);
+    onScanStateChange?.(startScan());
     setOrigin('');
     setWorking('discovery');
     setLobbyStatus('Checking');
@@ -224,16 +251,19 @@ export function RiotScouting({
       if (!discovery.ok) {
         setDiscoveryDiagnostics(discovery.diagnostics);
         setMessage(discovery.error);
-        setLobbyStatus(
+        const notInGame =
           discovery.diagnostics.gameflow === 'no-tft-session' ||
-            discovery.diagnostics.gameflow === 'no-active-tft-session' ||
-            discovery.diagnostics.spectator === '404'
+          discovery.diagnostics.gameflow === 'no-active-tft-session' ||
+          discovery.diagnostics.spectator === '404';
+        setLobbyStatus(
+          notInGame
             ? 'Not in game'
             : discovery.diagnostics.spectator === 'unsupported' &&
                 discovery.diagnostics.leagueClient === 'unavailable'
               ? 'Unsupported'
               : 'Unavailable',
         );
+        onScanStateChange?.(notInGame ? notInGameScan(discovery.error) : failScan(discovery.error));
         return;
       }
       setLobbyStatus('Available');
@@ -250,6 +280,7 @@ export function RiotScouting({
       await scanDiscoveredLobby(discovery.value, runScan);
     } catch (error) {
       setLobbyStatus('Unavailable');
+      onScanStateChange?.(failScan(error instanceof Error ? error.message : 'Lobby scan failed'));
       setMessage(
         (error instanceof RiotProviderError
           ? `${error.message} `

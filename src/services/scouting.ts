@@ -407,6 +407,12 @@ export interface ScoutOptions {
   routing?: string;
   requestedOpponents?: number;
   onWarmResult?: (result: LobbyPressure) => void;
+  onProgress?: (progress: {
+    opponentsAnalyzed: number;
+    opponentsTotal: number;
+    matchesProcessed: number;
+    message?: string;
+  }) => void;
 }
 
 type PersonState = {
@@ -533,6 +539,12 @@ export async function scanLobby(
     });
   const matches = new Map<string, CompletedMatch>();
   const cachedProfiles = new Map<string, OpponentProfile>();
+  options.onProgress?.({
+    opponentsAnalyzed: 0,
+    opponentsTotal: people.length,
+    matchesProcessed: 0,
+    message: 'Checking cached opponent evidence…',
+  });
   try {
     for (const identity of people) {
       const stored = await store.getProfile(
@@ -553,6 +565,12 @@ export async function scanLobby(
       }
     }
     if (cachedProfiles.size) {
+      options.onProgress?.({
+        opponentsAnalyzed: cachedProfiles.size,
+        opponentsTotal: people.length,
+        matchesProcessed: 0,
+        message: 'Loaded cached profiles…',
+      });
       options.onWarmResult?.(
         makeLobbyResult(
           people,
@@ -618,6 +636,12 @@ export async function scanLobby(
     };
 
     await loadDetails();
+    options.onProgress?.({
+      opponentsAnalyzed: cachedProfiles.size,
+      opponentsTotal: people.length,
+      matchesProcessed: matches.size,
+      message: `Processed ${matches.size} historical matches…`,
+    });
     for (
       let round = 0;
       round < Math.ceil(MAX_HISTORY_IDS / PAGE_SIZE) && !signal.aborted;
@@ -674,6 +698,12 @@ export async function scanLobby(
         signal,
       );
       await loadDetails();
+      options.onProgress?.({
+        opponentsAnalyzed: cachedProfiles.size,
+        opponentsTotal: people.length,
+        matchesProcessed: matches.size,
+        message: `Processed ${matches.size} historical matches…`,
+      });
     }
 
     const profiles: OpponentProfile[] = [];
@@ -699,6 +729,11 @@ export async function scanLobby(
       profiles.push(profile);
       if (derived.relevantGames)
         await store.putProfile(derived, fingerprint(derived.sourceMatchIds));
+      options.onProgress?.({
+        opponentsAnalyzed: profiles.length,
+        opponentsTotal: people.length,
+        matchesProcessed: matches.size,
+      });
     }
     if (signal.aborted)
       errors.push('Time budget reached; cached and partial results were retained.');

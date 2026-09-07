@@ -2437,6 +2437,24 @@ footer button {
 .scan-impact {
   color: var(--accent);
 }
+.home-lobby-strip .scan-impact.provisional {
+  color: var(--warning, #f59e0b);
+  font-weight: 600;
+}
+.provisional-tag {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #fff;
+  background: color-mix(in srgb, var(--warning, #d97706) 80%, #000);
+  border: 1px solid var(--warning, #f59e0b);
+  border-radius: 4px;
+  z-index: 2;
+}
 .home-lobby-strip span {
   color: var(--muted);
 }

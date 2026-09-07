@@ -30,8 +30,8 @@ export const DEFAULT_HOME_RECOMMENDATION_CONFIG: HomeRecommendationModelConfig =
   maxLowPickBonus: 6,
   maxPopularityPenalty: 3,
   maxCleanLobbyBonus: 4,
-  maxMediumContestPenalty: 10,
-  maxHighContestPenalty: 20,
+  maxMediumContestPenalty: 15,
+  maxHighContestPenalty: 30,
   lobbyCoverageExponent: 1,
 };
 
@@ -67,11 +67,11 @@ export function normalizeHomeRecommendationConfig(
     value?.maxMediumContestPenalty,
     defaults.maxMediumContestPenalty,
     0,
-    25,
+    30,
   );
   const highContestPenalty = Math.max(
     mediumContestPenalty,
-    finite(value?.maxHighContestPenalty, defaults.maxHighContestPenalty, 0, 40),
+    finite(value?.maxHighContestPenalty, defaults.maxHighContestPenalty, 0, 50),
   );
   return {
     top4Weight: weights[0],

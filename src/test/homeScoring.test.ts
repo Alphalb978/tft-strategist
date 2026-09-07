@@ -299,9 +299,9 @@ describe('Contest Edge v1 lobby adjustment', () => {
   it('is asymmetric, neutral without evidence, and bounded by partial coverage', () => {
     expect(lobbyAdjustment(contest(null, 0, true), config)).toBe(0);
     expect(lobbyAdjustment(contest(0, 1), config)).toBe(4);
-    expect(lobbyAdjustment(contest(0.5, 1), config)).toBe(-10);
-    expect(lobbyAdjustment(contest(0.9, 1), config)).toBe(-18);
-    expect(lobbyAdjustment(contest(0.9, 0.69), config)).toBe(-12.4);
+    expect(lobbyAdjustment(contest(0.5, 1), config)).toBe(-15);
+    expect(lobbyAdjustment(contest(0.9, 1), config)).toBe(-27);
+    expect(lobbyAdjustment(contest(0.9, 0.69), config)).toBe(-18.6);
     expect(Math.abs(lobbyAdjustment(contest(0.9, 0.69), config))).toBeLessThan(
       Math.abs(lobbyAdjustment(contest(0.9, 1), config)),
     );

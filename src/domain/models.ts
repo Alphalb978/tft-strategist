@@ -970,6 +970,34 @@ export interface LobbyPressure {
   fetchedAt: string;
   errors: string[];
 }
+export type LobbyScanStage =
+  | 'idle'
+  | 'scanning'
+  | 'complete'
+  | 'partial-complete'
+  | 'not-in-game'
+  | 'failed';
+
+export interface LobbyScanProgress {
+  opponentsAnalyzed: number;
+  opponentsTotal: number;
+  matchesProcessed: number;
+  message?: string;
+}
+
+export interface LobbyScanState {
+  stage: LobbyScanStage;
+  opponentsAnalyzed: number;
+  opponentsTotal: number;
+  matchesProcessed: number;
+  relevantGamesAvailable: number;
+  relevantGamesTarget: number;
+  coverage: number;
+  lobby: LobbyPressure | null;
+  error?: string;
+  reason?: string;
+  isProvisional: boolean;
+}
 export interface PersonalProfile {
   schemaVersion?: 1;
   modelVersion?: string;

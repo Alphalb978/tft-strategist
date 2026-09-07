@@ -36,7 +36,18 @@ const Playbook = lazy(() =>
 const DataSettings = lazy(() =>
   import('../features/DataSettings').then((module) => ({ default: module.DataSettings })),
 );
-import type { LobbyPressure } from '../domain/models';
+import type { LobbyPressure, LobbyScanState } from '../domain/models';
+import {
+  createIdleScanState,
+  startScan,
+  updateScanProgress,
+  completeScan,
+  notInGameScan,
+  failScan,
+} from '../services/lobbyScan';
+import { discoverCurrentLobby, scanDiscoveredLobby } from '../services/currentLobby';
+import { scanLobby } from '../services/scouting';
+import { PREVIEW_OWN_RIOT_ID } from '../providers/riotPreview';
 import { NativeRiotProvider } from '../providers/riot';
 import { createRiotPreviewProvider } from '../providers/riotPreview';
 import { openHistoryStore, type HistoryStore } from '../storage/history';
@@ -63,7 +74,8 @@ export function App() {
     [metaRefreshing, setMetaRefreshing] = useState(false),
     [attempt, setAttempt] = useState(0),
     [historyStore, setHistoryStore] = useState<HistoryStore | null>(null),
-    [lobby, setLobby] = useState<LobbyPressure | null>(null);
+    [lobby, setLobby] = useState<LobbyPressure | null>(null),
+    [scanState, setScanState] = useState<LobbyScanState>(createIdleScanState());
   const repository = useRef<Repository | null>(null),
     main = useRef<HTMLElement | null>(null);
   const operation = useRef(false);
@@ -190,6 +202,7 @@ export function App() {
     try {
       setState(await refreshApplication(state, repository.current));
       setLobby(null);
+      setScanState(createIdleScanState());
       setToast('Static source refreshed. Combat-value parity remains known stale.');
     } catch {
       setToast('Refresh unavailable. Your previous data and plans are still available.');
@@ -218,8 +231,10 @@ export function App() {
       if (
         settings.historyWindow !== state.settings.historyWindow ||
         settings.riotPlatform !== state.settings.riotPlatform
-      )
+      ) {
         setLobby(null);
+        setScanState(createIdleScanState());
+      }
       setToast('Settings saved locally.');
     } catch {
       setToast('Settings could not be saved. Your previous settings are unchanged.');
@@ -438,6 +453,79 @@ export function App() {
       setToast('Current game could not be saved.');
     }
   };
+  useEffect(() => {
+    const handleClear = () => {
+      setLobby(null);
+      setScanState(createIdleScanState());
+    };
+    window.addEventListener('strategist-clear-lobby', handleClear);
+    return () => window.removeEventListener('strategist-clear-lobby', handleClear);
+  }, []);
+
+  const startLobbyScan = async () => {
+    if (!state || !riotProvider || !historyStore || scanState.stage === 'scanning') return;
+    if (!state.settings.riotId && !fixturePreview) {
+      navigate('data');
+      return;
+    }
+    setLobby(null);
+    window.dispatchEvent(new Event('strategist-clear-lobby'));
+    setScanState(startScan());
+    try {
+      const discovery = await discoverCurrentLobby(
+        riotProvider,
+        historyStore,
+        fixturePreview ? PREVIEW_OWN_RIOT_ID : state.settings.riotId,
+        state.settings.riotPlatform,
+      );
+      if (!discovery.ok) {
+        const notInGame =
+          discovery.diagnostics.gameflow === 'no-tft-session' ||
+          discovery.diagnostics.gameflow === 'no-active-tft-session' ||
+          discovery.diagnostics.spectator === '404';
+        if (notInGame) {
+          setScanState(notInGameScan(discovery.error));
+        } else {
+          setScanState(failScan(discovery.error));
+        }
+        return;
+      }
+      const finalLobby = await scanDiscoveredLobby(discovery.value, async (identities, requested) => {
+        return scanLobby(identities, riotProvider, historyStore, {
+          set: state.data.version.set,
+          patch: state.data.version.patch,
+          now: new Date().toISOString(),
+          historyWindow: state.settings.historyWindow,
+          currentUnitIds: state.data.champions.filter((unit) => unit.boardEligible).map((unit) => unit.id),
+          copyEligibleUnitIds: new Set(
+            state.data.champions
+              .filter((unit) => unit.boardEligible && unit.shopStatus === 'pool')
+              .map((unit) => unit.id),
+          ),
+          staticSourceVersion: state.data.version.sourceVersion,
+          timeoutMs: 8_000,
+          requestedOpponents: requested,
+          onProgress: (prog) => {
+            setScanState((cur) => updateScanProgress(cur, prog));
+          },
+        });
+      });
+      const completed = completeScan(finalLobby);
+      setScanState(completed);
+      if (
+        completed.stage === 'complete' ||
+        (completed.stage === 'partial-complete' && completed.opponentsAnalyzed >= 6)
+      ) {
+        setLobby(finalLobby);
+      } else {
+        setLobby(null);
+      }
+    } catch (err) {
+      setScanState(failScan(err instanceof Error ? err.message : 'Lobby scan failed'));
+      setLobby(null);
+    }
+  };
+
   const liveHome = useMemo(() => {
     if (!state) return null;
     return rescoreHomeRecommendations(state, lobby ?? undefined);
@@ -648,10 +736,12 @@ export function App() {
                     baselineCandidates={state.homeCandidates}
                     onOpen={open}
                     onData={() => navigate('data')}
-                    onScout={() => navigate('scout')}
+                    onScout={startLobbyScan}
                     lobby={lobby}
+                    scanState={scanState}
                     onClearLobby={() => {
                       setLobby(null);
+                      setScanState(createIdleScanState());
                       window.dispatchEvent(new Event('strategist-clear-lobby'));
                     }}
                   />
@@ -673,6 +763,8 @@ export function App() {
                       fixturePreview={fixturePreview}
                       onSave={saveSettings}
                       onLobby={setLobby}
+                      scanState={scanState}
+                      onScanStateChange={setScanState}
                     />
                   </>
                 ) : page === 'data' && riotProvider && historyStore ? (
