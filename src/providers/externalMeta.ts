@@ -26,6 +26,16 @@ export function entityMapper(entities: { id: string; name: string }[]) {
     return ids?.size === 1 ? [...ids][0] : null;
   };
 }
+export function hotfixParity(
+  internal: string | null | undefined,
+  external: string | null | undefined,
+) {
+  return internal == null || external == null
+    ? 'unverified'
+    : internal === external
+      ? 'compatible'
+      : 'incompatible';
+}
 export function externalStatus(
   snapshot: ExternalSnapshot | null | undefined,
   data: StaticData,
@@ -33,6 +43,8 @@ export function externalStatus(
 ) {
   if (!snapshot) return 'External evidence unavailable';
   if (
+    hotfixParity(data.knowledge?.balanceHotfix, snapshot.manifest.scope.hotfix) ===
+      'incompatible' ||
     snapshot.manifest.scope.set !== data.version.set ||
     !snapshot.manifest.scope.patch ||
     snapshot.manifest.scope.patch !== (data.knowledge?.balancePatch ?? data.version.patch)
@@ -40,7 +52,7 @@ export function externalStatus(
     return 'External meta snapshot incompatible with current patch. Refresh required.';
   return Date.parse(now) - Date.parse(snapshot.manifest.retrievedAt) > 7 * 86400000
     ? 'Stale external snapshot · reduced confidence'
-    : 'Compatible external snapshot';
+    : `Compatible external snapshot${hotfixParity(data.knowledge?.balanceHotfix, snapshot.manifest.scope.hotfix) === 'unverified' ? ' · Hotfix parity unverified' : ''}`;
 }
 export function validateExternal(
   input: unknown,

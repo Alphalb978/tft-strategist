@@ -1,3 +1,4 @@
+import { globalEntityIndex } from '../strategy/entityIntelligence';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { ExternalSnapshot } from '../domain/externalMeta';
 import { externalSnapshotSchema } from '../domain/externalMeta';
@@ -168,8 +169,10 @@ export function createRecommendations(
     ),
     now,
   );
+  const catalog = registry.map((entry) => entry.playbook);
+  globalEntityIndex(data, intelligence, catalog);
   return {
-    playbooks: registry.map((entry) => entry.playbook),
+    playbooks: catalog,
     portfolio,
     notices,
     meta: usableMeta,

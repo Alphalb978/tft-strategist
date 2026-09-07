@@ -1,3 +1,4 @@
+import { hotfixParity } from '../providers/externalMeta';
 import type {
   ExternalComp,
   ExternalScope,
@@ -5,7 +6,7 @@ import type {
   ExternalStats,
 } from '../domain/externalMeta';
 import type { Playbook, StaticData } from '../domain/models';
-export const FUSION_VERSION = 'm12-fusion-v1';
+export const FUSION_VERSION = 'm12-fusion-v2';
 export function matchExternal(units: string[], core: string[], comp: ExternalComp) {
   const union = new Set([...units, ...comp.units]);
   const overlap = units.filter((id) => comp.units.includes(id)).length / Math.max(1, union.size);
@@ -62,8 +63,10 @@ export function fuseEvidence(
   patch: string,
   now: string,
   relation = 1,
+  internalHotfix?: string | null,
 ): FusedEstimate {
-  const compatible = scope?.patch === patch && scope?.queue === 1100;
+  const parity = hotfixParity(internalHotfix, scope?.hotfix);
+  const compatible = scope?.patch === patch && scope?.queue === 1100 && parity !== 'incompatible';
   const age = retrievedAt
     ? Math.max(0, (Date.parse(now) - Date.parse(retrievedAt)) / 86400000)
     : Infinity;
@@ -71,7 +74,12 @@ export function fuseEvidence(
   // Discount correlated public aggregate boards and overlapping populations; never sum them as independent games.
   const ew =
     compatible && external?.average !== null
-      ? (external?.sample ?? 0) * 0.25 * Math.exp(-age / 7) * (knownScope ? 1 : 0.1) * relation
+      ? (external?.sample ?? 0) *
+        0.25 *
+        Math.exp(-age / 7) *
+        (knownScope ? 1 : 0.1) *
+        relation *
+        (parity === 'unverified' ? 0.7 : 1)
       : 0;
   const iw = internal?.patch === patch && internal.average !== null ? internal.effectiveSample : 0;
   const estimate = (key: 'average' | 'top4' | 'win') => {
@@ -93,9 +101,16 @@ export function fuseEvidence(
     externalWeight: ew,
     internalWeight: iw,
     confidence:
-      Math.min(knownScope ? 0.9 : 0.45, (ew + iw) / (ew + iw + 150)) * (disagreement ? 0.7 : 1),
+      Math.min(knownScope ? 0.9 : 0.45, (ew + iw) / (ew + iw + 150)) *
+      (disagreement ? 0.7 : 1) *
+      (ew > 0 && parity === 'unverified' ? 0.8 : 1),
     disagreement,
     sources: [
+      parity === 'unverified'
+        ? 'Hotfix parity unverified · external weight and confidence discounted'
+        : parity === 'incompatible'
+          ? 'Hotfix mismatch · external evidence excluded'
+          : 'Verified matching hotfix',
       ew
         ? `MetaTFT · ${external?.sample} provider boards · ${ew.toFixed(0)} discounted weight · ${scope?.rank ?? 'unknown rank'} · ${scope?.window ?? 'unknown window'} · ${scope?.patch}${scope?.hotfix ?? ''}`
         : 'Compatible external outcome evidence unavailable',
@@ -122,6 +137,7 @@ export function fusedForPlan(
     data.knowledge?.balancePatch ?? data.version.patch,
     now,
     relation?.relation === 'strong' ? 1 : 0.5,
+    data.knowledge?.balanceHotfix,
   );
 }
 export function externalTrend(older: ExternalSnapshot, newer: ExternalSnapshot, id: string) {

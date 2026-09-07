@@ -31,6 +31,7 @@ export const knowledgeSchema = z.object({
   set: z.number().int(),
   identity: z.string(),
   balancePatch: z.string().nullable(),
+  balanceHotfix: z.string().nullable().optional(),
   fingerprint: z.string(),
   fetchedAt: z.string(),
   source: z.string(),

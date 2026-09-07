@@ -216,10 +216,11 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
     };
   });
   const contest = contestFor(p, context.lobby);
-  const scenarioOverlap = context.scenarioPressure
-    ? p.family.core.filter((id) => context.scenarioPressure!.includes(id)).length /
-      Math.max(1, p.family.core.length)
-    : null;
+  const scenarioOverlap =
+    context.scenarioPressure && p.family.core.length
+      ? p.family.core.filter((id) => context.scenarioPressure!.includes(id)).length /
+        Math.max(1, p.family.core.length)
+      : null;
   const lobbyValue = scenarioOverlap === null ? contest.lobbyFit : 100 * (1 - scenarioOverlap);
   components.push({
     key: 'lobby',
@@ -259,7 +260,7 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
   const confidence = confidenceFor(p, context);
   if (fused && fused.externalWeight >= 30) {
     confidence.drivers.push({
-      label: 'External aggregate support · scope/freshness discounted; hotfix parity unverified',
+      label: `External aggregate support · ${fused.sources[0]}`,
       factor: fused.confidence,
     });
     confidence.value = Math.min(1, 0.2 * confidence.value + 0.8 * fused.confidence);

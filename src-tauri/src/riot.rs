@@ -111,6 +111,7 @@ impl RiotState {
                 status: "configured",
                 last_success: None,
                 generation: 0,
+                prefer_stored: false,
                 storage_failed,
             }),
             store,
@@ -139,11 +140,10 @@ impl RiotState {
         self.store.save(&key)?;
         credentials.stored = Some(key);
         credentials.storage_failed = false;
-        if credentials.environment.is_none() {
-            credentials.status = "configured";
-            credentials.last_success = None;
-            credentials.generation += 1;
-        }
+        credentials.prefer_stored = true;
+        credentials.status = "configured";
+        credentials.last_success = None;
+        credentials.generation += 1;
         Ok(credentials.status())
     }
     async fn remove_key(&self) -> Result<ConnectionStatus, &'static str> {
@@ -151,11 +151,10 @@ impl RiotState {
         self.store.remove()?;
         credentials.stored = None;
         credentials.storage_failed = false;
-        if credentials.environment.is_none() {
-            credentials.status = "missing-key";
-            credentials.last_success = None;
-            credentials.generation += 1;
-        }
+        credentials.prefer_stored = false;
+        credentials.status = "configured";
+        credentials.last_success = None;
+        credentials.generation += 1;
         Ok(credentials.status())
     }
 
@@ -506,17 +505,24 @@ struct Credentials {
     status: &'static str,
     last_success: Option<u64>,
     generation: u64,
+    prefer_stored: bool,
     storage_failed: bool,
 }
 impl Credentials {
     fn active(&self) -> Option<&SecretString> {
-        self.environment.as_ref().or(self.stored.as_ref())
+        if self.prefer_stored {
+            self.stored.as_ref()
+        } else {
+            self.environment.as_ref().or(self.stored.as_ref())
+        }
     }
     fn status(&self) -> ConnectionStatus {
         ConnectionStatus {
             key_detected: self.active().is_some(),
             stored_configured: self.stored.is_some(),
-            source: if self.environment.is_some() {
+            source: if self.prefer_stored && self.stored.is_some() {
+                "secure-storage"
+            } else if self.environment.is_some() {
                 "native-environment"
             } else if self.stored.is_some() {
                 "secure-storage"
@@ -797,6 +803,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn replacement_key_is_used_by_next_request_after_environment_auth_failure() {
+        let state = RiotState::for_test();
+        let url = server(vec!["HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"]).await;
+        assert_eq!(
+            state
+                .get_json("expired-env".into(), deadline(), "test", url)
+                .await
+                .unwrap_err()
+                .code,
+            "auth"
+        );
+        state
+            .save_key(SecretString::from("RGAPI-replacement-fixture"))
+            .await
+            .unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/test", listener.local_addr().unwrap());
+        let request = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut bytes = [0u8; 2048];
+            let len = stream.read(&mut bytes).await.unwrap();
+            let correct =
+                String::from_utf8_lossy(&bytes[..len]).contains("RGAPI-replacement-fixture");
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+                .await
+                .unwrap();
+            correct
+        });
+        state
+            .get_json("replacement".into(), deadline(), "test", url)
+            .await
+            .unwrap();
+        assert!(request.await.unwrap());
+        assert_eq!(
+            state.credentials.lock().await.status().source,
+            "secure-storage"
+        );
+    }
+
+    #[tokio::test]
     async fn retries_429_and_transient_then_succeeds() {
         let url = server(vec![
             "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 0\r\nX-Rate-Limit-Type: method\r\nContent-Length: 0\r\n\r\n",
@@ -898,13 +945,18 @@ mod credential_tests {
         assert!(state.store.load().unwrap().is_none());
     }
     #[tokio::test]
-    async fn environment_wins_without_being_persisted() {
+    async fn startup_environment_then_explicit_save_activates_stored() {
         let state = RiotState::with_store(
             Box::new(TestStore::default()),
             Some(SecretString::from("RGAPI-env-secret")),
             false,
         );
         assert!(state.store.load().unwrap().is_none());
+        {
+            let mut c = state.credentials.lock().await;
+            c.status = "auth";
+            c.last_success = Some(123);
+        }
         state
             .save_key(SecretString::from("RGAPI-stored-secret"))
             .await
@@ -917,8 +969,18 @@ mod credential_tests {
                 .active()
                 .unwrap()
                 .expose_secret(),
-            "RGAPI-env-secret"
+            "RGAPI-stored-secret"
         );
+        {
+            let c = state.credentials.lock().await;
+            assert_eq!(c.generation, 1);
+            assert_eq!(c.status, "configured");
+            assert_eq!(c.last_success, None);
+            assert_eq!(c.status().source, "secure-storage");
+            assert!(!serde_json::to_string(&c.status())
+                .unwrap()
+                .contains("RGAPI"));
+        }
         assert_eq!(
             state.remove_key().await.unwrap().source,
             "native-environment"

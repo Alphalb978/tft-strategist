@@ -69,7 +69,7 @@ export function RiotApiSettings({
       setStatus(result);
       setNotice(
         action === 'save'
-          ? 'Saved securely in Windows Credential Manager.'
+          ? 'Saved securely and active for this session.'
           : action === 'remove'
             ? 'Stored credential removed.'
             : riotStatusLabel(result.status),
@@ -98,6 +98,16 @@ export function RiotApiSettings({
       </div>
       <p>
         Account: {settings.riotId || 'Not configured'} · Region: {settings.riotPlatform}
+      </p>
+      <p>
+        <strong>
+          Credential source:{' '}
+          {status.source === 'native-environment'
+            ? 'Environment override'
+            : status.source === 'secure-storage'
+              ? 'Secure storage'
+              : 'Unavailable'}
+        </strong>
       </p>
       <label className="setting-label">
         API key
@@ -138,7 +148,7 @@ export function RiotApiSettings({
       {notice && <p role="status">{notice}</p>}
       <p className="fine-print">
         {status.source === 'native-environment'
-          ? 'Environment override active. Saving or removing a stored key does not change that override.'
+          ? 'Environment key overrides the previously saved key at startup. Save a replacement to activate it now; restarting may restore the environment override.'
           : 'Stored securely for your Windows account. The saved key is never displayed.'}
       </p>
       <p className="fine-print">

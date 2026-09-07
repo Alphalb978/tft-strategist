@@ -1,5 +1,6 @@
 import { cleanMechanics, compactCount, compactRank } from './intelligenceDisplay';
-import { externalStatus } from '../providers/externalMeta';
+import { resolveEntityIntelligence } from '../strategy/entityIntelligence';
+import type { IntelligenceModel, CurrentGameState } from '../domain/intelligence';
 import { useId, useState } from 'react';
 import type { Playbook, StaticData } from '../domain/models';
 import { Art } from './Art';
@@ -10,8 +11,14 @@ export function IntelligenceHover({
   plan,
   assets,
   external,
+  intelligence,
+  plans,
+  game,
 }: {
   external?: import('../domain/externalMeta').ExternalSnapshot | null;
+  intelligence?: IntelligenceModel;
+  plans?: Playbook[];
+  game?: CurrentGameState;
   id: string;
   data: StaticData;
   plan: Playbook;
@@ -28,34 +35,17 @@ export function IntelligenceHover({
     mechanics = data.knowledge?.entities[id];
   const name = (key: string) =>
     [...data.champions, ...data.items, ...data.traits].find((e) => e.id === key)?.name ?? key;
-  const aggregate = (
-    externalStatus(external, data).startsWith('Compatible')
-      ? champ
-        ? external?.units
-        : item
-          ? external?.items
-          : external?.traits
-      : []
-  )?.find((e) => e.id === id);
+  const resolved = resolveEntityIntelligence({
+    id,
+    data,
+    plan,
+    plans,
+    intelligence,
+    external,
+    game,
+  });
+  const { aggregate, packages } = resolved;
   const observed = plan.observed?.units.find((u) => u.id === id);
-  const packages =
-    plan.observed?.items
-      .filter((p) => p.estimate.sample >= 5 && (champ ? p.holder === id : p.ids.includes(id)))
-      .slice(0, 3) ?? [];
-  const sourcedPackages = plan.strategy.itemHolders
-    .filter(
-      (h) =>
-        h.fact.value &&
-        ['sourced', 'inherited'].includes(h.fact.status) &&
-        (champ ? h.holderId === id : h.groups.some((g) => g.itemIds.includes(id))),
-    )
-    .flatMap((h) =>
-      h.groups
-        .filter((g) => g.fact.value)
-        .slice(0, 2)
-        .map((g) => ({ holder: h.holderId, ids: g.itemIds })),
-    )
-    .slice(0, 2);
   return (
     <span
       className="intelligence-hover"
@@ -96,34 +86,35 @@ export function IntelligenceHover({
           )}
           {item && <span>{item.components.map(name).join(' + ') || 'Recipe unavailable'}</span>}
           <span>{cleanMechanics(mechanics?.description).slice(0, 230)}</span>
+          {packages.length > 0 && (
+            <strong>
+              {resolved.source.startsWith('Global')
+                ? `Common ${entity?.name ?? id} ${champ ? 'items' : 'holders'}`
+                : 'Comp items'}{' '}
+              · {resolved.source}
+            </strong>
+          )}
+          {resolved.ownedCopies > 0 && (
+            <span>
+              {resolved.ownedCopies} owned copies{resolved.onBoard ? ' · On your board' : ''}
+            </span>
+          )}
           {packages.map((p, i) => (
             <span key={i}>
               {name(p.holder)}:{' '}
               {p.ids.map((key) => (
-                <Art
-                  key={key}
-                  url={data.items.find((i) => i.id === key)?.icon ?? null}
-                  alt={name(key)}
-                  assets={assets}
-                />
-              ))}
-            </span>
-          ))}
-          {!packages.length &&
-            sourcedPackages.map((p, i) => (
-              <span key={`sourced-${i}`}>
-                {name(p.holder)} · Sourced items{' '}
-                {p.ids.map((key) => (
+                <span key={key} title={name(key)}>
                   <Art
-                    key={key}
                     url={data.items.find((i) => i.id === key)?.icon ?? null}
                     alt={name(key)}
                     assets={assets}
                   />
-                ))}
-              </span>
-            ))}
-          {!packages.length && !sourcedPackages.length && (
+                  {name(key)}{' '}
+                </span>
+              ))}
+            </span>
+          ))}
+          {!packages.length && (
             <span>Supported {champ ? 'item packages' : 'holders'} unavailable</span>
           )}
           {aggregate && (
@@ -138,7 +129,15 @@ export function IntelligenceHover({
         </span>
       )}
       {details && (
-        <EntityIntelligence id={id} data={data} plans={[plan]} onClose={() => setDetails(false)} />
+        <EntityIntelligence
+          id={id}
+          data={data}
+          plans={plans ?? [plan]}
+          plan={plan}
+          intelligence={intelligence}
+          external={external}
+          onClose={() => setDetails(false)}
+        />
       )}
     </span>
   );

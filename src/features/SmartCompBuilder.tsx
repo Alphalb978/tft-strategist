@@ -43,9 +43,7 @@ export function SmartCompBuilder({
         <h2>Smart Comp Builder</h2>
         <button onClick={onClose}>Close builder</button>
       </div>
-      <p>
-        Start with a core, compare legal changes, and inspect the evidence behind each alternative.
-      </p>
+      <p>Start with this roster or a selected core and compare evidence-guided legal changes.</p>
       <div className="smart-controls">
         <label>
           Start from
@@ -142,7 +140,7 @@ export function SmartCompBuilder({
       </details>
       <button
         className="primary"
-        disabled={!core.length}
+        disabled={start === 'core' && !core.length}
         onClick={() =>
           setBoards(
             optimizeBoards({
@@ -160,7 +158,13 @@ export function SmartCompBuilder({
       >
         Build legal variants
       </button>
-      {!core.length && <p>Select at least one core champion.</p>}
+      {!core.length && (
+        <p>
+          {start === 'core'
+            ? 'Select at least one core champion.'
+            : 'Reference roster retained as a soft anchor; no hard core is assumed.'}
+        </p>
+      )}
       {boards?.length === 0 && (
         <p>No legal alternatives for this core and level under the reviewed rules.</p>
       )}
@@ -197,7 +201,7 @@ export function SmartCompBuilder({
               })}
             </div>
             <p>
-              Changes: {added.length ? `add ${added.map(name).join(', ')}` : 'core retained'}
+              Changes: {added.length ? `add ${added.map(name).join(', ')}` : 'roster retained'}
               {removed.length ? `; remove ${removed.map(name).join(', ')}` : ''}
               {!added.length && !removed.length ? ' · same roster' : ''}
             </p>

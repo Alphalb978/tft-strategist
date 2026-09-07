@@ -1,3 +1,5 @@
+import { resolveEntityIntelligence } from '../strategy/entityIntelligence';
+import type { ExternalSnapshot } from '../domain/externalMeta';
 import { cleanMechanics } from '../components/intelligenceDisplay';
 import { useEffect, useRef } from 'react';
 import type { StaticData, Playbook } from '../domain/models';
@@ -7,8 +9,12 @@ export function EntityIntelligence({
   data,
   intelligence,
   plans,
+  plan,
+  external,
   onClose,
 }: {
+  plan?: Playbook;
+  external?: ExternalSnapshot | null;
   id: string;
   data: StaticData;
   intelligence?: IntelligenceModel;
@@ -27,9 +33,8 @@ export function EntityIntelligence({
     item = data.items.find((i) => i.id === id),
     augment = data.augments.find((a) => a.id === id);
   const entity = data.knowledge?.entities[id];
-  const champion = intelligence?.verifiedChampions?.[id]?.estimate.sample
-    ? intelligence.verifiedChampions[id]
-    : intelligence?.champions[id];
+  const resolved = resolveEntityIntelligence({ id, data, plan, plans, intelligence, external });
+  const champion = resolved.profile;
   const uses = Object.values(intelligence?.profiles ?? {}).filter((p) => p.estimate.sample > 0);
   return (
     <dialog
@@ -85,6 +90,16 @@ export function EntityIntelligence({
           <pre>{JSON.stringify(entity.effects, null, 2)}</pre>
         </details>
       )}
+      {resolved.packages.length > 0 && (
+        <section>
+          <h3>{resolved.source}</h3>
+          {resolved.packages.map((p, i) => (
+            <p key={i}>
+              {name(p.holder)}: {p.ids.map(name).join(' · ')}
+            </p>
+          ))}
+        </section>
+      )}
       {c && champion && (
         <>
           <h3>Observed champion context</h3>
@@ -99,11 +114,14 @@ export function EntityIntelligence({
               : 'Insufficient outcome sample'}
           </p>
           <h3>Common items</h3>
-          {champion.items.slice(0, 5).map((i) => (
-            <p key={i.ids.join()}>
-              {i.ids.map(name).join(' + ')} · {i.estimate.sample} boards
-            </p>
-          ))}
+          {champion.items
+            .filter((i) => i.estimate.eligible)
+            .slice(0, 5)
+            .map((i) => (
+              <p key={i.ids.join()}>
+                {i.ids.map(name).join(' + ')} · {i.estimate.sample} boards
+              </p>
+            ))}
           <h3>Common co-units</h3>
           <p>
             {champion.units

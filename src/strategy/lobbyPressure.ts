@@ -152,6 +152,9 @@ export function deriveLobbyUnitPressure(
 
 export function candidateContestFor(playbook: Playbook, lobby?: LobbyPressure): CandidateContest {
   if (
+    !Object.values(playbook.features.unitCriticality).some(
+      (value) => Number.isFinite(value) && value > 0,
+    ) ||
     !lobby ||
     lobby.state === 'unavailable' ||
     !lobby.profiles.length ||
@@ -165,7 +168,7 @@ export function candidateContestFor(playbook: Playbook, lobby?: LobbyPressure): 
       contestElasticity: clamp(playbook.features.contestElasticity),
       styleFactor: 1,
       pressuredUnits: [],
-      note: 'No opponent unit-history evidence is available; lobby fit remains neutral.',
+      note: 'Unit criticality or opponent history is unavailable; lobby fit remains neutral.',
       provenance: 'unavailable',
     };
 

@@ -103,6 +103,9 @@ export function GameCompanion({
       id={id}
       data={state.data}
       plan={plan}
+      plans={state.playbooks}
+      intelligence={state.meta?.intelligence}
+      game={game}
       assets={state.assets}
       external={usable ? state.external : null}
     />

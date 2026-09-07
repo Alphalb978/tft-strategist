@@ -1,5 +1,47 @@
 # M12 — Final companion implementation report
 
+## PRE-GAME CORRECTNESS PATCH
+
+September 7, 2026. This section supersedes the earlier credential-priority description. Changes remain uncommitted; no push or merge. The public MetaTFT collector and broad outcome feature weights were not changed.
+
+### Correctness and evidence boundaries
+
+- Missing/empty unit criticality now returns unavailable contest, null lobby fit and the neutral baseline contribution, even with complete opponent coverage. Known low/high pressure still produces positive/negative fit. The same guard applies to hypothetical core pressure.
+- Audited reference context: missing core, comp item model and timing produce no core-copy, item-direction or economy bonus. Owned roster retention remains a real, separately labeled contextual signal. Curated/observed plans retain their supported bonuses.
+- Optimizer v2 assigns six soft retention points per related reference unit. Hard core remains a legality constraint; the anchor outweighs ordinary observed affinity/flex preferences, while supported pairs, owned units, items or substantial contest pressure can justify replacements. The deterministic empty-core fixture retains at least 75% of its reference; the rendered Master Yi reference retained all seven units. Variants remain evidence-guided Experimental unless an exact eligible observed board already supports them. This is not combat EV.
+- Fixed the builder UI's empty-core prohibition for “This comp”: a public roster can now seed optimization without inventing core roles. Explicit “Selected core champions” still requires a selection.
+- Static knowledge currently provides no verified hotfix suffix. Added an optional, provenance-only `balanceHotfix` contract; no suffix is inferred from CDragon timestamps or LLM knowledge. Known matching suffixes are accepted; known mismatches fail snapshot compatibility and receive zero external fusion weight. Unknown parity displays **Hotfix parity unverified**, multiplies external weight by 0.7 and fused confidence by 0.8 when external evidence contributes. Base-patch/set/queue gates still apply. These are inspectable uncertainty discounts, not TFT rules.
+
+### Riot credentials
+
+Startup retains environment-first behavior. **Save key** writes Windows Credential Manager, immediately selects the stored credential for the current process, increments its generation, clears old auth/last-success status, and makes the next request use the replacement. Old in-flight request results cannot overwrite a newer generation's status. Removing storage falls back to the environment if present, with status reset. No OS environment variable is changed or persisted automatically.
+
+Settings prominently displays **Environment override / Secure storage / Unavailable**, explains startup precedence and replacement behavior, and continues to clear the password input after Save. Status serialization contains no key. Native tests cover actual next-request headers with isolated dummy keys and a mock HTTP server, plus a dummy Windows vault roundtrip. No real Riot credential was used in testing.
+
+### Global entity intelligence
+
+`src/strategy/entityIntelligence.ts` is the shared resolver used by hover and entity details. It combines canonical static mechanics, compatible global champion summaries/public marginal stats, comp overlays and manual owned-unit context. Existing refresh-time champion profiles already deduplicate ranked match boards and shrink/evaluate samples; the resolver reuses them instead of aggregating comp averages or counting overlapping boards again.
+
+A cached champion/item-holder index is warmed when the application rebuilds its catalog and reused by immutable catalog/evidence identity. Patch, set, knowledge compatibility and freshness gate global profiles. Eligible verified-rank champion profiles take precedence over the broader ranked discovery-lobby profile. Item holders are indexed from those same champion packages; no per-hover match aggregation or network request is added. Sourced global guidance stays in a separate index.
+
+Package precedence is: eligible comp observations → comp sourced guidance → eligible global champion evidence → compatible global sourced guidance → unavailable. Comp-specific packages are never overwritten. Global fallback explicitly says **Common [champion] items · Global evidence**; item hovers use the corresponding comp-first/global-holder fallback. Item names accompany art so slow/unavailable art does not hide package identity. Entity details preserve labeled global context and share the resolver's primary package choice. Canonical roles/tags, appearances and stars remain available through static mechanics and existing global profiles.
+
+### Validation and inspection
+
+- `npm test`: **229/229**, 21 files; full unit suite run once near completion. Final focused `npx vitest run src/test/m12Correctness.test.ts`: **7/7**, including hypothetical unknown-core neutrality.
+- `npm run typecheck`, `npm run lint`, `npm run format:check`: passed. Final changed-file ESLint/Prettier checks passed; final web build also typechecks.
+- `npx playwright test e2e/m12Correctness.spec.ts e2e/m12.spec.ts e2e/m12Cleanup.spec.ts e2e/m12Followup.spec.ts --workers=2`: **12/12**. Final name-fallback UI checks: **3/3**.
+- `cargo test --manifest-path src-tauri/Cargo.toml --lib`: **10/10**. `cargo check` and `cargo fmt --check`: passed, using the repo-local Cargo/Rustup runtime.
+- `npm run build`: passed; existing vendor chunk/eval warnings remain.
+- Desktop release: `cargo build --manifest-path src-tauri/Cargo.toml --release --features tauri/custom-protocol --bin tft-strategist-m12-correctness` passed (54.83s). The temporary bin declaration was restored afterward. Fresh embedded-assets executable: `src-tauri/target/release/tft-strategist-m12-correctness.exe` (20,552,704 bytes). No running app was stopped.
+- `git diff --check`: passed; new changes remain uncommitted.
+- Visually inspected real Edge renders: environment and saved credential settings, comp-specific and global fallback hover fixtures, external-reference scoring, and its legal Experimental builder result. Screenshots and logs: `artifacts/m12/correctness-*`.
+
+### Remaining limits
+
+The current static export still has unverified exact hotfix parity and existing known-stale combat data warnings. Public MetaTFT marginal unit/item stats are not champion-holder packages or augment effects. Global item packages require sufficient compatible direct evidence or separately labeled sourced guidance; otherwise they remain unavailable. No restricted/private MetaTFT holder API, fabricated augment statistics or inferred statistical item recommendation was introduced. Real-game behavior and a live user-key request still require the user's first game/test.
+
+
 ## FINAL BOUNDED CLEANUP — METRICS AND RIOT API CONFIGURATION
 
 September 7, 2026. No recommendation weights, evidence-fusion philosophy, page redesign, item/star extraction, commit, push or merge in this cleanup.

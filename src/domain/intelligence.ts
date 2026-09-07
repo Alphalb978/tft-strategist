@@ -27,6 +27,8 @@ export interface TFTKnowledgeSnapshot {
   set: number;
   identity: string;
   balancePatch: string | null;
+  /** Only populated from verified balance provenance; absent means unknown. */
+  balanceHotfix?: string | null;
   fingerprint: string;
   fetchedAt: string;
   source: string;

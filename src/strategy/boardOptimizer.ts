@@ -7,7 +7,7 @@ import { validateBoard, boardTraitCounts } from '../rules/validation';
 import { baseCapacityForLevel, usedBoardSlots } from '../rules/ruleSet';
 import { stableFingerprint } from '../domain/fingerprint';
 export const BOARD_OPTIMIZER = {
-  version: 'board-optimizer-v1',
+  version: 'board-optimizer-v2',
   pool: 22,
   beam: 10,
   steps: 3,
@@ -52,6 +52,8 @@ export function optimizeBoards(input: {
   const pressure = (id: string) =>
     lobby?.unitPressure.find((u) => u.championId === id)?.normalizedPressure ?? 0;
   const reference = relatedExternal(plan, external)?.comp;
+  // A public roster is a soft reference, never invented hard core.
+  const anchors = new Set(reference?.units ?? []);
   const affinity = (id: string) =>
     (reference?.units.includes(id) ? 4 : 0) +
     (observed?.units.find((u) => u.id === id)?.estimate.frequency ?? 0) * 4 +
@@ -113,6 +115,10 @@ export function optimizeBoards(input: {
             i.components.some((id) => game?.components.includes(id))),
       ).length ?? 0;
     const components = [
+      {
+        label: 'Reference roster retention (soft anchor)',
+        value: ids.filter((id) => anchors.has(id)).length * 6,
+      },
       {
         label: 'Conditional structure and pairs (shared 35-point budget)',
         value: Math.min(
