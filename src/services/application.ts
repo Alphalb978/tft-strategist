@@ -13,6 +13,7 @@ import type {
   PersonalProfile,
   Playbook,
   RecommendationPortfolio,
+  RecommendationCandidate,
   SelectedPlan,
   StaticData,
 } from '../domain/models';
@@ -24,6 +25,7 @@ import type { Repository, Settings } from '../storage/repository';
 import { normalizeSettings } from '../storage/repository';
 import { scoreCandidate } from '../strategy/scoring';
 import { optimizePortfolio } from '../strategy/portfolio';
+import { homeRecommendations } from '../strategy/homeScoring';
 import { isStaticData } from '../domain/staticSchema';
 import { stableFingerprint, staticSetCompatibilityFingerprint } from '../domain/fingerprint';
 import { reconcileIntelligence } from '../strategy/intelligenceCompatibility';
@@ -57,6 +59,7 @@ export interface ApplicationState {
   data: StaticData;
   playbooks: Playbook[];
   portfolio: RecommendationPortfolio;
+  homeCandidates: RecommendationCandidate[];
   source: 'Bundled snapshot' | 'Local cache' | 'Locked snapshot' | 'Network';
   settings: Settings;
   activeSession: PlanSession | null;
@@ -154,26 +157,20 @@ export function createRecommendations(
   const recommendationPlaybooks = registry
     .filter((entry) => entry.recommendationEligible)
     .map((entry) => entry.playbook);
-  const portfolio = optimizePortfolio(
-    recommendationPlaybooks.map((p) =>
-      scoreCandidate(p, {
-        data,
-        version: data.version,
-        now,
-        personalWeight: settings.personalWeight,
-        meta: usableMeta,
-        discovery: usableDiscovery,
-        personal: personal ?? undefined,
-        external,
-      }),
-    ),
+  const home = homeRecommendations(recommendationPlaybooks, {
+    data,
     now,
-  );
+    config: settings.homeRecommendation,
+    meta: usableMeta,
+    discovery: usableDiscovery,
+    external,
+  });
   const catalog = registry.map((entry) => entry.playbook);
   globalEntityIndex(data, intelligence, catalog);
   return {
     playbooks: catalog,
-    portfolio,
+    portfolio: home.portfolio,
+    homeCandidates: home.candidates,
     notices,
     meta: usableMeta,
     discovery: usableDiscovery,
@@ -207,6 +204,30 @@ export function rescoreRecommendations(
         }),
       ),
     now,
+  );
+}
+
+/** Normal Home ranking. Manual current-game and personal state are intentionally absent. */
+export function rescoreHomeRecommendations(
+  state: ApplicationState,
+  lobby?: LobbyPressure,
+  now = new Date().toISOString(),
+) {
+  return homeRecommendations(
+    state.registry
+      .filter(
+        (entry) => entry.recommendationEligible && !['Stale', 'Retired'].includes(entry.lifecycle),
+      )
+      .map((entry) => entry.playbook),
+    {
+      data: state.data,
+      now,
+      config: state.settings.homeRecommendation,
+      external: state.external,
+      meta: state.meta,
+      discovery: state.discovery,
+      lobby,
+    },
   );
 }
 export async function loadApplication(repository: Repository): Promise<ApplicationState> {

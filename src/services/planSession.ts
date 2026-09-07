@@ -23,6 +23,7 @@ import { validatePlaybook } from '../rules/validation';
 import type { Repository } from '../storage/repository';
 import { traverseDecisionMap } from '../strategy/playbookIntelligence';
 import { validateCurrentGame } from '../strategy/currentGame';
+import { HOME_RECOMMENDATION_MODEL_VERSION, homeConfigFingerprint } from '../strategy/homeScoring';
 
 export const PLAN_SESSION_VERSION = 'match-plan-session-v1';
 
@@ -138,6 +139,11 @@ export function createPlanSession(
   const snapshot = clone({
     calibration: {
       engine: 'm12-fusion-v1',
+      homeModel: {
+        version: HOME_RECOMMENDATION_MODEL_VERSION,
+        config: clone(state.settings.homeRecommendation),
+        configFingerprint: homeConfigFingerprint(state.settings.homeRecommendation),
+      },
       baselines: Object.fromEntries(
         (['internal-only', 'external-only', 'fused'] as const).map((outcomeMode) => [
           outcomeMode,

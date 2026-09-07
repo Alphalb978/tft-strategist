@@ -116,10 +116,11 @@ for (const width of [1440, 1000, 860])
     await page.getByRole('button', { name: 'Comps', exact: true }).click();
     await page.screenshot({ path: `artifacts/m12/followup-combined-library-${width}.png` });
     await page.getByRole('button', { name: 'Your plans', exact: true }).click();
-    await page.getByLabel('Current level', { exact: true }).selectOption('7');
+    await expect(page.getByLabel('Current level', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Explore playbook' }).first().click();
     const companion = page.getByLabel('Game companion', { exact: true });
     await expect(companion).toBeVisible();
+    await companion.getByLabel('Current level', { exact: true }).selectOption('7');
     await expect(companion.locator('.companion-hex')).toHaveCount(28);
     await expect(companion.locator('.companion-hex .entity-chip').first()).toBeVisible();
     await companion.locator('.companion-roster .entity-chip').first().focus();

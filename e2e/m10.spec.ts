@@ -109,7 +109,7 @@ test('M10 current-lobby failures explain safe provider errors and retain retry',
     }, code);
     await page.getByRole('button', { name: 'Scan current lobby', exact: true }).click();
     await expect(page.locator('.riot-message')).toContainText(
-      code === 'auth' ? 'Riot rejected' : 'Riot is rate limiting',
+      code === 'auth' ? 'Invalid or expired' : 'Riot is rate limiting',
     );
     await expect(
       page.getByRole('button', { name: 'Scan current lobby', exact: true }),

@@ -12,7 +12,8 @@ for (const width of [1440, 1000, 860])
     external.manifest.contentHash = externalHash(external);
     await page.route('**/data/external/current.json', (r) => r.fulfill({ json: external }));
     await page.goto('/');
-    await expect(page.getByLabel('Current level')).toHaveValue('', { timeout: 20000 });
+    await expect(page.getByRole('heading', { name: 'Your plans' })).toBeVisible({ timeout: 20000 });
+    await expect(page.getByLabel('Current level')).toHaveCount(0);
     await page.getByRole('button', { name: 'Comps', exact: true }).click();
     await expect(page.getByLabel('External meta scope')).toContainText('MetaTFT');
     await expect(page.getByLabel('External meta scope')).toContainText('Plat+');

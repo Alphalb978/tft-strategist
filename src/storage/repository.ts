@@ -8,6 +8,7 @@ import {
 } from './derivedCache';
 import type {
   MatchReconciliation,
+  HomeRecommendationModelConfig,
   PersonalProfile,
   PlanSession,
   PostGameReview,
@@ -16,17 +17,23 @@ import type {
 } from '../domain/models';
 import { planSessionSnapshotFingerprint, stableFingerprint } from '../domain/fingerprint';
 import { parsePlatform, type RiotPlatform } from '../providers/riotRouting';
+import {
+  DEFAULT_HOME_RECOMMENDATION_CONFIG,
+  normalizeHomeRecommendationConfig,
+} from '../strategy/homeScoring';
 export interface Settings {
   personalWeight: number;
   historyWindow: number;
   riotId: string;
   riotPlatform: RiotPlatform;
+  homeRecommendation: HomeRecommendationModelConfig;
 }
 export const defaultSettings: Settings = {
   personalWeight: 0.05,
   historyWindow: 20,
   riotId: '',
   riotPlatform: 'EUW1',
+  homeRecommendation: DEFAULT_HOME_RECOMMENDATION_CONFIG,
 };
 export function normalizeSettings(value?: Partial<Settings> | null): Settings {
   let riotPlatform = defaultSettings.riotPlatform;
@@ -45,6 +52,7 @@ export function normalizeSettings(value?: Partial<Settings> | null): Settings {
       : defaultSettings.historyWindow,
     riotId: typeof value?.riotId === 'string' ? value.riotId : '',
     riotPlatform,
+    homeRecommendation: normalizeHomeRecommendationConfig(value?.homeRecommendation),
   };
 }
 export interface Repository {

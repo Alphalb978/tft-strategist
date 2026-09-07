@@ -376,7 +376,16 @@ impl RiotState {
                     );
                 }
                 Err(error) => {
-                    credentials.status = error.code;
+                    // A spectator-specific 403 can mean the current-lobby endpoint is
+                    // forbidden/unavailable even when this credential was just verified by a
+                    // different Riot endpoint. Keep that proven connection state; the caller
+                    // still receives the endpoint error and reports Current lobby separately.
+                    let verified_spectator_forbidden = method == "spectator-tft.current"
+                        && error.status == Some(403)
+                        && credentials.last_success.is_some();
+                    if !verified_spectator_forbidden {
+                        credentials.status = error.code;
+                    }
                 }
             }
         }
@@ -903,6 +912,30 @@ mod tests {
         assert_eq!(status.status, "auth");
         assert!(status.last_success.is_some());
         assert!(!serde_json::to_string(&status).unwrap().contains("RGAPI"));
+    }
+
+    #[tokio::test]
+    async fn spectator_forbidden_does_not_invalidate_a_verified_credential() {
+        let state = RiotState::for_test();
+        let url = server(vec!["HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"ok\":true}"]).await;
+        state
+            .get_json("verified".into(), deadline(), "tft.status", url)
+            .await
+            .unwrap();
+        let url = server(vec!["HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"]).await;
+        let error = state
+            .get_json(
+                "spectator-forbidden".into(),
+                deadline(),
+                "spectator-tft.current",
+                url,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "auth");
+        let status = state.credentials.lock().await.status();
+        assert_eq!(status.status, "connected");
+        assert!(status.last_success.is_some());
     }
 }
 

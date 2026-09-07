@@ -20,6 +20,7 @@ import type { Settings } from '../storage/repository';
 import { set18Rules } from '../rules/ruleSet';
 import { RiotScouting } from './RiotScouting';
 import { Appearance } from './Appearance';
+import { RecommendationLab } from './RecommendationLab';
 export function DataSettings({
   state,
   mode,
@@ -118,6 +119,7 @@ export function DataSettings({
       </section>
       <RiotApiSettings provider={riotProvider} settings={state.settings} />
       <Appearance />
+      <RecommendationLab settings={state.settings} onSave={onSave} />
       <div className="settings-layout">
         <RiotScouting
           data={state.data}

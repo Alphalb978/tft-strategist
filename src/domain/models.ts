@@ -737,6 +737,49 @@ export interface RecommendationCandidate {
   confidence: Confidence;
   reasons: string[];
   contest: CandidateContest;
+  /** Present only when the candidate was ranked by the normal Home model. */
+  home?: HomeScoreBreakdown;
+}
+
+export interface HomeRecommendationModelConfig {
+  top4Weight: number;
+  averagePlacementWeight: number;
+  winRateWeight: number;
+  lowPickQualityGate: number;
+  lowPickQualityRamp: number;
+  lowPickMinimumReliability: number;
+  lowPickCurve: number;
+  maxLowPickBonus: number;
+  maxPopularityPenalty: number;
+  maxCleanLobbyBonus: number;
+  maxMediumContestPenalty: number;
+  maxHighContestPenalty: number;
+  lobbyCoverageExponent: number;
+}
+
+export interface HomeScoreMetric {
+  raw: number | null;
+  normalized: number;
+  shrunk: number;
+}
+
+export interface HomeScoreBreakdown {
+  modelVersion: string;
+  config: HomeRecommendationModelConfig;
+  configFingerprint: string;
+  basePerformance: number;
+  lowPickEdge: number;
+  lobbyAdjustment: number;
+  finalSafety: number;
+  reliability: number;
+  evidenceSource: string;
+  evidenceSample: number | null;
+  top4: HomeScoreMetric;
+  averagePlacement: HomeScoreMetric;
+  winRate: HomeScoreMetric;
+  pickRate: { value: number; unit: 'percent' | 'provider-display' } | null;
+  basePerformancePercentile: number | null;
+  popularityPercentile: number | null;
 }
 export interface RecommendationPortfolio {
   plans: { candidate: RecommendationCandidate; role: string }[];
@@ -1040,6 +1083,11 @@ export interface VerifiedTeamPlannerSnapshot {
 export interface PlanSessionSnapshot {
   calibration?: {
     engine: string;
+    homeModel?: {
+      version: string;
+      config: HomeRecommendationModelConfig;
+      configFingerprint: string;
+    };
     baselines?: Record<string, { id: string; score: number; average: number | null }[]>;
     externalHash: string | null;
     knowledgePatch: string | null;

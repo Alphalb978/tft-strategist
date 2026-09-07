@@ -15,7 +15,7 @@ import {
 import { openRepository, type Repository, type Settings } from '../storage/repository';
 import {
   createRecommendations,
-  rescoreRecommendations,
+  rescoreHomeRecommendations,
   loadApplication,
   refreshApplication,
   endPlanSession,
@@ -438,11 +438,11 @@ export function App() {
       setToast('Current game could not be saved.');
     }
   };
-  const livePortfolio = useMemo(() => {
+  const liveHome = useMemo(() => {
     if (!state) return null;
-    return rescoreRecommendations(state, lobby ?? undefined);
+    return rescoreHomeRecommendations(state, lobby ?? undefined);
   }, [lobby, state]);
-  const currentPortfolio = livePortfolio ?? state?.portfolio;
+  const currentPortfolio = liveHome?.portfolio ?? state?.portfolio;
   const sessionPortfolio = state?.activeSession?.snapshot.portfolio ?? null;
   const viewedPortfolio =
     page === 'active' || detailContext === 'session' ? sessionPortfolio : currentPortfolio;
@@ -453,6 +453,7 @@ export function App() {
     requestedPlanId && state
       ? (viewedPortfolio?.plans.find((p) => p.candidate.playbook.id === requestedPlanId)
           ?.candidate ??
+        liveHome?.candidates.find((entry) => entry.playbook.id === requestedPlanId) ??
         (() => {
           const p = state.playbooks.find((p) => p.id === requestedPlanId);
           return p
@@ -643,11 +644,16 @@ export function App() {
                   <Home
                     state={state}
                     portfolio={currentPortfolio!}
+                    candidates={liveHome?.candidates ?? state.homeCandidates}
+                    baselineCandidates={state.homeCandidates}
                     onOpen={open}
                     onData={() => navigate('data')}
                     onScout={() => navigate('scout')}
                     lobby={lobby}
-                    onCurrentGame={saveGame}
+                    onClearLobby={() => {
+                      setLobby(null);
+                      window.dispatchEvent(new Event('strategist-clear-lobby'));
+                    }}
                   />
                 ) : page === 'scout' && riotProvider && historyStore ? (
                   <>

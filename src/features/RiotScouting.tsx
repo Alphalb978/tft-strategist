@@ -10,7 +10,12 @@ import {
   Users,
 } from 'lucide-react';
 import type { LobbyPressure, RiotIdentity, StaticData } from '../domain/models';
-import { RiotProviderError, type RiotConnectionStatus, type RiotProvider } from '../providers/riot';
+import {
+  RiotProviderError,
+  riotStatusLabel,
+  type RiotConnectionStatus,
+  type RiotProvider,
+} from '../providers/riot';
 import { parseRiotId } from '../providers/riotId';
 import { PREVIEW_OPPONENT_INPUT, PREVIEW_OWN_RIOT_ID } from '../providers/riotPreview';
 import {
@@ -62,6 +67,9 @@ export function RiotScouting({
   const [message, setMessage] = useState('');
   const [working, setWorking] = useState<'account' | 'manual' | 'discovery' | null>(null);
   const [origin, setOrigin] = useState('');
+  const [lobbyStatus, setLobbyStatus] = useState<
+    'Not checked' | 'Checking' | 'Available' | 'Not in game' | 'Unavailable' | 'Unsupported'
+  >(spectatorTftSupported(settings.riotPlatform) ? 'Not checked' : 'Unsupported');
   const busy = useRef(false);
 
   useEffect(() => {
@@ -78,6 +86,19 @@ export function RiotScouting({
       window.removeEventListener('riot-credential-status', refresh);
     };
   }, [provider, working]);
+
+  useEffect(() => {
+    const clear = () => {
+      setOpponents('');
+      setEntries([]);
+      setResult(null);
+      setMessage('Active lobby cleared. Cached opponent history was retained.');
+      setOrigin('');
+      setLobbyStatus(spectatorTftSupported(settings.riotPlatform) ? 'Not checked' : 'Unsupported');
+    };
+    window.addEventListener('strategist-clear-lobby', clear);
+    return () => window.removeEventListener('strategist-clear-lobby', clear);
+  }, [settings.riotPlatform]);
 
   const resolveOwn = async () => {
     if (busy.current) return;
@@ -177,6 +198,7 @@ export function RiotScouting({
     if (busy.current) return;
     busy.current = true;
     setWorking('discovery');
+    setLobbyStatus('Checking');
     setMessage('Finding your current lobby…');
     try {
       const discovery = await discoverCurrentLobby(
@@ -187,8 +209,16 @@ export function RiotScouting({
       );
       if (!discovery.ok) {
         setMessage(discovery.error);
+        setLobbyStatus(
+          discovery.error.startsWith('No active TFT game')
+            ? 'Not in game'
+            : discovery.error.includes('unsupported')
+              ? 'Unsupported'
+              : 'Unavailable',
+        );
         return;
       }
+      setLobbyStatus('Available');
       setOwnIdentity(discovery.value.own);
       onSave({ ...settings, riotId: parseRiotId(ownInput).display });
       setEntries([]);
@@ -198,6 +228,7 @@ export function RiotScouting({
       setMessage('Loading recent history…');
       await runScan(discovery.value.opponents, 7);
     } catch (error) {
+      setLobbyStatus('Unavailable');
       setMessage(
         (error instanceof RiotProviderError
           ? `${error.message} `
@@ -217,14 +248,17 @@ export function RiotScouting({
       <div className="panel-heading">
         <Radio size={18} />
         <h2>Riot account & lobby</h2>
-        <span className={`badge ${status.keyDetected ? 'success' : 'muted'}`}>
-          {fixturePreview
-            ? 'Fixture preview'
-            : status.keyDetected
-              ? status.status === 'auth'
-                ? 'Key expired / invalid'
-                : 'API key detected'
-              : 'API key unavailable'}
+        <span className={`badge ${status.status === 'connected' ? 'success' : 'muted'}`}>
+          {fixturePreview ? 'Fixture preview' : `Riot API: ${riotStatusLabel(status.status)}`}
+        </span>
+      </div>
+      <div className="riot-service-status" aria-label="Riot service status">
+        <span>
+          Riot API{' '}
+          <strong>{fixturePreview ? 'Fixture preview' : riotStatusLabel(status.status)}</strong>
+        </span>
+        <span>
+          Current lobby <strong>{lobbyStatus}</strong>
         </span>
       </div>
       <div className="riot-connection-grid">

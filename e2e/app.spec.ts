@@ -71,7 +71,7 @@ test('M4 unit-history, lobby pressure, and recommendation fit are inspectable', 
     timeout: 15_000,
   });
   await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
-  await expect(page.getByText('Fixture preview', { exact: true })).toBeVisible();
+  await expect(page.getByText('Fixture preview', { exact: true }).first()).toBeVisible();
   await expect(page.getByLabel('Riot ID', { exact: true })).toHaveValue('Strategist#M3');
   await page.getByRole('button', { name: 'Resolve', exact: true }).click();
   await expect(
@@ -137,7 +137,7 @@ test('M3.1 manual self-entry is explicitly ignored without a history scan', asyn
 test('M3 no-key state exposes no credential value', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Data & settings', exact: true }).click();
-  await expect(page.getByText('API key unavailable', { exact: true })).toBeVisible();
+  await expect(page.getByText('Provider unavailable', { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/RGAPI-/)).toHaveCount(0);
   await expect(page.getByLabel('Riot ID', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Platform')).toHaveValue('EUW1');

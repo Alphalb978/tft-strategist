@@ -73,7 +73,11 @@ for (const width of [1440, 1000, 860])
         unit: f.data.champions.find((c: { id: string }) => c.id === f.playbooks[0].family.core[0])
           .name,
         item: m.observedItems[0],
+        itemName: f.data.items.find((item: { id: string }) => item.id === m.observedItems[0]).name,
         augment: m.observedAugment,
+        augmentName: f.data.augments.find(
+          (augment: { id: string }) => augment.id === m.observedAugment,
+        ).name,
         inspectName: f.data.champions.find((c: { id: string }) => c.id === m.unknownCore[0]).name,
       };
     });
@@ -117,7 +121,7 @@ for (const width of [1440, 1000, 860])
       .getByRole('button', { name: `Inspect ${fixture.inspectName}`, exact: true })
       .first()
       .click();
-    await expect(page.getByRole('dialog')).toContainText('Observed champion context');
+    await expect(page.getByRole('dialog')).toContainText('Observational association');
     await capture(page, { path: `artifacts/m11/acceptance-entity-${width}.png` });
     await page.getByRole('button', { name: 'Close entity details' }).click();
     await page.getByRole('button', { name: 'Optimize board', exact: true }).click();
@@ -138,8 +142,10 @@ for (const width of [1440, 1000, 860])
     await page.getByLabel('Smart strategy intelligence').scrollIntoViewIfNeeded();
     await capture(page, { path: `artifacts/m11/acceptance-curated-${width}.png` });
     await page.getByRole('button', { name: 'Your plans', exact: true }).click();
-    const before = await page.locator('.plan-grid').innerText();
-    await page.getByLabel('Current level', { exact: true }).selectOption('7');
+    await expect(page.getByLabel('Current level', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+    const companion = page.getByLabel('Game companion', { exact: true });
+    await companion.getByLabel('Current level', { exact: true }).selectOption('7');
     await page.getByLabel('Health band').selectOption('critical');
     await page.getByLabel('Economy band').selectOption('weak');
     await page.locator('.game-inventory > summary').click();
@@ -150,17 +156,16 @@ for (const width of [1440, 1000, 860])
     await page.getByRole('button', { name: 'On board', exact: true }).click();
     await page.getByLabel('Add completed item').selectOption(fixture.item);
     await page.getByLabel('Add augment', { exact: true }).selectOption(fixture.augment);
-    await expect.poll(() => page.locator('.plan-grid').innerText()).not.toBe(before);
-    await expect(page.getByLabel('Contextual reasons').first()).toContainText(
-      'Fit with your current game',
+    await expect(companion.locator('.smart-unit').filter({ hasText: fixture.unit })).toContainText(
+      '5',
     );
-    await expect(page.locator('.plan-grid')).toContainText('Supported item direction:');
-    await expect(page.locator('.plan-grid')).toContainText(`5 ${fixture.unit} copies`);
-    await page.locator('.plan-grid').scrollIntoViewIfNeeded();
+    await expect(companion.getByRole('button', { name: `${fixture.itemName} ×` })).toBeVisible();
+    await expect(companion.getByRole('button', { name: `${fixture.augmentName} ×` })).toBeVisible();
+    await companion.scrollIntoViewIfNeeded();
     await capture(page, { path: `artifacts/m11/acceptance-context-${width}.png` });
     await page.reload();
-    await expect(page.getByLabel('Current level', { exact: true })).toHaveValue('7');
     await page.getByRole('button', { name: 'Explore playbook' }).first().click();
+    await expect(page.getByLabel('Current level', { exact: true })).toHaveValue('7');
     await page
       .getByRole('button', { name: 'Details · stages / items / stats', exact: true })
       .click();

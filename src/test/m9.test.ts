@@ -299,8 +299,8 @@ describe('M9 evidence-bounded review and attribution', () => {
 
   it('attributes a switched result only to the terminal destination', () => {
     const state = appState();
-    const first = sessionAt('route-a');
-    const second = withBaseline(sessionAt('route-b', 1, '2026-09-05T20:35:00.000Z', first.id));
+    const first = sessionAt('route-a', 1);
+    const second = withBaseline(sessionAt('route-b', 0, '2026-09-05T20:35:00.000Z', first.id));
     first.state = 'ended';
     first.endedAt = second.lockedAt;
     first.endReason = 'replaced';
