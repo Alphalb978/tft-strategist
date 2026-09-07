@@ -186,9 +186,9 @@ describe('native bridge security and spectator normalization', () => {
     });
   });
 
-  it('uses platform spectator data, excludes self/null, deduplicates and caps opponents', async () => {
+  it('uses platform spectator data and preserves direct Riot IDs for service normalization', async () => {
     const participants = [
-      { puuid: 'self' },
+      { puuid: 'self', riotId: 'Me#EUW' },
       { puuid: null },
       ...Array.from({ length: 9 }, (_, index) => ({ puuid: `p${index}` })),
       { puuid: 'p0' },
@@ -202,7 +202,15 @@ describe('native bridge security and spectator normalization', () => {
       platform: 'EUW1',
       routing: 'EUROPE',
     });
-    expect(result).toEqual({ ok: true, value: ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6'] });
+    expect(result).toEqual({
+      ok: true,
+      value: [
+        { puuid: 'self', riotId: 'Me#EUW' },
+        {},
+        ...Array.from({ length: 9 }, (_, index) => ({ puuid: `p${index}` })),
+        { puuid: 'p0' },
+      ],
+    });
     expect(bridge.invoke).toHaveBeenCalledWith(
       'riot_current_game',
       expect.objectContaining({ platform: 'EUW1' }),
@@ -221,5 +229,199 @@ describe('native bridge security and spectator normalization', () => {
         routing: 'EUROPE',
       }),
     ).resolves.toEqual({ ok: false, error: 'not-in-game' });
+  });
+
+  it('keeps spectator 403 and malformed participant diagnostics distinct', async () => {
+    const forbiddenBridge = { invoke: vi.fn().mockRejectedValue({ code: 'auth', status: 403 }) };
+    const forbidden = new NativeRiotProvider('EUW1', catalog, async () => forbiddenBridge);
+    await expect(
+      forbidden.lobby({
+        puuid: 'self',
+        gameName: 'Me',
+        tagLine: 'EUW',
+        platform: 'EUW1',
+        routing: 'EUROPE',
+      }),
+    ).resolves.toEqual({ ok: false, error: 'forbidden' });
+
+    const malformedBridge = { invoke: vi.fn().mockResolvedValue({ participants: [{ puuid: 7 }] }) };
+    const malformed = new NativeRiotProvider('EUW1', catalog, async () => malformedBridge);
+    await expect(
+      malformed.lobby({
+        puuid: 'self',
+        gameName: 'Me',
+        tagLine: 'EUW',
+        platform: 'EUW1',
+        routing: 'EUROPE',
+      }),
+    ).resolves.toEqual({ ok: false, error: 'malformed-response' });
+  });
+
+  it('accepts the live Ranked TFT gameflow shape without map data and preserves all PUUIDs', async () => {
+    const bridge = {
+      invoke: vi
+        .fn()
+        .mockResolvedValueOnce({
+          phase: 'InProgress',
+          gameClient: { unrelated: true },
+          map: {},
+          gameData: {
+            queue: { id: 1100, type: 'RANKED_TFT' },
+            teamOne: Array.from({ length: 8 }, (_, index) => ({
+              championId: 0,
+              lastSelectedSkinIndex: 0,
+              profileIconId: 1,
+              puuid: `p${index}`,
+              selectedPosition: '',
+              selectedRole: '',
+              summonerId: `summoner-${index}`,
+              summonerInternalName: `internal-${index}`,
+              summonerName: '',
+              teamOwner: false,
+              teamParticipantId: index + 1,
+              ...(index === 0 ? { futureUnknownField: { tolerated: true } } : {}),
+            })),
+            teamTwo: [],
+            spectatorsAllowed: true,
+          },
+        })
+        .mockResolvedValueOnce({
+          gameData: {
+            queue: { gameMode: 'CLASSIC' },
+            map: { name: "Summoner's Rift" },
+            teamOne: [],
+          },
+        })
+        .mockResolvedValueOnce({
+          phase: 'EndOfGame',
+          gameData: {
+            queue: { id: 1100, type: 'RANKED_TFT' },
+            teamOne: [{ puuid: 'stale-local', summonerId: 'stale-summoner' }],
+            teamTwo: [],
+          },
+        }),
+    };
+    const source = new NativeRiotProvider('EUW1', catalog, async () => bridge);
+    const tft = await source.leagueClientLobby();
+    expect(tft.ok && tft.value).toMatchObject({
+      participantCount: 8,
+      participantsWithPuuid: 8,
+      tftDetected: true,
+      rankedTftDetected: true,
+      activeForScouting: true,
+      phase: 'InProgress',
+      queueId: 1100,
+      queueType: 'RANKED_TFT',
+    });
+    if (tft.ok) {
+      expect(tft.value.participants).toHaveLength(8);
+      expect(tft.value.participants.map(({ localPuuid }) => localPuuid)).toEqual(
+        Array.from({ length: 8 }, (_, index) => `p${index}`),
+      );
+      expect(tft.value.participants[0].summonerId).toBe('summoner-0');
+    }
+    const classic = await source.leagueClientLobby();
+    expect(classic).toEqual({
+      ok: true,
+      value: {
+        participants: [],
+        participantCount: 0,
+        participantsWithPuuid: 0,
+        tftDetected: false,
+        rankedTftDetected: false,
+        activeForScouting: false,
+      },
+    });
+    const stale = await source.leagueClientLobby();
+    expect(stale.ok && stale.value).toMatchObject({
+      phase: 'EndOfGame',
+      tftDetected: true,
+      activeForScouting: false,
+      participantCount: 1,
+    });
+    expect(bridge.invoke).toHaveBeenCalledWith(
+      'league_client_gameflow',
+      expect.objectContaining({ deadlineEpochMs: expect.any(Number) }),
+    );
+  });
+
+  it('deduplicates LCU participants by explicit PUUID without rejecting unusable metadata', async () => {
+    const bridge = {
+      invoke: vi.fn().mockResolvedValue({
+        phase: 'InProgress',
+        gameData: {
+          queue: { id: 1100, type: 'RANKED_TFT' },
+          teamOne: [
+            { puuid: 'p1', summonerName: '' },
+            { puuid: 'p1', summonerName: 17 },
+            { puuid: '' },
+            { puuid: 42, futureUnknownField: true },
+          ],
+          teamTwo: [],
+        },
+      }),
+    };
+    const source = new NativeRiotProvider('EUW1', catalog, async () => bridge);
+    await expect(source.leagueClientLobby()).resolves.toEqual({
+      ok: true,
+      value: {
+        participants: [{ localPuuid: 'p1' }],
+        participantCount: 4,
+        participantsWithPuuid: 1,
+        tftDetected: true,
+        rankedTftDetected: true,
+        activeForScouting: true,
+        phase: 'InProgress',
+        queueId: 1100,
+        queueType: 'RANKED_TFT',
+      },
+    });
+  });
+
+  it('uses the read-only LCU summoner bridge and requires explicit gameName plus tagLine', async () => {
+    const bridge = {
+      invoke: vi
+        .fn()
+        .mockResolvedValueOnce({
+          gameName: 'Canonical Name',
+          tagLine: 'TFT',
+          puuid: 'local-value-must-not-cross',
+          displayName: 'not-a-riot-id',
+          futureUnknownField: true,
+        })
+        .mockResolvedValueOnce({ displayName: 'not-a-riot-id' }),
+    };
+    const source = new NativeRiotProvider('EUW1', catalog, async () => bridge);
+    const resolved = await source.leagueClientSummoner('summoner-1');
+    expect(resolved).toEqual({
+      ok: true,
+      value: { gameName: 'Canonical Name', tagLine: 'TFT' },
+    });
+    expect(JSON.stringify(resolved)).not.toContain('local-value-must-not-cross');
+    await expect(source.leagueClientSummoner('summoner-2')).resolves.toEqual({
+      ok: false,
+      error: 'malformed-response',
+    });
+    expect(bridge.invoke).toHaveBeenCalledWith(
+      'league_client_summoner',
+      expect.objectContaining({
+        summonerId: 'summoner-1',
+        deadlineEpochMs: expect.any(Number),
+      }),
+    );
+  });
+
+  it('does not expose a League Client token from serialized native errors', async () => {
+    const bridge = {
+      invoke: vi.fn().mockRejectedValue({
+        code: 'client-unavailable',
+        message: 'safe',
+        token: 'league-client-fixture-secret',
+      }),
+    };
+    const source = new NativeRiotProvider('EUW1', catalog, async () => bridge);
+    const result = await source.leagueClientLobby();
+    expect(result).toEqual({ ok: false, error: 'client-unavailable' });
+    expect(JSON.stringify(result)).not.toContain('league-client-fixture-secret');
   });
 });

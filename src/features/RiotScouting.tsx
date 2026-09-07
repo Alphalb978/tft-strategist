@@ -34,7 +34,13 @@ import type { HistoryStore } from '../storage/history';
 import type { Settings } from '../storage/repository';
 import { Art } from '../components/Art';
 import { LobbyPressureSummary } from '../components/LobbyPressureSummary';
-import { discoverCurrentLobby } from '../services/currentLobby';
+import {
+  discoverCurrentLobby,
+  scanDiscoveredLobby,
+  type LobbyDiscoveryDiagnostics,
+} from '../services/currentLobby';
+
+const discoveryLabel = (value: string) => value.replaceAll('-', ' ');
 
 export function RiotScouting({
   data,
@@ -53,7 +59,7 @@ export function RiotScouting({
   store: HistoryStore;
   fixturePreview: boolean;
   onSave: (settings: Settings) => void;
-  onLobby: (lobby: LobbyPressure) => void;
+  onLobby: (lobby: LobbyPressure | null) => void;
 }) {
   const [status, setStatus] = useState<RiotConnectionStatus>({
     keyDetected: false,
@@ -67,9 +73,11 @@ export function RiotScouting({
   const [message, setMessage] = useState('');
   const [working, setWorking] = useState<'account' | 'manual' | 'discovery' | null>(null);
   const [origin, setOrigin] = useState('');
+  const [discoveryDiagnostics, setDiscoveryDiagnostics] =
+    useState<LobbyDiscoveryDiagnostics | null>(null);
   const [lobbyStatus, setLobbyStatus] = useState<
     'Not checked' | 'Checking' | 'Available' | 'Not in game' | 'Unavailable' | 'Unsupported'
-  >(spectatorTftSupported(settings.riotPlatform) ? 'Not checked' : 'Unsupported');
+  >('Not checked');
   const busy = useRef(false);
 
   useEffect(() => {
@@ -94,7 +102,8 @@ export function RiotScouting({
       setResult(null);
       setMessage('Active lobby cleared. Cached opponent history was retained.');
       setOrigin('');
-      setLobbyStatus(spectatorTftSupported(settings.riotPlatform) ? 'Not checked' : 'Unsupported');
+      setDiscoveryDiagnostics(null);
+      setLobbyStatus('Not checked');
     };
     window.addEventListener('strategist-clear-lobby', clear);
     return () => window.removeEventListener('strategist-clear-lobby', clear);
@@ -197,6 +206,11 @@ export function RiotScouting({
   const discoverCurrentGame = async () => {
     if (busy.current) return;
     busy.current = true;
+    // A new automatic check invalidates the previous active-lobby evidence immediately. Cached
+    // profiles remain in HistoryStore and may be reused only if a fresh current lobby succeeds.
+    setResult(null);
+    onLobby(null);
+    setOrigin('');
     setWorking('discovery');
     setLobbyStatus('Checking');
     setMessage('Finding your current lobby…');
@@ -208,25 +222,32 @@ export function RiotScouting({
         settings.riotPlatform,
       );
       if (!discovery.ok) {
+        setDiscoveryDiagnostics(discovery.diagnostics);
         setMessage(discovery.error);
         setLobbyStatus(
-          discovery.error.startsWith('No active TFT game')
+          discovery.diagnostics.gameflow === 'no-tft-session' ||
+            discovery.diagnostics.gameflow === 'no-active-tft-session' ||
+            discovery.diagnostics.spectator === '404'
             ? 'Not in game'
-            : discovery.error.includes('unsupported')
+            : discovery.diagnostics.spectator === 'unsupported' &&
+                discovery.diagnostics.leagueClient === 'unavailable'
               ? 'Unsupported'
               : 'Unavailable',
         );
         return;
       }
       setLobbyStatus('Available');
+      setDiscoveryDiagnostics(discovery.value.diagnostics);
       setOwnIdentity(discovery.value.own);
       onSave({ ...settings, riotId: parseRiotId(ownInput).display });
       setEntries([]);
+      const source =
+        discovery.value.source === 'riot-spectator' ? 'Riot Spectator' : 'League Client';
       setOrigin(
-        `Automatically discovered current lobby · ${discovery.value.opponents.length} opponents discovered`,
+        `${discovery.value.opponents.length}/7 opponents detected · Source: ${source}${discovery.value.partialIdentities ? ' · partial identities' : ''}`,
       );
       setMessage('Loading recent history…');
-      await runScan(discovery.value.opponents, 7);
+      await scanDiscoveredLobby(discovery.value, runScan);
     } catch (error) {
       setLobbyStatus('Unavailable');
       setMessage(
@@ -324,21 +345,20 @@ export function RiotScouting({
           <button
             className="primary spectator-action"
             onClick={discoverCurrentGame}
-            disabled={
-              !ownInput.trim() || working !== null || !spectatorTftSupported(settings.riotPlatform)
-            }
+            disabled={!ownInput.trim() || working !== null}
           >
             <Users size={14} />{' '}
             {working === 'discovery' ? 'Scanning current lobby…' : 'Scan current lobby'}
           </button>
           {!spectatorTftSupported(settings.riotPlatform) && (
             <p className="fine-print">
-              The current official spectator reference does not list this platform.
+              Riot Spectator is not listed for this platform; the read-only League Client fallback
+              can still be tried.
             </p>
           )}
           <p className="policy-note">
-            Public Riot lookup. Riot policy restricts opponent-history and lobby-stat display during
-            gameplay/loading; technical access is not policy approval.
+            Read-only Riot/League Client lookup. Riot policy restricts opponent-history and
+            lobby-stat display during gameplay/loading; technical access is not policy approval.
           </p>
         </div>
         <div className="riot-opponents-box">
@@ -391,6 +411,50 @@ export function RiotScouting({
         <div className="scan-progress" role="progressbar" aria-label="Scouting in progress" />
       )}
       {origin && <div className="lobby-origin">{origin}</div>}
+      {discoveryDiagnostics && (
+        <div className="lobby-discovery-diagnostics" aria-label="Lobby discovery diagnostics">
+          <span>
+            Spectator TFT <strong>{discoveryLabel(discoveryDiagnostics.spectator)}</strong>
+          </span>
+          <span>
+            League Client <strong>{discoveryLabel(discoveryDiagnostics.leagueClient)}</strong>
+          </span>
+          <span>
+            LCU HTTPS <strong>{discoveryLabel(discoveryDiagnostics.lcuHttps)}</strong>
+          </span>
+          <span>
+            Gameflow <strong>{discoveryLabel(discoveryDiagnostics.gameflow)}</strong>
+          </span>
+          <span>
+            Participants{' '}
+            <strong>
+              {discoveryDiagnostics.participantsDiscovered} /{' '}
+              {discoveryDiagnostics.participantsWithPuuid} PUUIDs
+            </strong>
+          </span>
+          <span>
+            Opponents <strong>{discoveryDiagnostics.opponentsUsable} usable</strong>
+          </span>
+          <span>
+            LCU summoners{' '}
+            <strong>
+              {discoveryDiagnostics.lcuSummonersResolved} resolved
+              {discoveryDiagnostics.lcuSummonerResolutionFailures
+                ? ` · ${discoveryDiagnostics.lcuSummonerResolutionFailures} failed`
+                : ''}
+            </strong>
+          </span>
+          <span>
+            Public Riot identities{' '}
+            <strong>
+              {discoveryDiagnostics.publicRiotIdentitiesResolved} resolved
+              {discoveryDiagnostics.publicIdentityResolutionFailures
+                ? ` · ${discoveryDiagnostics.publicIdentityResolutionFailures} failed`
+                : ''}
+            </strong>
+          </span>
+        </div>
+      )}
       {message && (
         <p className="riot-message" role="status">
           {message}

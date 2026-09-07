@@ -27,6 +27,50 @@ export type RiotErrorCode =
   | 'malformed-response'
   | 'unavailable';
 
+export type SpectatorLobbyError =
+  | 'unsupported'
+  | 'not-in-game'
+  | 'forbidden'
+  | 'rate-limited'
+  | 'malformed-response'
+  | 'unavailable';
+
+export type LeagueClientLobbyError =
+  | 'client-unavailable'
+  | 'lockfile-unavailable'
+  | 'tls-failure'
+  | 'no-session'
+  | 'malformed-response';
+
+export interface DiscoveredParticipant {
+  puuid?: string;
+  riotId?: string;
+  summonerId?: string;
+}
+export type LobbyParticipant = DiscoveredParticipant | string;
+
+export interface LeagueClientParticipant {
+  localPuuid: string;
+  summonerId?: string;
+}
+
+export interface LeagueClientSummonerIdentity {
+  gameName: string;
+  tagLine: string;
+}
+
+export interface LeagueClientLobby {
+  participants: LeagueClientParticipant[];
+  participantCount: number;
+  participantsWithPuuid: number;
+  tftDetected: boolean;
+  rankedTftDetected: boolean;
+  activeForScouting: boolean;
+  phase?: string;
+  queueId?: number;
+  queueType?: string;
+}
+
 const SAFE_MESSAGES: Record<RiotErrorCode, string> = {
   'missing-key': 'Riot API access is unavailable in the native process.',
   'invalid-route': 'The selected Riot platform or regional route is unsupported.',
@@ -79,6 +123,26 @@ export function sanitizeNativeRiotError(value: unknown): RiotProviderError {
     candidate && typeof candidate.status === 'number' ? candidate.status : null,
     Boolean(candidate?.retryable),
   );
+}
+
+function nativeErrorCode(value: unknown): unknown {
+  if (value && typeof value === 'object') return (value as { code?: unknown }).code;
+  if (typeof value !== 'string' || !value.startsWith('{')) return undefined;
+  try {
+    return (JSON.parse(value) as { code?: unknown }).code;
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizeLeagueClientError(value: unknown): LeagueClientLobbyError {
+  const code = nativeErrorCode(value);
+  return code === 'no-session' ||
+    code === 'malformed-response' ||
+    code === 'lockfile-unavailable' ||
+    code === 'tls-failure'
+    ? code
+    : 'client-unavailable';
 }
 
 export interface RiotRequestOptions {
@@ -161,7 +225,14 @@ export interface RiotProvider {
   lobby(
     identity: RiotIdentity,
     options?: RiotRequestOptions,
-  ): Promise<Result<string[], 'unsupported' | 'not-in-game' | 'unavailable'>>;
+  ): Promise<Result<LobbyParticipant[], SpectatorLobbyError>>;
+  leagueClientLobby?(
+    options?: RiotRequestOptions,
+  ): Promise<Result<LeagueClientLobby, LeagueClientLobbyError>>;
+  leagueClientSummoner?(
+    summonerId: string,
+    options?: RiotRequestOptions,
+  ): Promise<Result<LeagueClientSummonerIdentity, 'unavailable' | 'malformed-response'>>;
   recentMatchIds(
     puuid: string,
     start: number,
@@ -209,6 +280,85 @@ const ladderSchema = z
   })
   .passthrough();
 const summonerSchema = z.object({ puuid: z.string().min(1) }).passthrough();
+const discoveredParticipantSchema = z
+  .object({
+    puuid: z.string().min(1).nullish(),
+    riotId: z.string().min(1).nullish(),
+    riotIdGameName: z.string().min(1).nullish(),
+    riotIdTagLine: z.string().min(1).nullish(),
+    gameName: z.string().min(1).nullish(),
+    tagLine: z.string().min(1).nullish(),
+    summonerName: z.string().min(1).nullish(),
+    summonerId: z.union([z.string().min(1), z.number().finite()]).nullish(),
+  })
+  .passthrough();
+
+// LCU identity metadata is legacy and may be empty or change type independently of the PUUID.
+// Parse it permissively, then retain only explicitly usable scalar values below. This schema is
+// deliberately separate from the public Spectator response schema.
+const lcuParticipantSchema = z
+  .object({
+    puuid: z.unknown().optional(),
+    summonerId: z.unknown().optional(),
+  })
+  .passthrough();
+
+type LeagueClientParticipantPayload = z.infer<typeof lcuParticipantSchema>;
+
+function nonEmptyString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function explicitRiotId(participant: Record<string, unknown>) {
+  const riotId = nonEmptyString(participant.riotId);
+  if (riotId) return riotId;
+  const gameName =
+    nonEmptyString(participant.riotIdGameName) ?? nonEmptyString(participant.gameName);
+  const tagLine =
+    nonEmptyString(participant.riotIdTagLine) ??
+    nonEmptyString(participant.riotIdTagline) ??
+    nonEmptyString(participant.tagLine);
+  return gameName && tagLine ? `${gameName}#${tagLine}` : undefined;
+}
+
+function normalizeDiscoveredParticipant(
+  participant: z.infer<typeof discoveredParticipantSchema>,
+): DiscoveredParticipant {
+  const puuid = nonEmptyString(participant.puuid);
+  const riotId = explicitRiotId(participant);
+  const summonerId =
+    nonEmptyString(participant.summonerId) ??
+    (typeof participant.summonerId === 'number' && Number.isFinite(participant.summonerId)
+      ? String(participant.summonerId)
+      : undefined);
+  return {
+    ...(puuid ? { puuid } : {}),
+    ...(riotId ? { riotId } : {}),
+    ...(summonerId ? { summonerId } : {}),
+  };
+}
+
+function normalizeLeagueClientParticipant(
+  participant: LeagueClientParticipantPayload,
+): LeagueClientParticipant | null {
+  const localPuuid = nonEmptyString(participant.puuid);
+  if (!localPuuid) return null;
+  const summonerId =
+    nonEmptyString(participant.summonerId) ??
+    (typeof participant.summonerId === 'number' && Number.isFinite(participant.summonerId)
+      ? String(participant.summonerId)
+      : undefined);
+  return { localPuuid, ...(summonerId ? { summonerId } : {}) };
+}
+
+function containsTftMarker(value: unknown): boolean {
+  if (typeof value === 'string') {
+    const marker = value.toLocaleUpperCase('en-US');
+    return marker === 'TFT' || marker.endsWith('_TFT') || marker.includes('TEAMFIGHT TACTICS');
+  }
+  if (!value || typeof value !== 'object') return false;
+  return Object.values(value).some(containsTftMarker);
+}
 const unitSchema = z
   .object({
     character_id: z.string().min(1),
@@ -450,11 +600,11 @@ export class NativeRiotProvider implements RiotProvider {
   async lobby(
     identity: RiotIdentity,
     options?: RiotRequestOptions,
-  ): Promise<Result<string[], 'unsupported' | 'not-in-game' | 'unavailable'>> {
+  ): Promise<Result<DiscoveredParticipant[], SpectatorLobbyError>> {
     if (!spectatorTftSupported(this.platform)) return { ok: false, error: 'unsupported' };
     try {
       const parsed = z
-        .object({ participants: z.array(z.object({ puuid: z.string().nullable() }).passthrough()) })
+        .object({ participants: z.array(discoveredParticipantSchema) })
         .passthrough()
         .safeParse(
           await this.invoke<unknown>(
@@ -464,17 +614,105 @@ export class NativeRiotProvider implements RiotProvider {
           ),
         );
       if (!parsed.success) throw new RiotProviderError('malformed-response');
-      const participants = [
-        ...new Set(
-          parsed.data.participants
-            .map((participant) => participant.puuid)
-            .filter((puuid): puuid is string => Boolean(puuid) && puuid !== identity.puuid),
-        ),
-      ].slice(0, 7);
-      return { ok: true, value: participants };
+      return { ok: true, value: parsed.data.participants.map(normalizeDiscoveredParticipant) };
     } catch (error) {
       const safe = error instanceof RiotProviderError ? error : sanitizeNativeRiotError(error);
       if (safe.code === 'not-found') return { ok: false, error: 'not-in-game' };
+      if (safe.status === 403) return { ok: false, error: 'forbidden' };
+      if (safe.code === 'rate-limited') return { ok: false, error: 'rate-limited' };
+      if (safe.code === 'malformed-response') return { ok: false, error: 'malformed-response' };
+      return { ok: false, error: 'unavailable' };
+    }
+  }
+
+  async leagueClientLobby(
+    options: RiotRequestOptions = {},
+  ): Promise<Result<LeagueClientLobby, LeagueClientLobbyError>> {
+    if (options.signal?.aborted) return { ok: false, error: 'client-unavailable' };
+    try {
+      const bridge = await this.bridgeFactory();
+      const payload = await bridge.invoke<unknown>('league_client_gameflow', {
+        deadlineEpochMs: options.deadlineAt ?? Date.now() + 3_000,
+      });
+      const parsed = z
+        .object({
+          phase: z.string().optional(),
+          gameData: z
+            .object({
+              queue: z.unknown().optional(),
+              map: z.unknown().optional(),
+              teamOne: z.array(lcuParticipantSchema).optional().default([]),
+              teamTwo: z.array(lcuParticipantSchema).optional().default([]),
+            })
+            .passthrough(),
+        })
+        .passthrough()
+        .safeParse(payload);
+      if (!parsed.success) return { ok: false, error: 'malformed-response' };
+      const queue =
+        parsed.data.gameData.queue && typeof parsed.data.gameData.queue === 'object'
+          ? (parsed.data.gameData.queue as Record<string, unknown>)
+          : {};
+      const queueId =
+        typeof queue.id === 'number' && Number.isFinite(queue.id) ? queue.id : undefined;
+      const queueType = typeof queue.type === 'string' ? queue.type : undefined;
+      const rankedTftDetected =
+        queueId === 1100 && queueType?.toLocaleUpperCase('en-US') === 'RANKED_TFT';
+      const tftDetected =
+        rankedTftDetected ||
+        containsTftMarker(parsed.data.gameData.queue) ||
+        containsTftMarker(parsed.data.gameData.map);
+      const activeForScouting = tftDetected && parsed.data.phase === 'InProgress';
+      const rawParticipants = [...parsed.data.gameData.teamOne, ...parsed.data.gameData.teamTwo];
+      const seenPuuids = new Set<string>();
+      const participants = rawParticipants
+        .map(normalizeLeagueClientParticipant)
+        .filter((participant): participant is LeagueClientParticipant => {
+          if (!participant || seenPuuids.has(participant.localPuuid)) return false;
+          seenPuuids.add(participant.localPuuid);
+          return true;
+        });
+      return {
+        ok: true,
+        value: {
+          participants,
+          participantCount: rawParticipants.length,
+          participantsWithPuuid: participants.length,
+          tftDetected,
+          rankedTftDetected,
+          activeForScouting,
+          ...(parsed.data.phase ? { phase: parsed.data.phase } : {}),
+          ...(queueId === undefined ? {} : { queueId }),
+          ...(queueType ? { queueType } : {}),
+        },
+      };
+    } catch (error) {
+      return { ok: false, error: sanitizeLeagueClientError(error) };
+    }
+  }
+
+  async leagueClientSummoner(
+    summonerId: string,
+    options: RiotRequestOptions = {},
+  ): Promise<Result<LeagueClientSummonerIdentity, 'unavailable' | 'malformed-response'>> {
+    if (options.signal?.aborted || !summonerId.trim()) return { ok: false, error: 'unavailable' };
+    try {
+      const bridge = await this.bridgeFactory();
+      const payload = await bridge.invoke<unknown>('league_client_summoner', {
+        summonerId,
+        deadlineEpochMs: options.deadlineAt ?? Date.now() + 3_000,
+      });
+      const parsed = z
+        .object({ gameName: z.string().trim().min(1), tagLine: z.string().trim().min(1) })
+        .passthrough()
+        .safeParse(payload);
+      return parsed.success
+        ? {
+            ok: true,
+            value: { gameName: parsed.data.gameName, tagLine: parsed.data.tagLine },
+          }
+        : { ok: false, error: 'malformed-response' };
+    } catch {
       return { ok: false, error: 'unavailable' };
     }
   }
@@ -567,10 +805,22 @@ export class FixtureRiotProvider implements RiotProvider {
     if (!identity) throw new RiotProviderError('not-found', 404);
     return identity;
   }
-  async lobby(): Promise<Result<string[], 'unsupported'>> {
+  async lobby(): Promise<Result<LobbyParticipant[], 'unsupported'>> {
     return this.lobbyPuuids
-      ? { ok: true, value: [...this.lobbyPuuids] }
+      ? { ok: true, value: this.lobbyPuuids.map((puuid) => ({ puuid })) }
       : { ok: false, error: 'unsupported' };
+  }
+  async leagueClientLobby(): Promise<Result<LeagueClientLobby, LeagueClientLobbyError>> {
+    return { ok: false, error: 'client-unavailable' };
+  }
+  async leagueClientSummoner(
+    summonerId: string,
+  ): Promise<Result<LeagueClientSummonerIdentity, 'unavailable'>> {
+    const puuid = summonerId.replace('fixture-summoner-', '');
+    const identity = this.participants.find((participant) => participant.puuid === puuid);
+    return identity
+      ? { ok: true, value: { gameName: identity.gameName, tagLine: identity.tagLine } }
+      : { ok: false, error: 'unavailable' };
   }
   async recentMatchIds(puuid: string, start: number, count: number): Promise<string[]> {
     this.requestsAttempted++;

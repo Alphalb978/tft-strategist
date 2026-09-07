@@ -462,6 +462,11 @@ function makeLobbyResult(
   };
 }
 
+const identityRiotId = (identity: RiotIdentity) =>
+  identity.gameName && identity.tagLine ? `${identity.gameName}#${identity.tagLine}` : undefined;
+
+const identityDisplayName = (identity: RiotIdentity) => identity.gameName || 'Lobby participant';
+
 export async function scanLobby(
   identities: Array<RiotIdentity | string>,
   provider: RiotProvider,
@@ -521,7 +526,7 @@ export async function scanLobby(
       if (stored) {
         const profile = {
           ...stored.profile,
-          riotId: `${identity.gameName}#${identity.tagLine}`,
+          riotId: identityRiotId(identity),
           freshness: isFresh(stored.profile.generatedAt, options.now, RECENT_INDEX_TTL_MS)
             ? ('cached' as const)
             : ('stale' as const),
@@ -638,7 +643,9 @@ export async function scanLobby(
             });
           } catch {
             state.failed = true;
-            errors.push(`Recent history for ${state.identity.gameName} was unavailable.`);
+            errors.push(
+              `Recent history for ${identityDisplayName(state.identity)} was unavailable.`,
+            );
             if (state.index) {
               state.ids = [...state.index.ids];
               state.nextStart = state.index.requestedCount;
@@ -664,7 +671,7 @@ export async function scanLobby(
         options.now,
         target,
         'fresh',
-        `${state.identity.gameName}#${state.identity.tagLine}`,
+        identityRiotId(state.identity),
         derivationOptions,
       );
       profileDerivationMs += performance.now() - profileStarted;

@@ -26,6 +26,7 @@ export interface StoredProfile {
 export interface HistoryStore {
   mode: 'SQLite' | 'Memory';
   getIdentity(gameName: string, tagLine: string, platform: string): Promise<StoredIdentity | null>;
+  getIdentityByPuuid(puuid: string, platform: string): Promise<StoredIdentity | null>;
   putIdentity(identity: RiotIdentity, fetchedAt: string): Promise<void>;
   getRecentIndex(puuid: string, routing: string): Promise<RecentMatchIndex | null>;
   putRecentIndex(index: RecentMatchIndex): Promise<void>;
@@ -104,6 +105,12 @@ export class MemoryHistoryStore implements HistoryStore {
   async getIdentity(gameName: string, tagLine: string, platform: string) {
     return structuredClone(this.identities.get(identityKey(gameName, tagLine, platform)) ?? null);
   }
+  async getIdentityByPuuid(puuid: string, platform: string) {
+    const identity = [...this.identities.values()].find(
+      (entry) => entry.puuid === puuid && entry.platform === platform,
+    );
+    return structuredClone(identity ?? null);
+  }
   async putIdentity(identity: RiotIdentity, fetchedAt: string) {
     this.identities.set(identityKey(identity.gameName, identity.tagLine, identity.platform), {
       ...structuredClone(identity),
@@ -159,6 +166,29 @@ export class SqlHistoryStore implements HistoryStore {
       'SELECT * FROM riot_accounts WHERE game_name = $1 COLLATE NOCASE AND tag_line = $2 COLLATE NOCASE AND platform = $3 LIMIT 1',
       [gameName, tagLine, platform],
     );
+    const row = rows[0];
+    return row
+      ? {
+          puuid: row.puuid,
+          gameName: row.game_name,
+          tagLine: row.tag_line,
+          platform: row.platform,
+          routing: row.regional_route,
+          fetchedAt: row.fetched_at,
+        }
+      : null;
+  }
+  async getIdentityByPuuid(puuid: string, platform: string) {
+    const rows = await this.db.select<
+      {
+        puuid: string;
+        game_name: string;
+        tag_line: string;
+        platform: string;
+        regional_route: string;
+        fetched_at: string;
+      }[]
+    >('SELECT * FROM riot_accounts WHERE puuid = $1 AND platform = $2 LIMIT 1', [puuid, platform]);
     const row = rows[0];
     return row
       ? {

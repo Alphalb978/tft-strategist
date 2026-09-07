@@ -1274,6 +1274,18 @@ footer button {
   color: var(--accent);
   margin: 12px 0;
 }
+.lobby-discovery-diagnostics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 8px 0 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.lobby-discovery-diagnostics strong {
+  color: var(--text);
+  font-weight: 600;
+}
 .policy-note {
   font-size: 11px;
   color: var(--muted);

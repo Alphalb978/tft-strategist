@@ -8,8 +8,17 @@ for (const width of [1440, 1000, 860])
     await page.goto('/?riot-fixture=1');
     await page.getByRole('button', { name: 'Scouting', exact: true }).click();
     await page.getByRole('button', { name: 'Scan current lobby', exact: true }).click();
-    await expect(page.getByText(/7 opponents discovered/)).toBeVisible();
+    await expect(page.getByText(/7\/7 opponents detected · Source: Riot Spectator/)).toBeVisible();
+    await expect(page.getByLabel('Lobby discovery diagnostics')).toContainText(
+      'Spectator TFT success',
+    );
+    await expect(page.getByLabel('Lobby discovery diagnostics')).toContainText(
+      'Opponents 7 usable',
+    );
     await expect(page.getByText('7/7 profiles')).toBeVisible();
+    expect(await page.locator('main').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+      true,
+    );
     await capture(page, { path: `artifacts/m10-auto-${width}.png` });
     await page.getByRole('button', { name: 'Your plans', exact: true }).click();
     await page.getByRole('button', { name: 'Explore playbook' }).first().click();
@@ -92,28 +101,34 @@ test('M10 invalid appearance and failed persistence stay usable', async ({ page 
   await expect(page.locator('html')).toHaveAttribute('data-accent', 'Blue');
 });
 
-test('M10 current-lobby failures explain safe provider errors and retain retry', async ({
-  page,
-}) => {
+test('M10 current-lobby failure retains retry and manual fallback', async ({ page }) => {
   await page.goto('/?riot-fixture=1');
   await page.getByRole('button', { name: 'Scouting', exact: true }).click();
-  for (const code of ['auth', 'rate-limited']) {
-    await page.evaluate(async (code) => {
-      const modulePath = '/src/providers/riot.ts';
-      const { FixtureRiotProvider, RiotProviderError } = await import(
-        /* @vite-ignore */ modulePath
-      );
-      FixtureRiotProvider.prototype.lobby = async () => {
-        throw new RiotProviderError(code);
-      };
-    }, code);
-    await page.getByRole('button', { name: 'Scan current lobby', exact: true }).click();
-    await expect(page.locator('.riot-message')).toContainText(
-      code === 'auth' ? 'Invalid or expired' : 'Riot is rate limiting',
-    );
-    await expect(
-      page.getByRole('button', { name: 'Scan current lobby', exact: true }),
-    ).toBeEnabled();
-    await expect(page.locator('.riot-message')).toContainText('cached plans still work');
-  }
+  await page.getByLabel('Riot ID', { exact: true }).fill('Unknown account#TFT');
+  await page.getByRole('button', { name: 'Scan current lobby', exact: true }).click();
+  await expect(page.locator('.riot-message')).toContainText('Use manual opponents');
+  await expect(page.getByLabel('Lobby discovery diagnostics')).toContainText(
+    'League Client unavailable',
+  );
+  await expect(page.getByRole('button', { name: 'Scan current lobby', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Resolve & scan history' })).toBeEnabled();
+});
+
+test('M10 failed automatic rescan clears previous active lobby evidence', async ({ page }) => {
+  await page.goto('/?riot-fixture=1');
+  await page.getByRole('button', { name: 'Scouting', exact: true }).click();
+  await page.getByRole('button', { name: 'Scan current lobby', exact: true }).click();
+  await expect(page.getByText('7/7 profiles')).toBeVisible();
+  await page.getByRole('button', { name: 'Your plans', exact: true }).click();
+  await expect(page.locator('.lobby-pressure-summary')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Scouting', exact: true }).click();
+  await page.getByLabel('Riot ID', { exact: true }).fill('Unknown account#TFT');
+  await page.getByRole('button', { name: 'Scan current lobby', exact: true }).click();
+  await expect(page.locator('.riot-message')).toContainText('Use manual opponents');
+  await expect(page.getByRole('button', { name: 'Resolve & scan history' })).toBeEnabled();
+
+  await page.getByRole('button', { name: 'Your plans', exact: true }).click();
+  await expect(page.locator('.lobby-pressure-summary')).toHaveCount(0);
+  await expect(page.getByText('No active lobby pressure. Adjustments are neutral.')).toBeVisible();
 });

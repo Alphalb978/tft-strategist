@@ -2,6 +2,7 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod credentials;
 mod external_meta;
+mod lcu;
 mod riot;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -45,6 +46,8 @@ pub fn run() {
             external_meta::external_meta_snapshot,
             external_meta::external_meta_history,
             external_meta::refresh_external_meta,
+            lcu::league_client_gameflow,
+            lcu::league_client_summoner,
             riot::riot_connection_status,
             riot::riot_save_key,
             riot::riot_remove_key,

@@ -51,7 +51,7 @@ export function DataSettings({
   riotProvider: RiotProvider;
   historyStore: HistoryStore;
   fixturePreview: boolean;
-  onLobby: (lobby: LobbyPressure) => void;
+  onLobby: (lobby: LobbyPressure | null) => void;
   onRebuildIntelligence?: () => void;
 }) {
   const [externalRefresh, setExternalRefresh] = useState('');
