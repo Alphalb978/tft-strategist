@@ -44,12 +44,42 @@ describe('application persistence and refresh', () => {
     expect(result.source).toBe('Local cache');
     expect(result.settings).toEqual({
       personalWeight: 0.1,
-      historyWindow: 20,
+      historyWindow: 10,
       riotId: '',
       riotPlatform: 'EUW1',
       homeRecommendation: defaultSettings.homeRecommendation,
     });
     expect(result.portfolio.plans).toHaveLength(3);
+  });
+  it('preserves an existing persisted historyWindow of 20 without guessing intentionality', async () => {
+    const repo = new MemoryRepository();
+    await repo.set('static', data);
+    await repo.set('settings', {
+      personalWeight: 0.05,
+      historyWindow: 20,
+      riotId: 'ExistingUser#EUW',
+      riotPlatform: 'EUW1',
+      homeRecommendation: defaultSettings.homeRecommendation,
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}')));
+    const result = await loadApplication(repo);
+    expect(result.settings.historyWindow).toBe(20);
+    expect(result.settings.riotId).toBe('ExistingUser#EUW');
+    expect(result.settings.homeRecommendation).toEqual(defaultSettings.homeRecommendation);
+  });
+  it('defaults historyWindow to 10 when unconfigured or invalid in stored settings', async () => {
+    const repo = new MemoryRepository();
+    await repo.set('static', data);
+    await repo.set('settings', {
+      personalWeight: 0.08,
+      riotId: 'NewUser#EUW',
+      riotPlatform: 'EUW1',
+      homeRecommendation: defaultSettings.homeRecommendation,
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}')));
+    const result = await loadApplication(repo);
+    expect(result.settings.historyWindow).toBe(10);
+    expect(result.settings.personalWeight).toBe(0.08);
   });
   it('failed refresh preserves the previously successful cache', async () => {
     const repo = new MemoryRepository();

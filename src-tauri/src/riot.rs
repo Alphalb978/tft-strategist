@@ -72,6 +72,41 @@ struct LimiterState {
     blocked_until: Option<Instant>,
     method_blocked_until: HashMap<String, Instant>,
     metrics: RiotMetrics,
+    active_rate_limit_sleepers: u32,
+    rate_limit_sleep_started_at: Option<Instant>,
+}
+
+impl LimiterState {
+    fn start_rate_limit_sleep(&mut self) {
+        let now = Instant::now();
+        self.accrue_rate_limit_sleep(now);
+        if self.active_rate_limit_sleepers == 0 {
+            self.rate_limit_sleep_started_at = Some(now);
+        }
+        self.active_rate_limit_sleepers += 1;
+    }
+
+    fn end_rate_limit_sleep(&mut self) {
+        let now = Instant::now();
+        self.accrue_rate_limit_sleep(now);
+        self.active_rate_limit_sleepers = self.active_rate_limit_sleepers.saturating_sub(1);
+        if self.active_rate_limit_sleepers == 0 {
+            self.rate_limit_sleep_started_at = None;
+        }
+    }
+
+    fn accrue_rate_limit_sleep(&mut self, now: Instant) {
+        if let Some(started_at) = self.rate_limit_sleep_started_at {
+            if now > started_at {
+                self.metrics.rate_limit_wait_ms += (now - started_at).as_millis() as u64;
+                self.rate_limit_sleep_started_at = if self.active_rate_limit_sleepers > 0 {
+                    Some(now)
+                } else {
+                    None
+                };
+            }
+        }
+    }
 }
 
 pub struct RiotState {
@@ -180,6 +215,25 @@ impl RiotState {
         }
     }
 
+    async fn sleep_rate_limited(
+        &self,
+        duration: Duration,
+        deadline_epoch_ms: u64,
+        token: &CancellationToken,
+    ) -> Result<(), SafeRiotError> {
+        let remaining = remaining(deadline_epoch_ms)?;
+        if duration >= remaining {
+            return Err(SafeRiotError::new("deadline", None, true));
+        }
+        self.limiter.lock().await.start_rate_limit_sleep();
+        let result = tokio::select! {
+            _ = token.cancelled() => Err(SafeRiotError::new("cancelled", None, false)),
+            _ = tokio::time::sleep(duration) => Ok(()),
+        };
+        self.limiter.lock().await.end_rate_limit_sleep();
+        result
+    }
+
     async fn wait_for_budget(
         &self,
         method: &str,
@@ -219,12 +273,8 @@ impl RiotState {
             };
             match wait {
                 Some(duration) if !duration.is_zero() => {
-                    {
-                        let mut limiter = self.limiter.lock().await;
-                        limiter.metrics.rate_limit_waits += 1;
-                        limiter.metrics.rate_limit_wait_ms += duration.as_millis() as u64;
-                    }
-                    self.sleep_bounded(duration, deadline_epoch_ms, token)
+                    self.limiter.lock().await.metrics.rate_limit_waits += 1;
+                    self.sleep_rate_limited(duration, deadline_epoch_ms, token)
                         .await?;
                 }
                 _ => return Ok(()),
@@ -600,7 +650,9 @@ pub async fn riot_test_connection(
 pub async fn riot_metrics(
     state: tauri::State<'_, RiotState>,
 ) -> Result<RiotMetrics, SafeRiotError> {
-    Ok(state.limiter.lock().await.metrics.clone())
+    let mut limiter = state.limiter.lock().await;
+    limiter.accrue_rate_limit_sleep(Instant::now());
+    Ok(limiter.metrics.clone())
 }
 
 #[tauri::command]
@@ -936,6 +988,75 @@ mod tests {
         let status = state.credentials.lock().await.status();
         assert_eq!(status.status, "connected");
         assert!(status.last_success.is_some());
+    }
+
+    #[tokio::test]
+    async fn rate_limit_wait_telemetry_ignores_deadline_prevented_sleep() {
+        let state = RiotState::for_test();
+        // Block the limiter for 5 seconds
+        state.limiter.lock().await.blocked_until = Some(Instant::now() + Duration::from_secs(5));
+        // Provide a deadline only 50ms in the future
+        let deadline = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+            + 50;
+        let token = CancellationToken::new();
+        let err = state
+            .wait_for_budget("test", deadline, &token)
+            .await
+            .unwrap_err();
+        assert_eq!(err.code, "deadline");
+        let metrics = state.limiter.lock().await.metrics.clone();
+        assert_eq!(metrics.rate_limit_waits, 1);
+        assert_eq!(
+            metrics.rate_limit_wait_ms, 0,
+            "prospective blocked duration must not be recorded when deadline prevents sleep"
+        );
+    }
+
+    #[tokio::test]
+    async fn rate_limit_wait_telemetry_measures_wall_clock_across_concurrent_waiters() {
+        use std::sync::Arc;
+        let state = Arc::new(RiotState::for_test());
+        // Block limiter for 60ms
+        state.limiter.lock().await.blocked_until = Some(Instant::now() + Duration::from_millis(60));
+        let deadline = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+            + 5_000;
+        let token = CancellationToken::new();
+
+        let t1 = {
+            let s = Arc::clone(&state);
+            let tok = token.clone();
+            tokio::spawn(async move { s.wait_for_budget("test", deadline, &tok).await })
+        };
+        let t2 = {
+            let s = Arc::clone(&state);
+            let tok = token.clone();
+            tokio::spawn(async move { s.wait_for_budget("test", deadline, &tok).await })
+        };
+        let t3 = {
+            let s = Arc::clone(&state);
+            let tok = token.clone();
+            tokio::spawn(async move { s.wait_for_budget("test", deadline, &tok).await })
+        };
+
+        let (r1, r2, r3) = tokio::join!(t1, t2, t3);
+        r1.unwrap().unwrap();
+        r2.unwrap().unwrap();
+        r3.unwrap().unwrap();
+
+        let metrics = state.limiter.lock().await.metrics.clone();
+        assert_eq!(metrics.rate_limit_waits, 3);
+        // Wall clock sleep should be roughly 60ms, not 180ms (3 * 60ms)
+        assert!(
+            metrics.rate_limit_wait_ms >= 50 && metrics.rate_limit_wait_ms < 140,
+            "expected wall clock wait ~60ms, got {}ms",
+            metrics.rate_limit_wait_ms
+        );
     }
 }
 

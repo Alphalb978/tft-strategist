@@ -63,7 +63,7 @@ export function deriveLobbyEvidenceCoverage(
 export const M4_UNIT_MODEL = {
   version: 'm4-unit-pressure-v1',
   profileVersion: 'opponent-unit-evidence-v4',
-  defaultHistoryTarget: 20,
+  defaultHistoryTarget: 10,
   supportedHistoryTargets: [10, 15, 20] as const,
   recency: {
     ordinalHalfLifeGames: 10,

@@ -86,7 +86,7 @@ function completeLobby(
 }
 
 describe('M4 opponent unit-history derivation', () => {
-  it('defaults to 20 relevant games while preserving 10 and 15 targets', async () => {
+  it('defaults to 10 relevant games while preserving 15 and 20 targets', async () => {
     const source = Array.from({ length: 20 }, (_, index) => match(`default-${index}`, ['a'], null));
     const defaultResult = await scanLobby(
       ['a'],
@@ -94,9 +94,9 @@ describe('M4 opponent unit-history derivation', () => {
       new MemoryHistoryStore(),
       { set: 18, patch: '18.1', now: NOW },
     );
-    expect(defaultResult.relevantGamesTarget).toBe(20);
-    expect(defaultResult.profiles[0].relevantGames).toBe(20);
-    for (const target of [10, 15] as const) {
+    expect(defaultResult.relevantGamesTarget).toBe(10);
+    expect(defaultResult.profiles[0].relevantGames).toBe(10);
+    for (const target of [15, 20] as const) {
       const result = await scanLobby(
         ['a'],
         new FixtureRiotProvider(source, []),
@@ -130,7 +130,7 @@ describe('M4 opponent unit-history derivation', () => {
       true,
       ...Array(8).fill(false),
     ];
-    const evidence = deriveOpponent('a', unitSeries('a', pattern), 18, '18.1', NOW).unitEvidence[0];
+    const evidence = deriveOpponent('a', unitSeries('a', pattern), 18, '18.1', NOW, 20).unitEvidence[0];
     expect(evidence).toMatchObject({
       gamesAppeared: 5,
       sampleGames: 20,
@@ -146,7 +146,7 @@ describe('M4 opponent unit-history derivation', () => {
 
   it('keeps a historically common unit while its last-five trend falls', () => {
     const pattern = [...Array(5).fill(false), ...Array(15).fill(true)];
-    const evidence = deriveOpponent('a', unitSeries('a', pattern), 18, '18.1', NOW).unitEvidence[0];
+    const evidence = deriveOpponent('a', unitSeries('a', pattern), 18, '18.1', NOW, 20).unitEvidence[0];
     expect(evidence.gamesAppeared).toBe(15);
     expect(evidence.weightedPresence).toBeGreaterThan(0);
     expect(evidence.recentFiveAppearances).toBe(0);

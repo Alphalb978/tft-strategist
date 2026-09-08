@@ -21,7 +21,6 @@ import {
 export const OPPONENT_DERIVATION_VERSION = M4_UNIT_MODEL.profileVersion;
 export const RECENT_INDEX_TTL_MS = 5 * 60 * 1000;
 export const IDENTITY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const PAGE_SIZE = 20;
 const MAX_HISTORY_IDS = 60;
 
 const emptyTelemetry = (): RiotTelemetry => ({
@@ -602,37 +601,82 @@ export async function scanLobby(
       if (fresh) telemetry.cacheHits++;
     }
 
+    const countRelevant = (state: PersonState) =>
+      state.ids.filter((id) => {
+        const match = matches.get(id);
+        return match && relevantMatch(match, state.identity.puuid, options.set);
+      }).length;
+
     const loadDetails = async () => {
-      const references = states.reduce((total, state) => total + state.ids.length, 0);
-      const uniqueIds = [...new Set(states.flatMap((state) => state.ids))];
-      telemetry.sharedMatchesDeduplicated = Math.max(0, references - uniqueIds.length);
-      for (const id of uniqueIds) {
-        if (matches.has(id)) continue;
-        const cached = await store.getCompletedMatch(id);
-        if (cached) {
-          matches.set(id, cached);
-          telemetry.cacheHits++;
+      // 1. Inspect existing memory and persistent store cache for candidate IDs up to target
+      for (const state of states) {
+        let usable = 0;
+        for (const id of state.ids) {
+          if (usable >= target) break;
+          let match = matches.get(id);
+          if (!match) {
+            const cached = await store.getCompletedMatch(id);
+            if (cached) {
+              matches.set(id, cached);
+              telemetry.cacheHits++;
+              match = cached;
+            }
+          }
+          if (match && relevantMatch(match, state.identity.puuid, options.set)) {
+            usable++;
+          }
         }
       }
-      await bounded(
-        uniqueIds.filter((id) => !matches.has(id)),
-        async (id) => {
-          try {
-            const match = await abortable(provider.completedMatch(id, { signal, deadlineAt }));
-            if (match.id !== id) throw new RiotProviderError('malformed-response');
-            matches.set(id, match);
-            telemetry.uniqueMatchDetailsFetched++;
-            await store.putCompletedMatch(match, options.now);
-          } catch (error) {
-            errors.push(
-              error instanceof RiotProviderError && error.code === 'not-found'
-                ? `Completed match ${id} was no longer available.`
-                : 'A completed-match request was unavailable.',
-            );
+
+      // 2. Identify network fetches strictly needed to reach target
+      const neededNetworkIds = new Set<string>();
+      for (const state of states) {
+        let usable = 0;
+        let unknownQueued = 0;
+        for (const id of state.ids) {
+          if (usable >= target) break;
+          const match = matches.get(id);
+          if (match) {
+            if (relevantMatch(match, state.identity.puuid, options.set)) {
+              usable++;
+            }
+          } else {
+            const remainingNeeded = target - usable;
+            if (unknownQueued < remainingNeeded) {
+              neededNetworkIds.add(id);
+              unknownQueued++;
+            }
           }
-        },
-        signal,
-      );
+        }
+      }
+
+      // 3. Fetch missing details concurrently
+      if (neededNetworkIds.size > 0) {
+        await bounded(
+          [...neededNetworkIds],
+          async (id) => {
+            try {
+              const match = await abortable(provider.completedMatch(id, { signal, deadlineAt }));
+              if (match.id !== id) throw new RiotProviderError('malformed-response');
+              matches.set(id, match);
+              telemetry.uniqueMatchDetailsFetched++;
+              await store.putCompletedMatch(match, options.now);
+            } catch (error) {
+              errors.push(
+                error instanceof RiotProviderError && error.code === 'not-found'
+                  ? `Completed match ${id} was no longer available.`
+                  : 'A completed-match request was unavailable.',
+              );
+            }
+          },
+          signal,
+        );
+      }
+
+      // 4. Record deduplication telemetry
+      const references = states.reduce((total, state) => total + state.ids.length, 0);
+      const uniqueIds = new Set(states.flatMap((state) => state.ids)).size;
+      telemetry.sharedMatchesDeduplicated = Math.max(0, references - uniqueIds);
     };
 
     await loadDetails();
@@ -642,61 +686,76 @@ export async function scanLobby(
       matchesProcessed: matches.size,
       message: `Processed ${matches.size} historical matches…`,
     });
-    for (
-      let round = 0;
-      round < Math.ceil(MAX_HISTORY_IDS / PAGE_SIZE) && !signal.aborted;
-      round++
-    ) {
+    for (let round = 0; round < MAX_HISTORY_IDS && !signal.aborted; round++) {
       const candidates = states.filter((state) => {
         if (state.failed || state.exhausted) return false;
         if (state.needsRefresh) return true;
-        const relevant = state.ids.filter((id) => {
-          const match = matches.get(id);
-          return match && relevantMatch(match, state.identity.puuid, options.set);
-        }).length;
-        return relevant < target && state.nextStart < MAX_HISTORY_IDS;
+        const relevant = countRelevant(state);
+        if (relevant >= target || state.nextStart >= MAX_HISTORY_IDS) return false;
+        const unloadedCount = state.ids.filter((id) => !matches.has(id)).length;
+        return unloadedCount === 0;
       });
-      if (!candidates.length) break;
-      await bounded(
-        candidates,
-        async (state) => {
-          const start = state.needsRefresh ? 0 : state.nextStart;
-          try {
-            const ids = await abortable(
-              provider.recentMatchIds(state.identity.puuid, start, PAGE_SIZE, {
-                signal,
-                deadlineAt,
-              }),
-            );
-            state.ids = state.needsRefresh
-              ? [...new Set(ids)]
-              : [...new Set([...state.ids, ...ids])];
-            state.needsRefresh = false;
-            state.nextStart = start + ids.length;
-            state.exhausted = ids.length < PAGE_SIZE || state.nextStart >= MAX_HISTORY_IDS;
-            await store.putRecentIndex({
-              puuid: state.identity.puuid,
-              routing: state.identity.routing || options.routing || 'fixture',
-              targetCount: target,
-              requestedCount: state.nextStart,
-              ids: state.ids,
-              exhausted: state.exhausted,
-              fetchedAt: options.now,
-            });
-          } catch {
-            state.failed = true;
-            errors.push(
-              `Recent history for ${identityDisplayName(state.identity)} was unavailable.`,
-            );
-            if (state.index) {
-              state.ids = [...state.index.ids];
-              state.nextStart = state.index.requestedCount;
-              state.exhausted = state.index.exhausted;
+
+      if (!candidates.length) {
+        const hasUnloadedWork = states.some((state) => {
+          if (state.failed) return false;
+          const relevant = countRelevant(state);
+          if (relevant >= target) return false;
+          return state.ids.some((id) => !matches.has(id));
+        });
+        if (!hasUnloadedWork) break;
+      }
+
+      if (candidates.length > 0) {
+        await bounded(
+          candidates,
+          async (state) => {
+            const relevant = countRelevant(state);
+            const needed = Math.max(0, target - relevant);
+            const start = state.needsRefresh ? 0 : state.nextStart;
+            const count = Math.min(needed, MAX_HISTORY_IDS - start);
+            if (count <= 0) {
+              state.exhausted = true;
+              return;
             }
-          }
-        },
-        signal,
-      );
+            try {
+              const ids = await abortable(
+                provider.recentMatchIds(state.identity.puuid, start, count, {
+                  signal,
+                  deadlineAt,
+                }),
+              );
+              state.ids = state.needsRefresh
+                ? [...new Set(ids)]
+                : [...new Set([...state.ids, ...ids])];
+              state.needsRefresh = false;
+              state.nextStart = start + ids.length;
+              state.exhausted = ids.length < count || state.nextStart >= MAX_HISTORY_IDS;
+              await store.putRecentIndex({
+                puuid: state.identity.puuid,
+                routing: state.identity.routing || options.routing || 'fixture',
+                targetCount: target,
+                requestedCount: state.nextStart,
+                ids: state.ids,
+                exhausted: state.exhausted,
+                fetchedAt: options.now,
+              });
+            } catch {
+              state.failed = true;
+              errors.push(
+                `Recent history for ${identityDisplayName(state.identity)} was unavailable.`,
+              );
+              if (state.index) {
+                state.ids = [...state.index.ids];
+                state.nextStart = state.index.requestedCount;
+                state.exhausted = state.index.exhausted;
+              }
+            }
+          },
+          signal,
+        );
+      }
+
       await loadDetails();
       options.onProgress?.({
         opponentsAnalyzed: cachedProfiles.size,

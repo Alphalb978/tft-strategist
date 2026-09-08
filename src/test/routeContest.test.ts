@@ -410,7 +410,7 @@ describe('M4 Route Contest & Whole-Route Lobby Overlap', () => {
 
   it('12. Evidence structure correctness: CandidateRouteEvidence meets exact schema', () => {
     const forcerMatches = makeHistory('opp-schema', Array(20).fill(candidateUnits));
-    const forcerProfile = deriveOpponent('opp-schema', forcerMatches, 18, '18.1', NOW);
+    const forcerProfile = deriveOpponent('opp-schema', forcerMatches, 18, '18.1', NOW, 20);
     const lobby = makeLobby([forcerProfile]);
 
     const contest = candidateContestFor(targetPlaybook, lobby);
@@ -558,7 +558,7 @@ describe('M4 Route Contest & Whole-Route Lobby Overlap', () => {
 
   it('17. 7/7 complete lobby evidence produces near-full (1.0) Home coverage', () => {
     const fullProfiles = Array.from({ length: 7 }, (_, i) =>
-      deriveOpponent(`opp-${i}`, makeHistory(`opp-${i}`, Array(20).fill(unrelatedUnits)), 18, '18.1', NOW),
+      deriveOpponent(`opp-${i}`, makeHistory(`opp-${i}`, Array(20).fill(unrelatedUnits)), 18, '18.1', NOW, 20),
     );
     const lobby = makeLobby(fullProfiles);
     const contest = candidateContestFor(targetPlaybook, lobby);
@@ -570,7 +570,7 @@ describe('M4 Route Contest & Whole-Route Lobby Overlap', () => {
   it('18. Partial lobby coverage scales proportionally and remains strictly bounded', () => {
     // 5 opponents with full 20 games, 2 missing
     const partialProfiles = Array.from({ length: 5 }, (_, i) =>
-      deriveOpponent(`opp-${i}`, makeHistory(`opp-${i}`, Array(20).fill(unrelatedUnits)), 18, '18.1', NOW),
+      deriveOpponent(`opp-${i}`, makeHistory(`opp-${i}`, Array(20).fill(unrelatedUnits)), 18, '18.1', NOW, 20),
     );
     const lobby = makeLobby(partialProfiles);
     const contest = candidateContestFor(targetPlaybook, lobby);
@@ -582,7 +582,7 @@ describe('M4 Route Contest & Whole-Route Lobby Overlap', () => {
 
   it('19. No double confidence attenuation: sample completeness separates from recency decay', () => {
     const fullProfiles = Array.from({ length: 7 }, (_, i) =>
-      deriveOpponent(`opp-${i}`, makeHistory(`opp-${i}`, Array(20).fill(unrelatedUnits)), 18, '18.1', NOW),
+      deriveOpponent(`opp-${i}`, makeHistory(`opp-${i}`, Array(20).fill(unrelatedUnits)), 18, '18.1', NOW, 20),
     );
     // Profile confidence incorporates recencyQuality (< 0.60)
     expect(fullProfiles[0].confidence).toBeLessThan(0.65);
@@ -595,9 +595,9 @@ describe('M4 Route Contest & Whole-Route Lobby Overlap', () => {
   });
 
   it('20. Deterministic output: repeatedly evaluates to exact identical values', () => {
-    const forcer = deriveOpponent('opp-forcer', makeHistory('opp-forcer', Array(20).fill(candidateUnits)), 18, '18.1', NOW);
+    const forcer = deriveOpponent('opp-forcer', makeHistory('opp-forcer', Array(20).fill(candidateUnits)), 18, '18.1', NOW, 20);
     const others = Array.from({ length: 6 }, (_, i) =>
-      deriveOpponent(`opp-${i}`, makeHistory(`opp-${i}`, Array(20).fill(unrelatedUnits)), 18, '18.1', NOW),
+      deriveOpponent(`opp-${i}`, makeHistory(`opp-${i}`, Array(20).fill(unrelatedUnits)), 18, '18.1', NOW, 20),
     );
     const lobby = makeLobby([forcer, ...others]);
 

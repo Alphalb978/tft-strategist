@@ -30,7 +30,7 @@ export interface Settings {
 }
 export const defaultSettings: Settings = {
   personalWeight: 0.05,
-  historyWindow: 20,
+  historyWindow: 10,
   riotId: '',
   riotPlatform: 'EUW1',
   homeRecommendation: DEFAULT_HOME_RECOMMENDATION_CONFIG,

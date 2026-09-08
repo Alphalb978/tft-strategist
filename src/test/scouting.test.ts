@@ -121,9 +121,109 @@ describe('future opponent path with explicitly synthetic fixtures', () => {
       now: NOW,
       historyWindow: 10,
     });
-    expect(ids).toHaveBeenCalledTimes(2);
+    expect(ids).toHaveBeenCalledTimes(3);
+    expect(ids).toHaveBeenNthCalledWith(1, 'a', 0, 10, expect.anything());
+    expect(ids).toHaveBeenNthCalledWith(2, 'a', 10, 10, expect.anything());
+    expect(ids).toHaveBeenNthCalledWith(3, 'a', 20, 10, expect.anything());
     expect(result.profiles[0].relevantGames).toBe(10);
     expect(result.state).toBe('complete');
+  });
+  it('defaults to 10 relevant games, requests count 10 initially, and stops after 10 relevant games', async () => {
+    const source = Array.from({ length: 25 }, (_, index) => match(`game-${index}`, ['a']));
+    const provider = new FixtureRiotProvider(source, []);
+    const ids = vi.spyOn(provider, 'recentMatchIds');
+    const details = vi.spyOn(provider, 'completedMatch');
+    const result = await scanLobby(['a'], provider, new MemoryHistoryStore(), {
+      set: 18,
+      patch: '18.1',
+      now: NOW,
+    });
+    expect(result.relevantGamesTarget).toBe(10);
+    expect(result.relevantGamesAvailable).toBe(10);
+    expect(result.profiles[0].relevantGames).toBe(10);
+    expect(result.state).toBe('complete');
+    expect(ids).toHaveBeenCalledTimes(1);
+    expect(ids).toHaveBeenCalledWith('a', 0, 10, expect.anything());
+    expect(details).toHaveBeenCalledTimes(10);
+  });
+  it('requests bounded additional IDs and details when irrelevant games are encountered', async () => {
+    const wrong = Array.from({ length: 4 }, (_, index) =>
+      match(`wrong-${index}`, ['a'], '17.9', 17),
+    );
+    const current = Array.from({ length: 15 }, (_, index) => match(`current-${index}`, ['a']));
+    const provider = new FixtureRiotProvider([...wrong, ...current], []);
+    const ids = vi.spyOn(provider, 'recentMatchIds');
+    const details = vi.spyOn(provider, 'completedMatch');
+    const result = await scanLobby(['a'], provider, new MemoryHistoryStore(), {
+      set: 18,
+      patch: '18.1',
+      now: NOW,
+    });
+    expect(ids).toHaveBeenCalledTimes(2);
+    expect(ids).toHaveBeenNthCalledWith(1, 'a', 0, 10, expect.anything());
+    expect(ids).toHaveBeenNthCalledWith(2, 'a', 10, 4, expect.anything());
+    expect(result.profiles[0].relevantGames).toBe(10);
+    expect(details).toHaveBeenCalledTimes(14);
+  });
+  it('does not eagerly download extra match details from index cache beyond what can contribute', async () => {
+    const matchesList = Array.from({ length: 20 }, (_, index) => match(`match-${index}`, ['a']));
+    const provider = new FixtureRiotProvider(matchesList, []);
+    const store = new MemoryHistoryStore();
+    await store.putRecentIndex({
+      puuid: 'a',
+      routing: 'fixture',
+      targetCount: 10,
+      requestedCount: 20,
+      ids: matchesList.map((m) => m.id),
+      exhausted: false,
+      fetchedAt: NOW,
+    });
+    const ids = vi.spyOn(provider, 'recentMatchIds');
+    const details = vi.spyOn(provider, 'completedMatch');
+    const result = await scanLobby(['a'], provider, store, {
+      set: 18,
+      patch: '18.1',
+      now: NOW,
+    });
+    expect(ids).not.toHaveBeenCalled();
+    expect(details).toHaveBeenCalledTimes(10);
+    expect(result.profiles[0].relevantGames).toBe(10);
+  });
+  it('supports 15 and 20 history targets when explicitly selected and requests matching counts', async () => {
+    const source = Array.from({ length: 25 }, (_, index) => match(`game-${index}`, ['a']));
+    for (const target of [15, 20] as const) {
+      const provider = new FixtureRiotProvider(source, []);
+      const ids = vi.spyOn(provider, 'recentMatchIds');
+      const details = vi.spyOn(provider, 'completedMatch');
+      const result = await scanLobby(['a'], provider, new MemoryHistoryStore(), {
+        set: 18,
+        patch: '18.1',
+        now: NOW,
+        historyWindow: target,
+      });
+      expect(result.relevantGamesTarget).toBe(target);
+      expect(result.profiles[0].relevantGames).toBe(target);
+      expect(ids).toHaveBeenCalledTimes(1);
+      expect(ids).toHaveBeenCalledWith('a', 0, target, expect.anything());
+      expect(details).toHaveBeenCalledTimes(target);
+    }
+  });
+  it('records rateLimitWaitMs truthfully from provider metrics difference', async () => {
+    const provider = new FixtureRiotProvider([match('test', ['a'])], []);
+    let metricsCall = 0;
+    vi.spyOn(provider, 'metrics').mockImplementation(async () => {
+      metricsCall++;
+      return metricsCall === 1
+        ? { requestsAttempted: 0, retries: 0, rateLimitWaits: 1, rateLimitWaitMs: 120 }
+        : { requestsAttempted: 2, retries: 0, rateLimitWaits: 3, rateLimitWaitMs: 380 };
+    });
+    const result = await scanLobby(['a'], provider, new MemoryHistoryStore(), {
+      set: 18,
+      patch: '18.1',
+      now: NOW,
+    });
+    expect(result.telemetry.rateLimitWaits).toBe(2);
+    expect(result.telemetry.rateLimitWaitMs).toBe(260);
   });
   it('refreshes a stale index and reuses immutable completed matches', async () => {
     const provider = new FixtureRiotProvider([match('cached', ['a'])], []);
