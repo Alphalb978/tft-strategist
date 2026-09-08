@@ -1,8 +1,10 @@
 import type {
+  CanonicalRouteSignature,
   CompletedMatch,
   LobbyPressure,
   OpponentHistoricalBoard,
   OpponentProfile,
+  OpponentRouteAffinity,
   RiotIdentity,
   RiotTelemetry,
 } from '../domain/models';
@@ -13,6 +15,7 @@ import type { HistoryStore, RecentMatchIndex } from '../storage/history';
 import { clamp } from '../strategy/scoring';
 import {
   deriveLobbyUnitPressure,
+  deriveOpponentRouteAffinityV3,
   gameRecencyWeight,
   M4_UNIT_MODEL,
   unitTrend,
@@ -49,6 +52,7 @@ function relevantMatch(match: CompletedMatch, puuid: string, set: number) {
 export interface OpponentDerivationOptions {
   copyEligibleUnitIds?: ReadonlySet<string>;
   staticSourceVersion?: string;
+  routeSignatures?: CanonicalRouteSignature[];
 }
 
 function shortFingerprint(values: Iterable<string>) {
@@ -65,7 +69,10 @@ export function opponentDerivationVersion(target: number, options: OpponentDeriv
   const copyCatalog = options.copyEligibleUnitIds
     ? `copy-${shortFingerprint(options.copyEligibleUnitIds)}`
     : 'copy-unavailable';
-  return `${OPPONENT_DERIVATION_VERSION}:target-${target}:static-${source}:${copyCatalog}`;
+  const routeCatalog = options.routeSignatures?.length
+    ? `routes-${shortFingerprint(options.routeSignatures.map((r) => r.compId))}`
+    : 'routes-default';
+  return `${OPPONENT_DERIVATION_VERSION}:target-${target}:static-${source}:${copyCatalog}:${routeCatalog}`;
 }
 
 export function deriveOpponent(
@@ -244,57 +251,70 @@ export function deriveOpponent(
   const sampleCoverage = target ? clamp(sample.length / target) : 0;
   const recencyQuality = sample.length ? clamp(recencyEffectiveSample / sample.length) : 0;
   const modeQuality = sample.length ? 1 - 0.25 * (unverifiedModeGames / sample.length) : 0;
+  const confidence = clamp(sampleCoverage * recencyQuality * modeQuality * (patchQuality ?? 1));
+  const routeAffinities = derivationOptions.routeSignatures?.length
+    ? derivationOptions.routeSignatures
+        .map((sig) =>
+          deriveOpponentRouteAffinityV3(
+            { puuid, riotId, historicalBoards, confidence } as OpponentProfile,
+            sig,
+          ),
+        )
+        .filter((aff): aff is OpponentRouteAffinity => aff !== null)
+    : undefined;
+
   return {
     puuid,
     riotId,
-    generatedAt: now,
-    sourceMatchIds: sample.map((match) => match.id),
-    set,
-    patch,
-    derivationVersion: opponentDerivationVersion(target, derivationOptions),
-    relevantGames: sample.length,
-    effectiveSample,
-    unitEvidence,
-    unitFrequency,
-    traitFrequency,
-    augmentFrequency,
-    placement: {
-      games: sample.length,
-      average: placementWeight ? placementTotal / placementWeight : null,
-      topFourRate: placementWeight ? topFourWeight / placementWeight : null,
-    },
-    patchRelevance: {
-      status: patchStatus,
-      comparableGames: comparablePatchGames,
-      samePatchGames: comparablePatchGames ? samePatchGames : null,
-      note: comparablePatchGames
-        ? 'Compared only matches carrying an explicitly sourced TFT content patch.'
-        : 'Riot game client builds are not mapped to TFT content patches; relevance is unavailable.',
-    },
-    unresolvedIds: {
-      units: [...unresolved.units].sort(),
-      items: [...unresolved.items].sort(),
-      traits: [...unresolved.traits].sort(),
-      augments: [...unresolved.augments].sort(),
-    },
-    repeatedUnitCandidates: unitEvidence
-      .filter((unit) => unit.gamesAppeared >= 2)
-      .map((unit) => unit.championId),
-    freshness,
-    classification: {
-      family: 'unavailable',
-      style: 'unavailable',
-      note: 'M4 does not infer composition families, intent, or future strategic styles from final boards.',
-    },
-    confidenceFactors: {
-      sampleCoverage,
-      recencyQuality,
-      modeQuality,
-      patchQuality,
-    },
-    confidence: clamp(sampleCoverage * recencyQuality * modeQuality * (patchQuality ?? 1)),
-    historicalBoards,
-  };
+      generatedAt: now,
+      sourceMatchIds: sample.map((match) => match.id),
+      set,
+      patch,
+      derivationVersion: opponentDerivationVersion(target, derivationOptions),
+      relevantGames: sample.length,
+      effectiveSample,
+      unitEvidence,
+      unitFrequency,
+      traitFrequency,
+      augmentFrequency,
+      placement: {
+        games: sample.length,
+        average: placementWeight ? placementTotal / placementWeight : null,
+        topFourRate: placementWeight ? topFourWeight / placementWeight : null,
+      },
+      patchRelevance: {
+        status: patchStatus,
+        comparableGames: comparablePatchGames,
+        samePatchGames: comparablePatchGames ? samePatchGames : null,
+        note: comparablePatchGames
+          ? 'Compared only matches carrying an explicitly sourced TFT content patch.'
+          : 'Riot game client builds are not mapped to TFT content patches; relevance is unavailable.',
+      },
+      unresolvedIds: {
+        units: [...unresolved.units].sort(),
+        items: [...unresolved.items].sort(),
+        traits: [...unresolved.traits].sort(),
+        augments: [...unresolved.augments].sort(),
+      },
+      repeatedUnitCandidates: unitEvidence
+        .filter((unit) => unit.gamesAppeared >= 2)
+        .map((unit) => unit.championId),
+      freshness,
+      classification: {
+        family: 'unavailable',
+        style: 'unavailable',
+        note: 'M4 does not infer composition families, intent, or future strategic styles from final boards.',
+      },
+      confidenceFactors: {
+        sampleCoverage,
+        recencyQuality,
+        modeQuality,
+        patchQuality,
+      },
+      confidence,
+      historicalBoards,
+      routeAffinities,
+    };
 }
 
 export interface OpponentResolution {
@@ -402,6 +422,7 @@ export interface ScoutOptions {
   currentUnitIds?: string[];
   copyEligibleUnitIds?: ReadonlySet<string>;
   staticSourceVersion?: string;
+  routeSignatures?: CanonicalRouteSignature[];
   timeoutMs?: number;
   routing?: string;
   requestedOpponents?: number;
@@ -504,6 +525,7 @@ export async function scanLobby(
   const derivationOptions: OpponentDerivationOptions = {
     copyEligibleUnitIds: options.copyEligibleUnitIds,
     staticSourceVersion: options.staticSourceVersion,
+    routeSignatures: options.routeSignatures,
   };
   const derivationVersion = opponentDerivationVersion(target, derivationOptions);
   const normalizedIdentities = identities.map(

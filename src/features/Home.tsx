@@ -354,9 +354,17 @@ export function Home({
                 <p className="card-reason">{c.reasons[1]}</p>
                 {c.contest.routeEvidence && c.contest.routeEvidence.opponentsWithRouteMatch > 0 && (
                   <div className="card-route-evidence" aria-label="Route overlap evidence">
-                    <span>
-                      {c.contest.routeEvidence.opponentsWithRouteMatch} opponent{c.contest.routeEvidence.opponentsWithRouteMatch === 1 ? '' : 's'} with whole-route history
+                    <span className={`route-badge route-badge-${(c.contest.routeEvidence.pressureLevel ?? c.contest.state).toLowerCase()}`}>
+                      {(c.contest.routeEvidence.pressureLevel ?? c.contest.state).toUpperCase()} ROUTE PRESSURE
                     </span>
+                    <span>
+                      {c.contest.routeEvidence.opponentsWithRouteMatch} matching opponent{c.contest.routeEvidence.opponentsWithRouteMatch === 1 ? '' : 's'}
+                    </span>
+                    {c.contest.routeEvidence.matchingOpponents.slice(0, 2).map((opp) => (
+                      <small key={opp.puuid} className="route-opp-detail">
+                        {opp.riotId ?? 'Opponent'}: {opp.matchSummary ?? `${opp.stronglyMatchingBoards}/${opp.totalBoards} strong matches`}
+                      </small>
+                    ))}
                   </div>
                 )}
                 {c.contest.pressuredUnits.length > 0 && (
@@ -495,6 +503,9 @@ export function Home({
                 {candidate.contest.routeEvidence && candidate.contest.routeEvidence.opponentsWithRouteMatch > 0 && (
                   <small>
                     Route history: {candidate.contest.routeEvidence.opponentsWithRouteMatch} matching opponent{candidate.contest.routeEvidence.opponentsWithRouteMatch === 1 ? '' : 's'}
+                    {candidate.contest.routeEvidence.matchingOpponents[0]
+                      ? ` · ${candidate.contest.routeEvidence.matchingOpponents[0].riotId ?? 'Top'}: ${candidate.contest.routeEvidence.matchingOpponents[0].matchSummary ?? `${candidate.contest.routeEvidence.matchingOpponents[0].stronglyMatchingBoards} matches`}`
+                      : ''}
                   </small>
                 )}
                 {candidate.contest.pressuredUnits.length > 0 && (

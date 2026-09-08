@@ -839,6 +839,59 @@ export interface OpponentProfile {
   };
   confidence: number;
   historicalBoards?: OpponentHistoricalBoard[];
+  routeAffinities?: OpponentRouteAffinity[];
+}
+
+export type RouteMatchClassification = 'strong' | 'plausible' | 'weak' | 'none';
+
+export interface CanonicalRouteSignature {
+  compId: string;
+  snapshotId: string;
+  set: number;
+  patch: string | null;
+  hotfix: string | null;
+  finalRoster: string[];
+  coreUnits: string[];
+  carryAnchors: string[];
+  tankAnchors: string[];
+  flexUnits: string[];
+  style: string;
+  contestElasticity: number;
+  hasVerifiedCore: boolean;
+  provenance: {
+    source: string;
+    status: string;
+    version?: string;
+  };
+}
+
+export interface BoardRouteMatch {
+  matchId: string;
+  compId: string;
+  similarity: number;
+  coreRecall: number;
+  anchorRecall: number;
+  carryAnchorRecall: number;
+  tankAnchorRecall: number;
+  targetRecall: number;
+  targetJaccard: number;
+  flexOverlap: number;
+  evidenceQuality: number;
+  classification: RouteMatchClassification;
+}
+
+export interface OpponentRouteAffinity {
+  compId: string;
+  weightedSimilarity: number;
+  recentFiveSimilarity: number;
+  strongMatches: number;
+  recentStrongMatches: number;
+  plausibleMatches: number;
+  /** Historical behavioral signal reflecting repeated route alignment across analyzed games. Not a probability of future choice. */
+  affinity: number;
+  confidence: number;
+  evidenceGames: number;
+  commitment: 'high' | 'moderate' | 'low' | 'none';
 }
 
 export interface OpponentHistoricalBoard {
@@ -917,6 +970,10 @@ export interface CandidateRouteOpponent {
   recentFiveStrongMatches: number;
   recentWindowGames: number;
   totalBoards: number;
+  affinity?: number;
+  plausibleMatches?: number;
+  specializationLabel?: 'high' | 'moderate' | 'low' | 'none';
+  matchSummary?: string;
 }
 
 export interface CandidateRouteEvidence {
@@ -924,6 +981,9 @@ export interface CandidateRouteEvidence {
   opponentsWithRouteMatch: number;
   matchingOpponents: CandidateRouteOpponent[];
   summary: string;
+  modelVersion?: string;
+  pressureLevel?: 'Low' | 'Medium' | 'High';
+  explanationDetails?: string[];
 }
 
 export interface CandidateContest {

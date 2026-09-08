@@ -14,6 +14,7 @@ import type {
   Augment,
   AugmentBranch,
   Board,
+  CanonicalRouteSignature,
   Champion,
   CompFamily,
   CompVariant,
@@ -41,6 +42,7 @@ import {
 import { teamPlanner } from '../rules/teamPlanner';
 import { loadStrategyGuidance } from '../providers/strategyGuidance';
 import { externalStatus } from '../providers/externalMeta';
+import { deriveCanonicalRouteSignature } from '../strategy/lobbyPressure';
 
 export interface RuntimeKnowledgeCatalog {
   version: {
@@ -752,4 +754,13 @@ export async function loadRuntimeKnowledgeCatalog(
     metaObservations: externalSnapshot ? metaObservations : [],
     externalSnapshot,
   };
+}
+
+/**
+ * Derives canonical route signatures for all playbooks in the RuntimeKnowledgeCatalog.
+ */
+export function deriveCatalogRouteSignatures(
+  catalog: RuntimeKnowledgeCatalog,
+): CanonicalRouteSignature[] {
+  return catalog.playbooks.map((playbook) => deriveCanonicalRouteSignature(playbook));
 }
