@@ -362,28 +362,39 @@ export async function importCuratedPlaybooks(
             augments: playbook.augments,
             components: playbook.components,
             features: playbook.features,
+            strategy: playbook.strategy,
+            replacements: playbook.replacements,
+            variants: playbook.variants,
+            family: playbook.family,
+            provenance: playbook.provenance,
+            roles: playbook.roles,
+            planner: playbook.planner,
+            sampleSize: playbook.sampleSize,
           }),
         ],
       );
 
       for (const unit of playbook.target.units) {
         const role = playbook.roles.find((r) => r.championId === unit.championId)?.role ?? null;
+        const slot =
+          unit.slot ?? (playbook.family.core.includes(unit.championId) ? 'core' : 'flex');
         await db.execute(
           `INSERT OR IGNORE INTO comp_units (
             comp_id, snapshot_id, champion_id, slot, role, stage
           ) VALUES ($1, $2, $3, $4, $5, $6)`,
-          [playbook.id, snapshotId, unit.championId, unit.slot, role, 'final'],
+          [playbook.id, snapshotId, unit.championId, slot, role, 'final'],
         );
       }
 
       for (const stage of playbook.stages) {
         if (stage.stage !== 'final' && stage.board.value?.units) {
           for (const unit of stage.board.value.units) {
+            const slot = unit.slot ?? 'flex';
             await db.execute(
               `INSERT OR IGNORE INTO comp_units (
                 comp_id, snapshot_id, champion_id, slot, role, stage
               ) VALUES ($1, $2, $3, $4, NULL, $5)`,
-              [playbook.id, snapshotId, unit.championId, unit.slot, stage.stage],
+              [playbook.id, snapshotId, unit.championId, slot, stage.stage],
             );
           }
         }

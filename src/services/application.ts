@@ -50,10 +50,38 @@ import {
   updateManualState,
   upgradeLegacySelection,
 } from './planSession';
+import { type RuntimeKnowledgeCatalog, loadRuntimeKnowledgeCatalog } from './knowledgeCatalog';
+import {
+  bootstrapKnowledgeDatabase,
+  populateMemoryKnowledgeRepository,
+} from './knowledgeBootstrap';
+import {
+  type KnowledgeRepository,
+  MemoryKnowledgeRepository,
+} from '../storage/knowledgeRepository';
+import type { SqlDatabase } from '../storage/knowledgeDatabase';
+import { openKnowledgeRepository } from '../storage/repository';
+import {
+  importCommunityDragonKnowledge,
+  importCuratedPlaybooks,
+  importMetaTFTExternal,
+} from '../storage/knowledgeImporter';
+import { externalStatus } from '../providers/externalMeta';
+
 export interface ApplicationState {
   external?: ExternalSnapshot | null;
   externalHistory?: ExternalSnapshot[];
   externalNotice?: string;
+  knowledgeNotice?: string;
+  catalog?: RuntimeKnowledgeCatalog;
+  activeStaticSnapshotId?: string | null;
+  activeCuratedSnapshotId?: string | null;
+  activeExternalSnapshotId?: string | null;
+  knowledgeVersion?: {
+    set: number;
+    patch: string | null;
+    hotfix: string | null;
+  };
   currentGame?: CurrentGameState;
   sessionKnowledge?: StaticData['knowledge'];
   data: StaticData;
@@ -78,13 +106,14 @@ export function createRecommendations(
   discovery: DiscoveryDataset | null = null,
   personal: PersonalProfile | null = null,
   external: ExternalSnapshot | null = null,
+  canonicalPlaybooks?: Playbook[],
 ) {
   const dataIssues = auditStaticData(data);
   if (dataIssues.length)
     throw new Error(
       `Static data failed the audited rules: ${dataIssues.map((issue) => issue.message).join(' ')}`,
     );
-  const all = loadPlaybooks(data),
+  const all = canonicalPlaybooks ?? loadPlaybooks(data),
     notices: string[] = [];
   const playbooks = all.filter((p) => {
     const errors = validatePlaybook(p, data).filter((i) => i.severity === 'error');
@@ -230,7 +259,11 @@ export function rescoreHomeRecommendations(
     },
   );
 }
-export async function loadApplication(repository: Repository): Promise<ApplicationState> {
+export async function loadApplication(
+  repository: Repository,
+  knowledgeRepository?: KnowledgeRepository,
+  sqlDatabase?: SqlDatabase,
+): Promise<ApplicationState> {
   const [
     cached,
     savedSettings,
@@ -327,6 +360,34 @@ export async function loadApplication(repository: Repository): Promise<Applicati
       /* explicit offline fallback */
     }
   }
+
+  const knowledgeRepo =
+    knowledgeRepository ??
+    repository.getKnowledgeRepository?.() ??
+    (await openKnowledgeRepository());
+  const sqlDb = sqlDatabase ?? repository.getSqlDatabase?.() ?? null;
+
+  let catalog: RuntimeKnowledgeCatalog | null = null;
+  let knowledgeNotice: string | undefined;
+  const rawPlaybooks = loadPlaybooks(data);
+
+  try {
+    if (sqlDb) {
+      await bootstrapKnowledgeDatabase(sqlDb, data, rawPlaybooks, external);
+    } else if (knowledgeRepo instanceof MemoryKnowledgeRepository) {
+      populateMemoryKnowledgeRepository(knowledgeRepo, data, rawPlaybooks, external);
+    }
+
+    catalog = await loadRuntimeKnowledgeCatalog(knowledgeRepo, {
+      existingStaticData: data,
+      existingExternalSnapshot: external,
+    });
+  } catch (error) {
+    knowledgeNotice = `Knowledge database deferred: ${String(error)}`;
+  }
+
+  const canonicalPlaybooks = catalog?.playbooks ?? rawPlaybooks;
+
   result = createRecommendations(
     data,
     settings,
@@ -335,6 +396,7 @@ export async function loadApplication(repository: Repository): Promise<Applicati
     result.discovery,
     result.personal,
     external,
+    canonicalPlaybooks,
   );
   let externalHistory: ExternalSnapshot[] = [];
   try {
@@ -360,6 +422,17 @@ export async function loadApplication(repository: Repository): Promise<Applicati
     notices: result.notices,
     assets,
     personal: result.personal,
+    catalog: catalog ?? undefined,
+    activeStaticSnapshotId: catalog?.snapshots.static?.snapshotId ?? null,
+    activeCuratedSnapshotId: catalog?.snapshots.curated?.snapshotId ?? null,
+    activeExternalSnapshotId: catalog?.snapshots.external?.snapshotId ?? null,
+    knowledgeVersion: catalog
+      ? catalog.version
+      : {
+          set: data.version.set,
+          patch: data.version.provenance.patch,
+          hotfix: data.knowledge?.balanceHotfix ?? null,
+        },
   };
   let currentGame: CurrentGameState | undefined;
   try {
@@ -396,12 +469,26 @@ export async function loadApplication(repository: Repository): Promise<Applicati
     external,
     externalHistory,
     externalNotice,
+    knowledgeNotice,
+    catalog: catalog ?? undefined,
+    activeStaticSnapshotId: catalog?.snapshots.static?.snapshotId ?? null,
+    activeCuratedSnapshotId: catalog?.snapshots.curated?.snapshotId ?? null,
+    activeExternalSnapshotId: catalog?.snapshots.external?.snapshotId ?? null,
+    knowledgeVersion: catalog
+      ? catalog.version
+      : {
+          set: data.version.set,
+          patch: data.version.provenance.patch,
+          hotfix: data.knowledge?.balanceHotfix ?? null,
+        },
     currentGame: activeSession?.manualState.currentGame ?? currentGame,
   };
 }
 export async function refreshApplication(
   current: ApplicationState,
   repository: Repository,
+  knowledgeRepository?: KnowledgeRepository,
+  sqlDatabase?: SqlDatabase,
 ): Promise<ApplicationState> {
   const data = await new CommunityDragonProvider().fetch();
   const structureUnchanged =
@@ -431,6 +518,37 @@ export async function refreshApplication(
           }),
         }
       : current.discovery;
+
+  const knowledgeRepo =
+    knowledgeRepository ??
+    repository.getKnowledgeRepository?.() ??
+    (await openKnowledgeRepository());
+  const sqlDb = sqlDatabase ?? repository.getSqlDatabase?.() ?? null;
+
+  let catalog: RuntimeKnowledgeCatalog | null = null;
+  const rawPlaybooks = loadPlaybooks(data);
+
+  if (sqlDb) {
+    const staticRes = await importCommunityDragonKnowledge(sqlDb, data, { activate: true });
+    await importCuratedPlaybooks(sqlDb, rawPlaybooks, staticRes.snapshotId, { activate: true });
+    if (current.external && externalStatus(current.external, data).startsWith('Compatible')) {
+      try {
+        await importMetaTFTExternal(sqlDb, current.external, data, { activate: true });
+      } catch {
+        /* fail-closed on external refresh */
+      }
+    }
+  } else if (knowledgeRepo instanceof MemoryKnowledgeRepository) {
+    populateMemoryKnowledgeRepository(knowledgeRepo, data, rawPlaybooks, current.external);
+  }
+
+  catalog = await loadRuntimeKnowledgeCatalog(knowledgeRepo, {
+    existingStaticData: data,
+    existingExternalSnapshot: current.external,
+  });
+
+  const canonicalPlaybooks = catalog?.playbooks ?? rawPlaybooks;
+
   const result = createRecommendations(
     data,
     current.settings,
@@ -439,6 +557,7 @@ export async function refreshApplication(
     discovery,
     current.personal,
     current.external,
+    canonicalPlaybooks,
   );
   if (!result.playbooks.length)
     throw new Error('Refreshed roster failed playbook validation; previous cache retained.');
@@ -454,7 +573,20 @@ export async function refreshApplication(
     const compatibility = evaluatePlanSessionCompatibility(activeSession, data, result);
     activeSession = await persistCompatibility(repository, activeSession, compatibility);
   }
-  return { ...current, data, ...result, activeSession, source: 'Network' };
+  return {
+    ...current,
+    data,
+    ...result,
+    activeSession,
+    source: 'Network',
+    catalog: catalog ?? current.catalog,
+    activeStaticSnapshotId: catalog?.snapshots.static?.snapshotId ?? current.activeStaticSnapshotId,
+    activeCuratedSnapshotId:
+      catalog?.snapshots.curated?.snapshotId ?? current.activeCuratedSnapshotId,
+    activeExternalSnapshotId:
+      catalog?.snapshots.external?.snapshotId ?? current.activeExternalSnapshotId,
+    knowledgeVersion: catalog ? catalog.version : current.knowledgeVersion,
+  };
 }
 export async function lockPlanSession(
   playbookId: string,

@@ -1,5 +1,11 @@
 import type Database from '@tauri-apps/plugin-sql';
 import {
+  SqlKnowledgeRepository,
+  MemoryKnowledgeRepository,
+  type KnowledgeRepository,
+} from './knowledgeRepository';
+import type { SqlDatabase } from './knowledgeDatabase';
+import {
   hydrateDerived,
   referenceDerived,
   largeDerivedKey,
@@ -71,6 +77,8 @@ export interface Repository {
   deletePostGameReview(chainId: string): Promise<void>;
   getPersonalProfile(set: number): Promise<PersonalProfile | null>;
   putPersonalProfile(profile: PersonalProfile): Promise<void>;
+  getKnowledgeRepository?(): KnowledgeRepository;
+  getSqlDatabase?(): SqlDatabase;
 }
 function assertSessionSnapshotIntegrity(session: PlanSession, existing?: PlanSession) {
   if (planSessionSnapshotFingerprint(session.snapshot) !== session.snapshotFingerprint)
@@ -97,6 +105,10 @@ function assertSessionLifecycle(session: PlanSession, existing?: PlanSession) {
 export class MemoryRepository implements Repository {
   mode = 'Memory' as const;
   private entries = new Map<string, unknown>();
+  private knowledgeRepo = new MemoryKnowledgeRepository();
+  getKnowledgeRepository(): KnowledgeRepository {
+    return this.knowledgeRepo;
+  }
   async get<T>(key: string): Promise<T | null> {
     return structuredClone((this.entries.get(key) as T) ?? null);
   }
@@ -211,6 +223,10 @@ export class MemoryRepository implements Repository {
 }
 class BrowserRepository implements Repository {
   mode = 'Browser local storage' as const;
+  private knowledgeRepo = new MemoryKnowledgeRepository();
+  getKnowledgeRepository(): KnowledgeRepository {
+    return this.knowledgeRepo;
+  }
   async get<T>(key: string): Promise<T | null> {
     try {
       if (largeDerivedKey(key)) return (await readLargeDerived(key)) as T | null;
@@ -336,6 +352,12 @@ class BrowserRepository implements Repository {
 class SqlRepository implements Repository {
   mode = 'SQLite' as const;
   constructor(private db: Database) {}
+  getSqlDatabase(): SqlDatabase {
+    return this.db;
+  }
+  getKnowledgeRepository(): KnowledgeRepository {
+    return new SqlKnowledgeRepository(this.db);
+  }
   async get<T>(key: string): Promise<T | null> {
     const rows = await this.db.select<{ value: string }[]>(
       'SELECT value FROM settings WHERE key = $1',
@@ -496,4 +518,12 @@ export async function openRepository(): Promise<Repository> {
     return new SqlRepository(await Database.load('sqlite:strategist.db'));
   }
   return new BrowserRepository();
+}
+
+export async function openKnowledgeRepository(): Promise<KnowledgeRepository> {
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    const { default: Database } = await import('@tauri-apps/plugin-sql');
+    return new SqlKnowledgeRepository(await Database.load('sqlite:strategist.db'));
+  }
+  return new MemoryKnowledgeRepository();
 }

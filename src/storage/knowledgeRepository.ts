@@ -187,6 +187,10 @@ export interface KnowledgeRepository {
   listComps(filter?: { snapshotId?: string; sourceKind?: string }): Promise<CompKnowledge[]>;
   getCompUnits(compId: string, snapshotId?: string): Promise<CompUnitKnowledge[]>;
   getLatestMetaForComp(compId: string): Promise<CompMetaObservation | null>;
+  listMetaObservations(filter?: {
+    snapshotId?: string;
+    compId?: string;
+  }): Promise<CompMetaObservation[]>;
   getSourceSnapshot(snapshotId: string): Promise<SourceSnapshot | null>;
   listSourceSnapshots(filter?: {
     sourceId?: string;
@@ -936,6 +940,69 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
     };
   }
 
+  async listMetaObservations(filter?: {
+    snapshotId?: string;
+    compId?: string;
+  }): Promise<CompMetaObservation[]> {
+    const snap = await this.resolveSnapshot('external-meta', filter?.snapshotId);
+    let query =
+      'SELECT observation_id, snapshot_id, comp_id, provider_comp_id, sample_size, average_placement, top4_rate, win_rate, pick_rate, raw_stats, positions, item_packages, observed_at FROM comp_meta_observations';
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (snap) {
+      params.push(snap);
+      conditions.push(`snapshot_id = $${params.length}`);
+    }
+    if (filter?.compId) {
+      params.push(filter.compId);
+      conditions.push(`comp_id = $${params.length}`);
+    }
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
+    }
+    query += ' ORDER BY observed_at DESC, comp_id ASC';
+
+    const rows = await this.db.select<{
+      observation_id: string;
+      snapshot_id: string;
+      comp_id: string;
+      provider_comp_id: string;
+      sample_size: number | null;
+      average_placement: number | null;
+      top4_rate: number | null;
+      win_rate: number | null;
+      pick_rate: number | null;
+      raw_stats: string;
+      positions: string;
+      item_packages: string;
+      observed_at: string;
+    }>(query, params);
+
+    return rows.map((r) => ({
+      observationId: r.observation_id,
+      snapshotId: r.snapshot_id,
+      compId: r.comp_id,
+      providerCompId: r.provider_comp_id,
+      sampleSize: r.sample_size,
+      averagePlacement: r.average_placement,
+      top4Rate: r.top4_rate,
+      winRate: r.win_rate,
+      pickRate: r.pick_rate,
+      rawStats: JSON.parse(r.raw_stats) as Record<string, unknown>,
+      positions: JSON.parse(r.positions) as Array<{
+        championId: string;
+        row: number;
+        column: number;
+      }>,
+      itemPackages: JSON.parse(r.item_packages) as Array<{
+        holder: string;
+        items: string[];
+        source: string;
+      }>,
+      observedAt: r.observed_at,
+    }));
+  }
+
   async getSourceSnapshot(snapshotId: string): Promise<SourceSnapshot | null> {
     const rows = await this.db.select<{
       snapshot_id: string;
@@ -1329,6 +1396,28 @@ export class MemoryKnowledgeRepository implements KnowledgeRepository {
   async getLatestMetaForComp(compId: string): Promise<CompMetaObservation | null> {
     const list = this.metaObs.get(compId);
     return list && list.length ? structuredClone(list[0]) : null;
+  }
+
+  async listMetaObservations(filter?: {
+    snapshotId?: string;
+    compId?: string;
+  }): Promise<CompMetaObservation[]> {
+    let list: CompMetaObservation[] = [];
+    if (filter?.compId) {
+      list = this.metaObs.get(filter.compId) ?? [];
+    } else {
+      for (const obs of this.metaObs.values()) {
+        list.push(...obs);
+      }
+    }
+    if (filter?.snapshotId) {
+      list = list.filter((o) => o.snapshotId === filter.snapshotId);
+    }
+    return structuredClone(
+      list.sort(
+        (a, b) => b.observedAt.localeCompare(a.observedAt) || a.compId.localeCompare(b.compId),
+      ),
+    );
   }
 
   async getSourceSnapshot(snapshotId: string): Promise<SourceSnapshot | null> {

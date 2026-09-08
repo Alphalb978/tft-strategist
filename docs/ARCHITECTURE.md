@@ -261,6 +261,43 @@ Reviews reuse the M5 retrospective family classifier plus M6 canonical-board and
 
 The personal model is rebuilt only from unique, confidently attributed, current-set reviews carrying an eligible compatible M5 family baseline. It uses recency-weighted placement residuals with strong prior shrinkage and exposes confidence separately from its bounded recommendation adjustment. M4 lobby pressure, M5 meta, M6 discovery, M7 guidance and M8 history remain independent inputs.
 
+### M13B Versioned Knowledge Database & Runtime Knowledge Catalog
+
+M13B establishes the versioned SQLite knowledge database (introduced in M13A) as the single canonical runtime authority for Comp Library, Playbooks, and Home candidate construction:
+
+```text
+CommunityDragon ─┐
+Curated JSON ────┼→ normalize/validate → SQLite Knowledge → Runtime Catalog
+MetaTFT ─────────┘                              ↓
+                                         application / scoring / UI
+```
+
+#### Runtime Knowledge Boundary
+
+- `RuntimeKnowledgeCatalog`: One in-memory projection materialized at startup or upon refresh containing active static entities, curated comp versions with rich Playbook domain guidance, scoped meta observations, and explicit source provenance.
+- Zero SQL queries during UI rendering or recommendation scoring: All SQLite queries occur bounded at startup / refresh; scoring and UI rendering operate synchronously on the loaded catalog.
+- Canonical Comp Identity: Comp Library, Playbook, and Home candidates resolve the exact same comp definitions, rosters, roles, item packages, and strategy guidance from the catalog.
+- Namespace Isolation: Strict separation between curated comp IDs, `external-meta:<provider-id>`, and discovered IDs without fuzzy merging.
+- Compatibility & Fail-Closed Behavior: Snapshot awareness validates set number, balance patch, and hotfix parity. If external meta is for a different patch/set or missing patch info, it is excluded fail-closed without altering candidate safety calculations.
+
+#### Patch Update Workflow
+
+```text
+edit/refresh source
+→ knowledge:validate
+→ knowledge:diff
+→ knowledge:import
+→ application uses new active version
+```
+
+1. Source data is fetched or curated locally.
+2. `npm run knowledge:validate` validates entity schema, fingerprints, and integrity.
+3. `npm run knowledge:diff` inspects changes against previous active snapshots.
+4. `npm run knowledge:import` imports versioned snapshots transactionally and updates active pointers.
+5. `refreshApplication()` reloads the canonical `RuntimeKnowledgeCatalog` and re-scores candidates. If any refresh step fails, the previous active snapshots remain untouched.
+
+Database content is never considered more authoritative than its verified source and provenance support.
+
 ## Testing
 
 Critical unit/integration tests should cover:

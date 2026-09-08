@@ -56,3 +56,11 @@ export function applyAllMigrations(db: DatabaseSync): void {
     db.exec(sql);
   }
 }
+
+export async function openKnowledgeDatabase(): Promise<SqlDatabase | null> {
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    const { default: Database } = await import('@tauri-apps/plugin-sql');
+    return (await Database.load('sqlite:strategist.db')) as unknown as SqlDatabase;
+  }
+  return null;
+}
