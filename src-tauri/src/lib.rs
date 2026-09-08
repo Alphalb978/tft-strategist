@@ -37,6 +37,12 @@ pub fn run() {
                             sql: include_str!("../../src/storage/schema_m9.sql"),
                             kind: MigrationKind::Up,
                         },
+                        Migration {
+                            version: 5,
+                            description: "versioned TFT knowledge foundation",
+                            sql: include_str!("../../src/storage/schema_m13.sql"),
+                            kind: MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

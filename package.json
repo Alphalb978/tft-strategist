@@ -27,7 +27,10 @@
     "format:check": "prettier --check src scripts e2e *.json *.ts *.js data/playbooks data/rules --ignore-unknown",
     "metatft:refresh": "tsx scripts/metatft-refresh.ts",
     "benchmark:m11": "tsx scripts/benchmark-m11.ts",
-    "benchmark:m12": "tsx scripts/benchmark-m12.ts"
+    "benchmark:m12": "tsx scripts/benchmark-m12.ts",
+    "knowledge:validate": "tsx scripts/knowledge-validate.ts",
+    "knowledge:diff": "tsx scripts/knowledge-diff.ts",
+    "knowledge:import": "tsx scripts/knowledge-import.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
