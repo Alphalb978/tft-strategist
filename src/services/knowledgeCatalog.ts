@@ -6,6 +6,7 @@ import type {
   CompMetaObservation,
   ItemKnowledge,
   KnowledgeRepository,
+  MetaSnapshotKnowledge,
   SourceSnapshot,
   TraitKnowledge,
 } from '../storage/knowledgeRepository';
@@ -273,29 +274,33 @@ export function materializeStaticData(
   snapshot: ActiveKnowledgeVersion | SourceSnapshot,
   sourceSnapshot?: SourceSnapshot | null,
 ): StaticData {
-  const setNumber = snapshot.setNumber ?? 18;
-  const patch = snapshot.balancePatch ?? '18.1';
+  const setNumber = snapshot.setNumber;
+  const rawPatch = snapshot.balancePatch ?? null;
   const hotfix = snapshot.hotfix ?? null;
-  const sourceVersion = snapshot.sourceVersion ?? `${setNumber}.${patch}`;
+  const sourceVersion = snapshot.sourceVersion ?? `${setNumber}.${rawPatch ?? 'unknown'}`;
+  const effectiveSourceSnap =
+    sourceSnapshot ?? ('sourceId' in snapshot ? (snapshot as SourceSnapshot) : null);
+  const provenanceStatus: Verification =
+    (effectiveSourceSnap?.provenanceStatus as Verification) ?? 'unverified';
 
   const provenance: Provenance = {
-    source: sourceSnapshot?.sourceUri ?? 'https://raw.communitydragon.org',
+    source: effectiveSourceSnap?.sourceUri ?? 'https://raw.communitydragon.org',
     fetchedAt:
-      sourceSnapshot?.retrievedAt ??
+      effectiveSourceSnap?.retrievedAt ??
       ('activatedAt' in snapshot ? snapshot.activatedAt : new Date().toISOString()),
-    publishedAt: sourceSnapshot?.publishedAt ?? undefined,
-    patch,
-    status: (sourceSnapshot?.provenanceStatus as Verification) ?? 'verified',
-    note: sourceSnapshot?.notes ?? 'Versioned SQLite knowledge static snapshot',
+    publishedAt: effectiveSourceSnap?.publishedAt ?? undefined,
+    patch: rawPatch,
+    status: provenanceStatus,
+    note: effectiveSourceSnap?.notes ?? 'Versioned SQLite knowledge static snapshot',
     hash: snapshot.contentHash,
   };
 
   let payloadData: { warnings?: string[]; name?: string } = {};
-  if (sourceSnapshot?.rawReference) {
+  if (effectiveSourceSnap?.payload) {
     try {
-      payloadData = JSON.parse(sourceSnapshot.rawReference);
+      payloadData = JSON.parse(effectiveSourceSnap.payload);
     } catch {
-      /* ignore malformed rawReference */
+      /* ignore malformed payload */
     }
   }
 
@@ -368,21 +373,26 @@ export function materializeStaticData(
     knowledgeFingerprints[a.id] = a.contentFingerprint;
   }
 
+  const rawParity = effectiveSourceSnap?.parityStatus;
   const parity: 'current' | 'known-stale' | 'unverified' =
-    sourceSnapshot?.parityStatus === 'current' ||
-    sourceSnapshot?.parityStatus === 'known-stale' ||
-    sourceSnapshot?.parityStatus === 'unverified'
-      ? sourceSnapshot.parityStatus
-      : 'current';
+    rawPatch && (rawParity === 'current' || rawParity === 'known-stale')
+      ? rawParity
+      : 'unverified';
+
+  const patchVerified = Boolean(
+    rawPatch &&
+      provenanceStatus === 'verified' &&
+      parity === 'current',
+  );
 
   return {
     version: {
       set: setNumber,
       name: payloadData.name ?? `Set ${setNumber}`,
-      patch,
+      patch: rawPatch ?? 'unknown',
       sourceVersion,
       schemaVersion: 2,
-      patchVerified: true,
+      patchVerified,
       parityStatus: parity,
       provenance,
     },
@@ -396,8 +406,8 @@ export function materializeStaticData(
       semanticVersion: 'semantic-v1',
       set: setNumber,
       identity: `set${setNumber}-knowledge`,
-      balancePatch: patch,
-      balanceHotfix: hotfix ?? undefined,
+      balancePatch: rawPatch,
+      balanceHotfix: hotfix,
       fingerprint: snapshot.contentHash,
       fetchedAt: provenance.fetchedAt,
       source: provenance.source,
@@ -416,9 +426,9 @@ export function materializeStaticData(
 export function projectExternalSnapshot(
   activeMeta: ActiveKnowledgeVersion,
   metaSnapshot: SourceSnapshot | null,
+  metaSnapshotRecord: MetaSnapshotKnowledge | null,
   observations: CompMetaObservation[],
   comps: CompKnowledge[],
-  staticData: StaticData,
 ): ExternalSnapshot | null {
   if (!observations.length) return null;
 
@@ -437,11 +447,11 @@ export function projectExternalSnapshot(
 
     const raw = obs.rawStats as Partial<ExternalStats> | undefined;
     const stats: ExternalStats = {
-      average: obs.averagePlacement ?? raw?.average ?? 4.5,
-      top4: obs.top4Rate ?? raw?.top4 ?? 0.5,
-      win: obs.winRate ?? raw?.win ?? 0.125,
-      playRate: obs.pickRate ?? raw?.playRate ?? 0.05,
-      sample: obs.sampleSize ?? raw?.sample ?? 1000,
+      average: obs.averagePlacement ?? raw?.average ?? null,
+      top4: obs.top4Rate ?? raw?.top4 ?? null,
+      win: obs.winRate ?? raw?.win ?? null,
+      playRate: obs.pickRate ?? raw?.playRate ?? null,
+      sample: obs.sampleSize ?? raw?.sample ?? null,
     };
 
     const payload = (compKnowledge?.payload ?? {}) as Record<string, unknown>;
@@ -485,61 +495,38 @@ export function projectExternalSnapshot(
 
   const manifest: ExternalSnapshot['manifest'] = {
     scope: {
-      set: activeMeta.setNumber,
-      patch: activeMeta.balancePatch,
-      hotfix: activeMeta.hotfix,
-      rank: 'Diamond+',
-      region: 'global',
-      window: 'last-7-days',
-      queue: 1100,
+      set: metaSnapshotRecord?.setNumber ?? activeMeta.setNumber,
+      patch: metaSnapshotRecord?.patch ?? activeMeta.balancePatch,
+      hotfix: metaSnapshotRecord?.hotfix ?? activeMeta.hotfix,
+      rank: metaSnapshotRecord?.rankBracket ?? null,
+      region: metaSnapshotRecord?.region ?? null,
+      window: metaSnapshotRecord?.window ?? null,
+      queue: metaSnapshotRecord?.queue ?? null,
     },
-    retrievedAt: metaSnapshot?.retrievedAt ?? activeMeta.activatedAt,
+    retrievedAt:
+      metaSnapshotRecord?.retrievedAt ??
+      metaSnapshot?.retrievedAt ??
+      activeMeta.activatedAt,
     providerUpdated: metaSnapshot?.publishedAt ?? null,
     collectorVersion: activeMeta.sourceVersion,
     normalizerVersion: activeMeta.sourceVersion,
     schemaVersion: 1,
-    contentHash: activeMeta.contentHash,
-    population: pop || null,
+    contentHash: metaSnapshotRecord?.contentHash ?? activeMeta.contentHash,
+    population: metaSnapshotRecord?.sampleSize ?? (pop || null),
     warnings: [],
-    provider: 'MetaTFT',
-    sourceUrls: [metaSnapshot?.sourceUri ?? 'https://www.metatft.com/comps'],
-  };
-
-  const defaultStats: ExternalStats = {
-    sample: pop || 1000,
-    top4: 0.5,
-    win: 0.125,
-    playRate: 0.1,
-    average: 4.5,
+    provider: (metaSnapshotRecord?.provider as 'MetaTFT') ?? 'MetaTFT',
+    sourceUrls: metaSnapshot?.sourceUri
+      ? [metaSnapshot.sourceUri]
+      : ['https://www.metatft.com/comps'],
   };
 
   return {
     manifest,
     comps: externalComps,
-    units: staticData.champions.map((c) => ({
-      id: c.id,
-      name: c.name,
-      stats: defaultStats,
-      tier: null,
-    })),
-    items: staticData.items.map((i) => ({
-      id: i.id,
-      name: i.name,
-      stats: defaultStats,
-      tier: null,
-    })),
-    traits: staticData.traits.map((t) => ({
-      id: t.id,
-      name: t.name,
-      stats: defaultStats,
-      tier: null,
-    })),
-    augments: staticData.augments.map((a) => ({
-      id: a.id,
-      name: a.name,
-      tier: null,
-      sourceType: 'external-reference',
-    })),
+    units: [],
+    items: [],
+    traits: [],
+    augments: [],
   };
 }
 
@@ -661,16 +648,19 @@ export async function loadRuntimeKnowledgeCatalog(
 
   let externalSnapshot: ExternalSnapshot | null = options?.existingExternalSnapshot ?? null;
   if (!externalSnapshot && effectiveExternalVersion && metaObservations.length > 0) {
-    const externalComps = await repo.listComps({
-      snapshotId: effectiveExternalVersion.snapshotId,
-      sourceKind: 'external-meta',
-    });
+    const [externalComps, metaSnapshotRecord] = await Promise.all([
+      repo.listComps({
+        snapshotId: effectiveExternalVersion.snapshotId,
+        sourceKind: 'external-meta',
+      }),
+      repo.getMetaSnapshot(effectiveExternalVersion.snapshotId),
+    ]);
     externalSnapshot = projectExternalSnapshot(
       effectiveExternalVersion,
       externalSourceSnap,
+      metaSnapshotRecord,
       metaObservations,
       externalComps,
-      staticData,
     );
   }
 
@@ -702,8 +692,8 @@ export async function loadRuntimeKnowledgeCatalog(
     source: staticSourceSnap?.sourceUri ?? 'static-cdn',
     fetchedAt: staticSourceSnap?.retrievedAt ?? effectiveStaticVersion.activatedAt,
     publishedAt: staticSourceSnap?.publishedAt ?? undefined,
-    patch: effectiveStaticVersion.balancePatch,
-    status: (staticSourceSnap?.provenanceStatus as Verification) ?? 'verified',
+    patch: effectiveStaticVersion.balancePatch ?? null,
+    status: (staticSourceSnap?.provenanceStatus as Verification) ?? 'unverified',
     note: staticSourceSnap?.notes ?? 'CommunityDragon static snapshot',
     hash: effectiveStaticVersion.contentHash,
   };
@@ -712,8 +702,8 @@ export async function loadRuntimeKnowledgeCatalog(
     source: curatedSourceSnap?.sourceUri ?? 'curated-file',
     fetchedAt: curatedSourceSnap?.retrievedAt ?? effectiveCuratedVersion.activatedAt,
     publishedAt: curatedSourceSnap?.publishedAt ?? undefined,
-    patch: effectiveCuratedVersion.balancePatch,
-    status: 'curated',
+    patch: effectiveCuratedVersion.balancePatch ?? null,
+    status: (curatedSourceSnap?.provenanceStatus as Verification) ?? 'curated',
     note: curatedSourceSnap?.notes ?? 'Curated playbooks snapshot',
     hash: effectiveCuratedVersion.contentHash,
   };
@@ -724,7 +714,7 @@ export async function loadRuntimeKnowledgeCatalog(
           source: externalSourceSnap?.sourceUri ?? 'external-scrape',
           fetchedAt: externalSourceSnap?.retrievedAt ?? effectiveExternalVersion.activatedAt,
           publishedAt: externalSourceSnap?.publishedAt ?? undefined,
-          patch: effectiveExternalVersion.balancePatch,
+          patch: effectiveExternalVersion.balancePatch ?? null,
           status: 'measured',
           note: externalSourceSnap?.notes ?? 'External meta snapshot',
           hash: effectiveExternalVersion.contentHash,
@@ -734,8 +724,8 @@ export async function loadRuntimeKnowledgeCatalog(
   return {
     version: {
       set: effectiveStaticVersion.setNumber,
-      patch: effectiveStaticVersion.balancePatch,
-      hotfix: effectiveStaticVersion.hotfix,
+      patch: effectiveStaticVersion.balancePatch ?? null,
+      hotfix: effectiveStaticVersion.hotfix ?? null,
       sourceVersion: effectiveStaticVersion.sourceVersion,
     },
     snapshots: {

@@ -385,6 +385,21 @@ export function populateMemoryKnowledgeRepository(
       });
     }
 
+    repo.setMetaSnapshot({
+      snapshotId: externalSnapshotId,
+      provider: external.manifest.provider ?? 'MetaTFT',
+      setNumber: external.manifest.scope.set,
+      patch: external.manifest.scope.patch,
+      hotfix: external.manifest.scope.hotfix,
+      rankBracket: external.manifest.scope.rank,
+      region: external.manifest.scope.region,
+      window: external.manifest.scope.window,
+      queue: external.manifest.scope.queue,
+      sampleSize: external.manifest.population,
+      retrievedAt: external.manifest.retrievedAt,
+      contentHash: extContentHash,
+    });
+
     repo.setActiveKnowledgeVersion({
       kind: 'external-meta',
       snapshotId: externalSnapshotId,

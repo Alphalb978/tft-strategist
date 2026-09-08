@@ -9,9 +9,15 @@ import {
 import {
   importCommunityDragonKnowledge,
   importCuratedPlaybooks,
+  importMetaTFTExternal,
 } from '../storage/knowledgeImporter';
-import { SqlKnowledgeRepository } from '../storage/knowledgeRepository';
+import {
+  SqlKnowledgeRepository,
+  MemoryKnowledgeRepository,
+  type SourceSnapshot,
+} from '../storage/knowledgeRepository';
 import { normalizeCommunityDragon, CommunityDragonProvider } from '../providers/communityDragon';
+import { externalHash } from '../providers/externalMeta';
 import { loadPlaybooks } from '../providers/playbooks';
 import { defaultSettings, MemoryRepository } from '../storage/repository';
 import {
@@ -19,7 +25,11 @@ import {
   createRecommendations,
   refreshApplication,
 } from '../services/application';
-import { loadRuntimeKnowledgeCatalog } from '../services/knowledgeCatalog';
+import {
+  loadRuntimeKnowledgeCatalog,
+  materializeStaticData,
+  projectExternalSnapshot,
+} from '../services/knowledgeCatalog';
 import { bootstrapKnowledgeDatabase } from '../services/knowledgeBootstrap';
 import type { ExternalSnapshot } from '../domain/externalMeta';
 import type { StaticData, Provenance } from '../domain/models';
@@ -476,5 +486,362 @@ describe('M13B — Connect Strategist to the Versioned Knowledge Database', () =
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+});
+
+describe('M13B.1 — Knowledge Projection Integrity Hardening', () => {
+  it('1. Problem 1: NULL patch/hotfix never becomes 18.1, current, or patchVerified', () => {
+    const data = getBundledStaticData();
+    const champions = data.champions.map((c) => ({
+      id: c.id,
+      name: c.name,
+      snapshotId: 'snap-null',
+      cost: c.cost,
+      role: c.role ?? null,
+      shopStatus: c.shopStatus,
+      boardEligible: c.boardEligible,
+      icon: c.icon,
+      splash: c.splash,
+      traitIds: c.traitIds,
+      contentFingerprint: 'fp-champ',
+      mechanics: null,
+    }));
+    const traits = data.traits.map((t) => ({
+      id: t.id,
+      name: t.name,
+      snapshotId: 'snap-null',
+      icon: t.icon,
+      breakpoints: t.breakpoints.map((b) => ({ minUnits: b, maxUnits: b, effect: '', effects: {} })),
+      counting: t.counting,
+      availability: t.availability,
+      contentFingerprint: 'fp-trait',
+      mechanics: null,
+    }));
+
+    // Case A: Source snapshot has completely NULL patch, NULL hotfix, but claims "verified" and "current"
+    const nullSnap: SourceSnapshot = {
+      snapshotId: 'snap-null',
+      sourceId: 'community-dragon',
+      sourceType: 'static-cdn',
+      setNumber: 15,
+      balancePatch: null,
+      hotfix: null,
+      retrievedAt: new Date().toISOString(),
+      publishedAt: null,
+      sourceVersion: '15.unknown',
+      schemaVersion: 2,
+      contentHash: 'hash-null',
+      provenanceStatus: 'verified',
+      parityStatus: 'current',
+      sourceUri: 'https://raw.communitydragon.org',
+      notes: 'Test null patch',
+      rawReference: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    const materialized = materializeStaticData(champions, traits, [], [], nullSnap);
+
+    // Assert: patch and hotfix in provenance/knowledge are strictly NULL, not 18.1 or any fabricated string
+    expect(materialized.version.provenance.patch).toBeNull();
+    expect(materialized.knowledge?.balancePatch).toBeNull();
+    expect(materialized.knowledge?.balanceHotfix).toBeNull();
+
+    // Assert: absence of verified patch evidence must NEVER become patchVerified: true
+    expect(materialized.version.patchVerified).toBe(false);
+
+    // Assert: unknown/invalid patch parity conservatively becomes 'unverified', never 'current'
+    expect(materialized.version.parityStatus).toBe('unverified');
+    expect(materialized.knowledge?.parity).toBe('unverified');
+
+    // Assert: display fallback is 'unknown', NOT '18.1' or hardcoded Set 18
+    expect(materialized.version.patch).toBe('unknown');
+    expect(materialized.version.name).toBe('Set 15');
+
+    // Case B: Known patch exists ('15.2'), but provenance status is 'unverified'
+    const unverifiedSnap: SourceSnapshot = {
+      ...nullSnap,
+      balancePatch: '15.2',
+      provenanceStatus: 'unverified',
+      parityStatus: 'current',
+    };
+    const matUnverified = materializeStaticData(champions, traits, [], [], unverifiedSnap);
+    expect(matUnverified.version.patch).toBe('15.2');
+    expect(matUnverified.version.provenance.patch).toBe('15.2');
+    expect(matUnverified.version.patchVerified).toBe(false); // unverified provenance prevents patchVerified
+    expect(matUnverified.version.parityStatus).toBe('current');
+
+    // Case C: Known patch exists ('15.2'), provenance status is 'verified', parity is 'current'
+    const fullyVerifiedSnap: SourceSnapshot = {
+      ...nullSnap,
+      balancePatch: '15.2',
+      provenanceStatus: 'verified',
+      parityStatus: 'current',
+    };
+    const matVerified = materializeStaticData(champions, traits, [], [], fullyVerifiedSnap);
+    expect(matVerified.version.patchVerified).toBe(true);
+    expect(matVerified.version.parityStatus).toBe('current');
+  });
+
+  it('2. Problem 2: Reconstruct external meta from real persisted scope (rank, region, window, queue, sampleSize)', async () => {
+    const { adapter } = createMigratedDb();
+    const repo = new SqlKnowledgeRepository(adapter);
+    const data = getBundledStaticData();
+    // Import static & curated data first with explicit patch 18.1
+    data.version.provenance.patch = '18.1';
+    data.version.patch = '18.1';
+    await importCommunityDragonKnowledge(adapter, data);
+    const playbooks = loadPlaybooks(data);
+    await importCuratedPlaybooks(adapter, playbooks, 'cd-test');
+
+    // Prepare external snapshot with explicit, non-default scope
+    const baseExternal = getBundledMetaSnapshot();
+    const customMeta: ExternalSnapshot = structuredClone(baseExternal);
+    customMeta.manifest.scope.set = data.version.set;
+    customMeta.manifest.scope.patch = '18.1';
+    customMeta.manifest.scope.rank = 'Master+';
+    customMeta.manifest.scope.region = 'EUW';
+    customMeta.manifest.scope.window = 'last-3-days';
+    customMeta.manifest.scope.queue = 1100;
+    customMeta.manifest.population = 87654;
+    customMeta.manifest.contentHash = externalHash(customMeta);
+
+    const importRes = await importMetaTFTExternal(adapter, customMeta, data);
+
+    // Check typed repository getMetaSnapshot
+    const metaRecord = await repo.getMetaSnapshot(importRes.snapshotId);
+    expect(metaRecord).not.toBeNull();
+    expect(metaRecord?.rankBracket).toBe('Master+');
+    expect(metaRecord?.region).toBe('EUW');
+    expect(metaRecord?.window).toBe('last-3-days');
+    expect(metaRecord?.queue).toBe(1100);
+    expect(metaRecord?.sampleSize).toBe(87654);
+
+    // Load runtime catalog and verify projected external snapshot scope matches DB exactly
+    const catalog = await loadRuntimeKnowledgeCatalog(repo);
+    expect(catalog).not.toBeNull();
+    expect(catalog?.externalSnapshot).not.toBeNull();
+
+    const projected = catalog!.externalSnapshot!;
+    expect(projected.manifest.scope.rank).toBe('Master+');
+    expect(projected.manifest.scope.region).toBe('EUW');
+    expect(projected.manifest.scope.window).toBe('last-3-days');
+    expect(projected.manifest.scope.queue).toBe(1100);
+    expect(projected.manifest.population).toBe(87654);
+  });
+
+  it('3. Problem 2: NULL / missing statistics project as NULL, never fake defaults (4.5, 0.5, 0.125, 1000)', async () => {
+    // Test projectExternalSnapshot with observations having NULL statistics
+    const activeMeta = {
+      kind: 'external-meta' as const,
+      snapshotId: 'meta:null-stats',
+      setNumber: 18,
+      balancePatch: '18.1',
+      hotfix: null,
+      sourceVersion: '18.1.0',
+      contentHash: 'hash-null-stats',
+      activatedAt: new Date().toISOString(),
+    };
+
+    const nullMetaRecord = {
+      snapshotId: 'meta:null-stats',
+      provider: 'MetaTFT',
+      setNumber: 18,
+      patch: '18.1',
+      hotfix: null,
+      rankBracket: null,
+      region: null,
+      window: null,
+      queue: null,
+      sampleSize: null,
+      retrievedAt: new Date().toISOString(),
+      contentHash: 'hash-null-stats',
+    };
+
+    const nullObservations = [
+      {
+        observationId: 'obs:1',
+        snapshotId: 'meta:null-stats',
+        compId: 'comp-empty',
+        providerCompId: 'empty-comp-1',
+        sampleSize: null,
+        averagePlacement: null,
+        top4Rate: null,
+        winRate: null,
+        pickRate: null,
+        rawStats: {},
+        positions: [{ championId: 'tft18_mordekaiser', row: 0, column: 0 }],
+        itemPackages: [],
+        observedAt: new Date().toISOString(),
+      },
+    ];
+
+    const nullComps = [
+      {
+        id: 'comp-empty',
+        name: 'Empty Comp',
+        sourceKind: 'external-meta' as const,
+        snapshotId: 'meta:null-stats',
+        title: 'Empty Comp',
+        subtitle: null,
+        heroId: null,
+        style: null,
+        evidenceLabel: 'Emerging' as const,
+        targetLevel: 8,
+        levelPlan: null,
+        playSignals: null,
+        avoidSignals: null,
+        contentFingerprint: 'fp-empty',
+        units: [
+          {
+            compId: 'comp-empty',
+            snapshotId: 'meta:null-stats',
+            championId: 'tft18_mordekaiser',
+            slot: 'core' as const,
+            role: null,
+            stage: 'final' as const,
+          },
+        ],
+        itemPackages: [],
+        payload: null,
+      },
+    ];
+
+    const projected = projectExternalSnapshot(
+      activeMeta,
+      null,
+      nullMetaRecord,
+      nullObservations,
+      nullComps,
+    );
+
+    expect(projected).not.toBeNull();
+    const compStats = projected!.comps[0].stats;
+
+    // Prove: NULL stats stay NULL and are NOT fabricated defaults
+    expect(compStats.average).toBeNull();
+    expect(compStats.top4).toBeNull();
+    expect(compStats.win).toBeNull();
+    expect(compStats.playRate).toBeNull();
+    expect(compStats.sample).toBeNull();
+
+    // Prove: scope fields are NULL when not in DB, not Diamond+/global/last-7-days/1100
+    expect(projected!.manifest.scope.rank).toBeNull();
+    expect(projected!.manifest.scope.region).toBeNull();
+    expect(projected!.manifest.scope.window).toBeNull();
+    expect(projected!.manifest.scope.queue).toBeNull();
+    expect(projected!.manifest.population).toBeNull();
+
+    // Prove: units, items, traits, augments are empty arrays, not filled with fake neutral statistics
+    expect(projected!.units).toEqual([]);
+    expect(projected!.items).toEqual([]);
+    expect(projected!.traits).toEqual([]);
+    expect(projected!.augments).toEqual([]);
+  });
+
+  it('4. Problem 3: source_snapshots.payload vs raw_reference separation', async () => {
+    const { adapter } = createMigratedDb();
+    const repo = new SqlKnowledgeRepository(adapter);
+    const now = new Date().toISOString();
+
+    // Insert a snapshot where raw_reference is a file path / URL (NOT JSON)
+    // and payload is valid JSON metadata
+    const testRawReference = 'C:/data/sources/raw_snapshot_123.bin';
+    const testPayload = JSON.stringify({
+      warnings: ['Warning A', 'Warning B'],
+      name: 'Custom Set Name 18',
+    });
+
+    await adapter.execute(
+      'INSERT OR IGNORE INTO knowledge_sources (source_id, name, source_type, base_url, created_at) VALUES ($1, $2, $3, $4, $5)',
+      ['community-dragon', 'CommunityDragon', 'static-cdn', 'https://raw.communitydragon.org', now],
+    );
+
+    await adapter.execute(
+      `INSERT INTO source_snapshots (
+        snapshot_id, source_id, source_type, set_number, balance_patch, hotfix,
+        retrieved_at, published_at, source_version, schema_version, content_hash,
+        provenance_status, parity_status, source_uri, notes, raw_reference, payload, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+      [
+        'snap:payload-test',
+        'community-dragon',
+        'static-cdn',
+        18,
+        '18.1',
+        null,
+        now,
+        null,
+        '18.1.0',
+        2,
+        'hash-test-payload',
+        'verified',
+        'current',
+        'https://raw.communitydragon.org',
+        'Payload test notes',
+        testRawReference,
+        testPayload,
+        now,
+      ],
+    );
+
+    // 1. Check getSourceSnapshot returns typed rawReference and payload
+    const fetched = await repo.getSourceSnapshot('snap:payload-test');
+    expect(fetched).not.toBeNull();
+    expect(fetched?.rawReference).toBe(testRawReference);
+    expect(fetched?.payload).toBe(testPayload);
+
+    // 2. Check listSourceSnapshots also returns typed rawReference and payload
+    const list = await repo.listSourceSnapshots({ sourceId: 'community-dragon' });
+    const target = list.find((s) => s.snapshotId === 'snap:payload-test');
+    expect(target).toBeDefined();
+    expect(target?.rawReference).toBe(testRawReference);
+    expect(target?.payload).toBe(testPayload);
+
+    // 3. Verify materializeStaticData reads payload for name and warnings, without failing on non-JSON rawReference
+    const data = getBundledStaticData();
+    const champions = data.champions.map((c) => ({
+      id: c.id,
+      name: c.name,
+      snapshotId: 'snap:payload-test',
+      cost: c.cost,
+      role: c.role ?? null,
+      shopStatus: c.shopStatus,
+      boardEligible: c.boardEligible,
+      icon: c.icon,
+      splash: c.splash,
+      traitIds: c.traitIds,
+      contentFingerprint: 'fp-champ',
+      mechanics: null,
+    }));
+
+    const mat = materializeStaticData(champions, [], [], [], fetched!);
+    expect(mat.version.name).toBe('Custom Set Name 18');
+    expect(mat.warnings).toEqual(['Warning A', 'Warning B']);
+    expect(mat.version.provenance.patch).toBe('18.1');
+    expect(mat.version.patchVerified).toBe(true);
+  });
+
+  it('5. MemoryKnowledgeRepository parity: getMetaSnapshot and setMetaSnapshot work consistently', async () => {
+    const memRepo = new MemoryKnowledgeRepository();
+    expect(await memRepo.getMetaSnapshot('nonexistent')).toBeNull();
+
+    const metaRecord = {
+      snapshotId: 'meta:mem-test',
+      provider: 'MetaTFT',
+      setNumber: 18,
+      patch: '18.1',
+      hotfix: 'b',
+      rankBracket: 'Grandmaster',
+      region: 'KR',
+      window: 'last-24-hours',
+      queue: 1100,
+      sampleSize: 15000,
+      retrievedAt: new Date().toISOString(),
+      contentHash: 'hash-mem-test',
+    };
+
+    memRepo.setMetaSnapshot(metaRecord);
+    const retrieved = await memRepo.getMetaSnapshot('meta:mem-test');
+    expect(retrieved).toEqual(metaRecord);
   });
 });

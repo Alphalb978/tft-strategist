@@ -142,7 +142,23 @@ export interface SourceSnapshot {
   sourceUri: string | null;
   notes: string | null;
   rawReference: string | null;
+  payload?: string | null;
   createdAt: string;
+}
+
+export interface MetaSnapshotKnowledge {
+  snapshotId: string;
+  provider: string;
+  setNumber: number;
+  patch: string | null;
+  hotfix: string | null;
+  rankBracket: string | null;
+  region: string | null;
+  window: string | null;
+  queue: number | null;
+  sampleSize: number | null;
+  retrievedAt: string;
+  contentHash: string;
 }
 
 export interface KnowledgeDiff {
@@ -173,9 +189,9 @@ export interface KnowledgeRepository {
   getChampion(id: string, snapshotId?: string): Promise<ChampionKnowledge | null>;
   listChampions(filter?: {
     snapshotId?: string;
-    role?: string;
     cost?: number;
-    traitId?: string;
+    shopStatus?: string;
+    boardEligible?: boolean;
   }): Promise<ChampionKnowledge[]>;
   getTrait(id: string, snapshotId?: string): Promise<TraitKnowledge | null>;
   listTraits(filter?: { snapshotId?: string }): Promise<TraitKnowledge[]>;
@@ -191,6 +207,7 @@ export interface KnowledgeRepository {
     snapshotId?: string;
     compId?: string;
   }): Promise<CompMetaObservation[]>;
+  getMetaSnapshot(snapshotId: string): Promise<MetaSnapshotKnowledge | null>;
   getSourceSnapshot(snapshotId: string): Promise<SourceSnapshot | null>;
   listSourceSnapshots(filter?: {
     sourceId?: string;
@@ -1021,6 +1038,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       source_uri: string | null;
       notes: string | null;
       raw_reference: string | null;
+      payload: string | null;
       created_at: string;
     }>('SELECT * FROM source_snapshots WHERE snapshot_id = $1', [snapshotId]);
     if (!rows.length) return null;
@@ -1042,7 +1060,41 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       sourceUri: r.source_uri,
       notes: r.notes,
       rawReference: r.raw_reference,
+      payload: r.payload ?? null,
       createdAt: r.created_at,
+    };
+  }
+
+  async getMetaSnapshot(snapshotId: string): Promise<MetaSnapshotKnowledge | null> {
+    const rows = await this.db.select<{
+      snapshot_id: string;
+      provider: string;
+      set_number: number;
+      patch: string | null;
+      hotfix: string | null;
+      rank_bracket: string | null;
+      region: string | null;
+      window: string | null;
+      queue: number | null;
+      sample_size: number | null;
+      retrieved_at: string;
+      content_hash: string;
+    }>('SELECT * FROM meta_snapshots WHERE snapshot_id = $1', [snapshotId]);
+    if (!rows.length) return null;
+    const r = rows[0];
+    return {
+      snapshotId: r.snapshot_id,
+      provider: r.provider,
+      setNumber: r.set_number,
+      patch: r.patch,
+      hotfix: r.hotfix,
+      rankBracket: r.rank_bracket,
+      region: r.region,
+      window: r.window,
+      queue: r.queue,
+      sampleSize: r.sample_size,
+      retrievedAt: r.retrieved_at,
+      contentHash: r.content_hash,
     };
   }
 
@@ -1085,6 +1137,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       source_uri: string | null;
       notes: string | null;
       raw_reference: string | null;
+      payload: string | null;
       created_at: string;
     }>(query, params);
 
@@ -1105,6 +1158,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
       sourceUri: r.source_uri,
       notes: r.notes,
       rawReference: r.raw_reference,
+      payload: r.payload ?? null,
       createdAt: r.created_at,
     }));
   }
@@ -1191,6 +1245,7 @@ export class MemoryKnowledgeRepository implements KnowledgeRepository {
   private compUnits = new Map<string, Map<string, CompUnitKnowledge[]>>();
   private metaObs = new Map<string, CompMetaObservation[]>();
   private snapshots = new Map<string, SourceSnapshot>();
+  private metaSnapshots = new Map<string, MetaSnapshotKnowledge>();
 
   setActiveKnowledgeVersion(version: ActiveKnowledgeVersion) {
     this.active.set(version.kind, structuredClone(version));
@@ -1198,6 +1253,10 @@ export class MemoryKnowledgeRepository implements KnowledgeRepository {
 
   setSourceSnapshot(snap: SourceSnapshot) {
     this.snapshots.set(snap.snapshotId, structuredClone(snap));
+  }
+
+  setMetaSnapshot(meta: MetaSnapshotKnowledge) {
+    this.metaSnapshots.set(meta.snapshotId, structuredClone(meta));
   }
 
   setChampion(champ: ChampionKnowledge) {
@@ -1418,6 +1477,11 @@ export class MemoryKnowledgeRepository implements KnowledgeRepository {
         (a, b) => b.observedAt.localeCompare(a.observedAt) || a.compId.localeCompare(b.compId),
       ),
     );
+  }
+
+  async getMetaSnapshot(snapshotId: string): Promise<MetaSnapshotKnowledge | null> {
+    const m = this.metaSnapshots.get(snapshotId);
+    return m ? structuredClone(m) : null;
   }
 
   async getSourceSnapshot(snapshotId: string): Promise<SourceSnapshot | null> {
