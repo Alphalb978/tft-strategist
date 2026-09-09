@@ -108,18 +108,66 @@ export function createRiotPreviewProvider(data: StaticData): FixtureRiotProvider
       })),
     };
   });
-  const ownMatches: CompletedMatch[] = matches.slice(0, 2).map((source, index) => ({
-    ...structuredClone(source),
-    id: `EUW1_FIXTURE_SELF_${index + 1}`,
-    participants: [
-      {
-        ...structuredClone(source.participants[0]),
-        puuid: identities[0].puuid,
-        riotId: `${identities[0].gameName}#${identities[0].tagLine}`,
-        placement: index + 1,
-      },
-    ],
-  }));
+  const ownPlacements = [1, 2, 4, 3, 2, 6, 1, 4, 5, 2, 3, 7];
+  const ownMatches: CompletedMatch[] = ownPlacements.map((placement, index) => {
+    const completedAt = new Date(previewNow - (index + 0.5) * 86_400_000).toISOString();
+    const sourcePlaybook = index === 6 ? null : playbooks[index % playbooks.length];
+    const isOldSet = index === 11;
+    const matchUnits = sourcePlaybook
+      ? sourcePlaybook.target.units.map((u) => {
+          const ch = eligible.find((c) => c.id === u.championId);
+          return {
+            championId: u.championId,
+            items: [],
+            stars: 2,
+            rarity: ch?.cost ?? 2,
+            rawName: ch?.name ?? u.championId,
+            unresolvedUnit: false,
+            unresolvedItems: [],
+          };
+        })
+      : eligible.slice(0, 7).map((c) => ({
+          championId: c.id,
+          items: [],
+          stars: 1,
+          rarity: c.cost,
+          rawName: c.name,
+          unresolvedUnit: false,
+          unresolvedItems: [],
+        }));
+
+    return {
+      id: `EUW1_FIXTURE_SELF_${index + 1}`,
+      set: isOldSet ? 17 : data.version.set,
+      setCoreName: isOldSet ? 'TFTSet17' : 'TFTSet18',
+      riotGameVersion: isOldSet ? 'Version 15.14.123' : 'Version 16.18.702.1234 (Sep 03 2026/12:00:00) [PUBLIC]',
+      tftContentPatch: null,
+      tftContentPatchSource: 'unavailable' as const,
+      dataVersion: 'fixture-v2',
+      gameTimestamp: completedAt,
+      gameTimestampSemantics: 'fixture-completed-at' as const,
+      gameDurationSeconds: 2100,
+      completedAt,
+      queueId: 1100,
+      gameType: 'fixture-standard',
+      mapId: null,
+      endOfGameResult: 'fixture-complete',
+      modeSupport: 'supported' as const,
+      source: 'fixture:m3-ui-preview' as const,
+      participants: [
+        {
+          puuid: identities[0].puuid,
+          riotId: `${identities[0].gameName}#${identities[0].tagLine}`,
+          placement,
+          level: matchUnits.length,
+          units: matchUnits,
+          traits: [],
+          augmentIds: [],
+          unresolvedAugmentIds: [],
+        },
+      ],
+    };
+  });
   return new FixtureRiotProvider(
     [...ownMatches, ...matches],
     [...opponents, identities[0]],

@@ -15,6 +15,7 @@ import {
 import type {
   MatchReconciliation,
   HomeRecommendationModelConfig,
+  PersonalMatchObservation,
   PersonalProfile,
   PlanSession,
   PostGameReview,
@@ -77,6 +78,9 @@ export interface Repository {
   deletePostGameReview(chainId: string): Promise<void>;
   getPersonalProfile(set: number): Promise<PersonalProfile | null>;
   putPersonalProfile(profile: PersonalProfile): Promise<void>;
+  listPersonalMatchObservations(accountPuuid?: string): Promise<PersonalMatchObservation[]>;
+  putPersonalMatchObservation(observation: PersonalMatchObservation): Promise<void>;
+  putPersonalMatchObservations(observations: PersonalMatchObservation[]): Promise<void>;
   getKnowledgeRepository?(): KnowledgeRepository;
   getSqlDatabase?(): SqlDatabase;
 }
@@ -220,6 +224,29 @@ export class MemoryRepository implements Repository {
   async putPersonalProfile(profile: PersonalProfile) {
     this.entries.set(`personal-profile:${profile.set}`, structuredClone(profile));
   }
+  async listPersonalMatchObservations(accountPuuid?: string) {
+    const list = structuredClone(
+      (this.entries.get('personal-match-observations') as PersonalMatchObservation[] | undefined) ??
+        [],
+    );
+    const filtered = accountPuuid ? list.filter((obs) => obs.accountPuuid === accountPuuid) : list;
+    return filtered.sort(
+      (a, b) => Date.parse(b.gameTimestamp) - Date.parse(a.gameTimestamp) || a.matchId.localeCompare(b.matchId),
+    );
+  }
+  async putPersonalMatchObservation(observation: PersonalMatchObservation) {
+    const existing = await this.listPersonalMatchObservations();
+    const filtered = existing.filter((obs) => obs.matchId !== observation.matchId);
+    this.entries.set('personal-match-observations', structuredClone([...filtered, observation]));
+  }
+  async putPersonalMatchObservations(observations: PersonalMatchObservation[]) {
+    const existing = await this.listPersonalMatchObservations();
+    const map = new Map(existing.map((obs) => [obs.matchId, obs]));
+    for (const obs of observations) {
+      map.set(obs.matchId, obs);
+    }
+    this.entries.set('personal-match-observations', structuredClone([...map.values()]));
+  }
 }
 class BrowserRepository implements Repository {
   mode = 'Browser local storage' as const;
@@ -347,6 +374,26 @@ class BrowserRepository implements Repository {
   }
   async putPersonalProfile(profile: PersonalProfile) {
     await this.set(`personal-profile:${profile.set}`, profile);
+  }
+  async listPersonalMatchObservations(accountPuuid?: string) {
+    const list = (await this.get<PersonalMatchObservation[]>('personal-match-observations')) ?? [];
+    const filtered = accountPuuid ? list.filter((obs) => obs.accountPuuid === accountPuuid) : list;
+    return filtered.sort(
+      (a, b) => Date.parse(b.gameTimestamp) - Date.parse(a.gameTimestamp) || a.matchId.localeCompare(b.matchId),
+    );
+  }
+  async putPersonalMatchObservation(observation: PersonalMatchObservation) {
+    const list = (await this.get<PersonalMatchObservation[]>('personal-match-observations')) ?? [];
+    const filtered = list.filter((obs) => obs.matchId !== observation.matchId);
+    await this.set('personal-match-observations', [...filtered, observation]);
+  }
+  async putPersonalMatchObservations(observations: PersonalMatchObservation[]) {
+    const list = (await this.get<PersonalMatchObservation[]>('personal-match-observations')) ?? [];
+    const map = new Map(list.map((obs) => [obs.matchId, obs]));
+    for (const obs of observations) {
+      map.set(obs.matchId, obs);
+    }
+    await this.set('personal-match-observations', [...map.values()]);
   }
 }
 class SqlRepository implements Repository {
@@ -510,6 +557,118 @@ class SqlRepository implements Repository {
       'INSERT INTO personal_profiles (key,payload) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload',
       [`set:${profile.set}`, JSON.stringify(profile)],
     );
+  }
+  async listPersonalMatchObservations(accountPuuid?: string) {
+    const sql = accountPuuid
+      ? 'SELECT * FROM personal_match_observations WHERE account_puuid = $1 ORDER BY game_timestamp DESC'
+      : 'SELECT * FROM personal_match_observations ORDER BY game_timestamp DESC';
+    const params = accountPuuid ? [accountPuuid] : [];
+    const rows = await this.db.select<
+      {
+        match_id: string;
+        account_puuid: string;
+        set_number: number;
+        patch: string | null;
+        riot_game_version: string | null;
+        game_timestamp: string;
+        placement: number;
+        level: number;
+        queue_id: number | null;
+        game_type: string | null;
+        classified_comp_id: string | null;
+        classification_state: string;
+        classification_confidence: number;
+        classification_model_version: string;
+        final_board_hash: string;
+        payload: string;
+        created_at: string;
+        updated_at: string;
+      }[]
+    >(sql, params);
+    return rows.map((row) => {
+      let parsed: { candidateCompIds?: string[]; runnerUpCompId?: string | null; units?: unknown[] } = {};
+      try {
+        parsed = JSON.parse(row.payload);
+      } catch {
+        // fallback
+      }
+      return {
+        matchId: row.match_id,
+        accountPuuid: row.account_puuid,
+        set: row.set_number,
+        patch: row.patch,
+        riotGameVersion: row.riot_game_version,
+        gameTimestamp: row.game_timestamp,
+        placement: row.placement,
+        level: row.level,
+        queueId: row.queue_id,
+        gameType: row.game_type,
+        classifiedCompId: row.classified_comp_id,
+        classificationState: row.classification_state as PersonalMatchObservation['classificationState'],
+        classificationConfidence: row.classification_confidence,
+        classificationModelVersion: row.classification_model_version,
+        candidateCompIds: parsed.candidateCompIds,
+        runnerUpCompId: parsed.runnerUpCompId,
+        finalBoardHash: row.final_board_hash,
+        units: (parsed.units as PersonalMatchObservation['units']) ?? [],
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    });
+  }
+  async putPersonalMatchObservation(observation: PersonalMatchObservation) {
+    const payload = JSON.stringify({
+      candidateCompIds: observation.candidateCompIds,
+      runnerUpCompId: observation.runnerUpCompId,
+      units: observation.units,
+    });
+    await this.db.execute(
+      `INSERT INTO personal_match_observations (
+        match_id, account_puuid, set_number, patch, riot_game_version,
+        game_timestamp, placement, level, queue_id, game_type,
+        classified_comp_id, classification_state, classification_confidence,
+        classification_model_version, final_board_hash, payload, created_at, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+      ON CONFLICT(match_id) DO UPDATE SET
+        patch=excluded.patch,
+        riot_game_version=excluded.riot_game_version,
+        placement=excluded.placement,
+        level=excluded.level,
+        queue_id=excluded.queue_id,
+        game_type=excluded.game_type,
+        classified_comp_id=excluded.classified_comp_id,
+        classification_state=excluded.classification_state,
+        classification_confidence=excluded.classification_confidence,
+        classification_model_version=excluded.classification_model_version,
+        final_board_hash=excluded.final_board_hash,
+        payload=excluded.payload,
+        updated_at=excluded.updated_at`,
+      [
+        observation.matchId,
+        observation.accountPuuid,
+        observation.set,
+        observation.patch,
+        observation.riotGameVersion,
+        observation.gameTimestamp,
+        observation.placement,
+        observation.level,
+        observation.queueId,
+        observation.gameType,
+        observation.classifiedCompId,
+        observation.classificationState,
+        observation.classificationConfidence,
+        observation.classificationModelVersion,
+        observation.finalBoardHash,
+        payload,
+        observation.createdAt,
+        observation.updatedAt,
+      ],
+    );
+  }
+  async putPersonalMatchObservations(observations: PersonalMatchObservation[]) {
+    for (const obs of observations) {
+      await this.putPersonalMatchObservation(obs);
+    }
   }
 }
 export async function openRepository(): Promise<Repository> {

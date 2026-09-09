@@ -1393,3 +1393,125 @@ export interface TeamPlannerSupport {
   knownGoodFixtureIds: ID[];
 }
 export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
+
+// ==================================================
+// M13D — Personal Match Observations & Intelligence
+// ==================================================
+
+export type CompClassificationState = 'classified' | 'ambiguous' | 'unclassified' | 'incompatible-set';
+
+export interface PersonalCompClassification {
+  state: CompClassificationState;
+  compId: string | null;
+  compTitle: string | null;
+  confidence: number;
+  runnerUpCompId: string | null;
+  runnerUpScore: number;
+  candidateCompIds: string[];
+  finalBoardHash: string;
+  classifierVersion: string;
+  reasons: string[];
+}
+
+export interface PersonalMatchUnit {
+  championId: string;
+  stars?: number | null;
+  items?: string[];
+}
+
+export interface PersonalMatchObservation {
+  matchId: string;
+  accountPuuid: string;
+  set: number;
+  patch: string | null;
+  riotGameVersion: string | null;
+  gameTimestamp: string;
+  placement: number;
+  level: number;
+  queueId: number | null;
+  gameType: string | null;
+  classifiedCompId: string | null;
+  classificationState: CompClassificationState;
+  classificationConfidence: number;
+  classificationModelVersion: string;
+  candidateCompIds?: string[];
+  runnerUpCompId?: string | null;
+  finalBoardHash: string;
+  units: PersonalMatchUnit[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PersonalSampleConfidence = 'VERY LIMITED' | 'LIMITED' | 'DEVELOPING' | 'MEANINGFUL';
+
+export interface PersonalCompPerformance {
+  compId: string;
+  compTitle: string;
+  games: number;
+  averagePlacement: number;
+  top4Count: number;
+  top4Rate: number;
+  winCount: number;
+  winRate: number;
+  bestPlacement: number;
+  recentPlacements: number[];
+  lastPlayed: string;
+  sampleConfidence: PersonalSampleConfidence;
+  evidenceAdjustedEstimate: number;
+  classificationConfidenceAvg: number;
+}
+
+export interface PersonalHistorySummary {
+  currentSet: number;
+  currentSetGames: number;
+  archivedOldSetGames: number;
+  currentSetAveragePlacement: number | null;
+  currentSetTop4Rate: number | null;
+  currentSetWinRate: number | null;
+  mostPlayedComp: { compId: string; compTitle: string; games: number } | null;
+  strongestObserved: { compId: string; compTitle: string; games: number; averagePlacement: number; top4Rate: number; sampleConfidence: PersonalSampleConfidence } | null;
+  weakerObserved: { compId: string; compTitle: string; games: number; averagePlacement: number; top4Rate: number; sampleConfidence: PersonalSampleConfidence } | null;
+}
+
+export type MatchRecommendationLinkState = 'linked' | 'candidate' | 'ambiguous' | 'none';
+
+export interface MatchRecommendationLink {
+  matchId?: string;
+  state: MatchRecommendationLinkState;
+  sessionId?: string;
+  recommendedPlaybookId?: string;
+  recommendedPlaybookTitle?: string;
+  recommendedRank?: number;
+  contestState?: string;
+  finalSafety?: number;
+  actualClassifiedCompId?: string | null;
+  actualPlacement: number;
+  summaryStatement: string;
+  details: string[];
+}
+
+export interface PersonalHistoryRefreshStatus {
+  matchesFound: number;
+  newMatchesFetched: number;
+  cachedMatchesReused: number;
+  lastUpdated: string;
+  message?: string;
+}
+
+export interface CalibrationV2Bucket {
+  key: string;
+  category: 'rank' | 'safety' | 'confidence' | 'contest' | 'pressure' | 'comp' | 'followed' | 'evidence';
+  games: number;
+  averagePlacement: number;
+  top4Rate: number;
+  winRate: number;
+}
+
+export interface CalibrationV2Evaluation {
+  version: 'calibration-v2';
+  totalOutcomes: number;
+  buckets: CalibrationV2Bucket[];
+  weightsChanged: false;
+  limitations: string[];
+}
+

@@ -59,6 +59,7 @@ const CompLibrary = lazy(() =>
 import { META_BUDGETS, type MetaSampleConfig, type MetaProgress } from '../services/metaPipeline';
 import { RiotProviderError } from '../providers/riot';
 import { regionalRouteFor } from '../providers/riotRouting';
+import { parseRiotId } from '../providers/riotId';
 const PostGameHistory = lazy(() =>
   import('../features/PostGameHistory').then((module) => ({ default: module.PostGameHistory })),
 );
@@ -467,6 +468,7 @@ export function App() {
   historyStoreRef.current = historyStore;
   const riotProviderRef = useRef(riotProvider);
   riotProviderRef.current = riotProvider;
+  const postGameSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const handleClear = () => {
@@ -594,6 +596,10 @@ export function App() {
       () => riotProviderRef.current,
       {
         onDetected: () => {
+          if (postGameSyncTimerRef.current) {
+            clearTimeout(postGameSyncTimerRef.current);
+            postGameSyncTimerRef.current = null;
+          }
           setScanState(detectedScan('Preparing lobby scan…'));
         },
         onScan: async () => {
@@ -602,6 +608,62 @@ export function App() {
         onGameEnded: () => {
           setLobby(null);
           setScanState(createIdleScanState('Previous lobby cleared.'));
+
+          // M13D: Automatic single post-game sync attempt after 15 seconds
+          if (postGameSyncTimerRef.current) {
+            clearTimeout(postGameSyncTimerRef.current);
+          }
+          postGameSyncTimerRef.current = setTimeout(async () => {
+            const currentProvider = riotProviderRef.current;
+            const currentHistory = historyStoreRef.current;
+            const currentRepo = repository.current;
+            const currentState = stateRef.current;
+            if (!currentProvider || !currentHistory || !currentRepo || !currentState?.settings.riotId) {
+              return;
+            }
+            try {
+              const parsed = parseRiotId(currentState.settings.riotId);
+              const cached = await currentHistory.getIdentity(
+                parsed.gameName,
+                parsed.tagLine,
+                currentState.settings.riotPlatform,
+              );
+              let identity: import('../domain/models').RiotIdentity | null = cached;
+              if (!identity) {
+                const resolved = await currentProvider.resolveAccount(parsed.gameName, parsed.tagLine);
+                await currentHistory.putIdentity(resolved, new Date().toISOString());
+                identity = resolved;
+              }
+              if (!identity) return;
+
+              const resolvedIdentity = identity;
+              const recentIds = await currentProvider.recentMatchIds(resolvedIdentity.puuid, 0, 5, {
+                deadlineAt: Date.now() + 8_000,
+              });
+              const existingObs = await currentRepo.listPersonalMatchObservations(resolvedIdentity.puuid);
+              const existingIds = new Set(existingObs.map((o) => o.matchId));
+              const hasNewMatch = recentIds.some((id) => !existingIds.has(id));
+
+              if (hasNewMatch) {
+                const { refreshPersonalHistory } = await import('../services/personalHistory');
+                await refreshPersonalHistory(
+                  resolvedIdentity,
+                  currentProvider,
+                  currentHistory,
+                  currentRepo,
+                  currentState.catalog ?? null,
+                  currentState.data,
+                  20,
+                  { force: true },
+                );
+                setToast('New completed TFT match imported.');
+              } else {
+                setToast('Latest result not published yet · Refresh');
+              }
+            } catch {
+              // Fail safe on Riot match publication timing without retry storms
+            }
+          }, 15_000);
         },
       },
       {
@@ -619,6 +681,10 @@ export function App() {
         state: detector.getState(),
         fingerprint: detector.getCurrentFingerprint(),
       };
+      if (postGameSyncTimerRef.current) {
+        clearTimeout(postGameSyncTimerRef.current);
+        postGameSyncTimerRef.current = null;
+      }
       detector.stop();
       if (detectorRef.current === detector) {
         detectorRef.current = null;
