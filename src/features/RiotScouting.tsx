@@ -310,7 +310,14 @@ export function RiotScouting({
           <strong>{fixturePreview ? 'Fixture preview' : riotStatusLabel(status.status)}</strong>
         </span>
         <span>
-          Current lobby <strong>{lobbyStatus}</strong>
+          Current lobby{' '}
+          <strong>
+            {scanState?.stage === 'detected'
+              ? 'TFT game detected'
+              : scanState?.stage === 'scanning'
+                ? 'Scanning…'
+                : lobbyStatus}
+          </strong>
         </span>
       </div>
       <div className="riot-connection-grid">

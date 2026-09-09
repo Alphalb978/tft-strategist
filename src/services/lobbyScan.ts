@@ -6,7 +6,7 @@ import type {
 
 export type { LobbyScanStage, LobbyScanProgress, LobbyScanState } from '../domain/models';
 
-export function createIdleScanState(): LobbyScanState {
+export function createIdleScanState(reason = 'Waiting for a TFT game…'): LobbyScanState {
   return {
     stage: 'idle',
     opponentsAnalyzed: 0,
@@ -17,6 +17,23 @@ export function createIdleScanState(): LobbyScanState {
     coverage: 0,
     lobby: null,
     isProvisional: false,
+    reason,
+  };
+}
+
+export function detectedScan(reason = 'Preparing lobby scan…'): LobbyScanState {
+  return {
+    stage: 'detected',
+    opponentsAnalyzed: 0,
+    opponentsTotal: 7,
+    matchesProcessed: 0,
+    relevantGamesAvailable: 0,
+    relevantGamesTarget: 0,
+    coverage: 0,
+    lobby: null,
+    isProvisional: true,
+    tftDetected: true,
+    reason,
   };
 }
 
@@ -176,6 +193,13 @@ export function resolveHomeRanking(
         isProvisional: true,
         statusText: `ANALYZING LOBBY · ${scanState.opponentsAnalyzed}/${scanState.opponentsTotal} opponents`,
       };
+    case 'detected':
+      return {
+        candidates: baselineCandidates,
+        isFinalLobbyAware: false,
+        isProvisional: true,
+        statusText: 'TFT GAME DETECTED',
+      };
     case 'not-in-game':
       return {
         candidates: baselineCandidates,
@@ -188,7 +212,7 @@ export function resolveHomeRanking(
         candidates: baselineCandidates,
         isFinalLobbyAware: false,
         isProvisional: false,
-        statusText: 'LOBBY SCAN FAILED',
+        statusText: scanState.tftDetected ? 'TFT GAME DETECTED' : 'LOBBY SCAN FAILED',
       };
     case 'idle':
     default:

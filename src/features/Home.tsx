@@ -1,4 +1,4 @@
-import { ArrowRight, Layers3, Plus, Radio, ShieldQuestion, Trash2 } from 'lucide-react';
+import { ArrowRight, HelpCircle, Layers3, Plus, Radio, ShieldQuestion, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type {
   LobbyPressure,
@@ -11,10 +11,21 @@ import { Art, Portrait } from '../components/Art';
 import { LobbyPressureSummary } from '../components/LobbyPressureSummary';
 import { selectAlternativeCandidates } from '../strategy/homeScoring';
 
-const signed = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}`;
-const percent = (value: number | null) => (value === null ? '—' : `${Math.round(value * 100)}%`);
+export const signed = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}`;
+export const percent = (value: number | null) => (value === null ? '—' : `${Math.round(value * 100)}%`);
 
-function pickRate(candidate: RecommendationCandidate) {
+export function formatLobbyDelta(delta: number): string {
+  const rounded = Math.round(delta * 10) / 10;
+  if (Math.abs(rounded) < 0.05) {
+    return 'Lobby scan had little effect';
+  }
+  if (rounded > 0) {
+    return `Lobby scan improved this route by +${rounded.toFixed(1)}`;
+  }
+  return `Lobby scan reduced this route by ${rounded.toFixed(1)}`;
+}
+
+export function pickRate(candidate: RecommendationCandidate) {
   const pick = candidate.home?.pickRate;
   if (!pick) return '—';
   return pick.unit === 'percent' ? `${pick.value.toFixed(2)}%` : pick.value.toFixed(2);
@@ -57,7 +68,14 @@ function supportedRole(
   return 'COMPLEMENTARY ROUTE';
 }
 
-function exclusionReason(candidate: RecommendationCandidate, portfolio: RecommendationPortfolio) {
+export function humanizeExclusionReason(
+  candidate: RecommendationCandidate,
+  portfolio: RecommendationPortfolio,
+) {
+  if (candidate.contest.state === 'High') {
+    return 'Good fallback · heavily pressured in this lobby';
+  }
+
   const route = portfolio.plans
     .map((entry, index) => {
       const opening = candidate.playbook.features.openingCoverage.filter((value) =>
@@ -73,13 +91,17 @@ function exclusionReason(candidate: RecommendationCandidate, portfolio: Recommen
       };
     })
     .sort((a, b) => b.overlap - a.overlap || Number(b.sameStyle) - Number(a.sameStyle))[0];
-  if (route?.overlap)
-    return `Not primary: overlaps the #${route.index + 1} route's opening/item profile.`;
-  if (route?.sameStyle) return 'Not primary: portfolio kept a more distinct style mix.';
-  return 'Outside primary three after portfolio optimization.';
+
+  if (route?.overlap) {
+    return `Good fallback · overlaps opening & items with #${route.index + 1}`;
+  }
+  if (route?.sameStyle) {
+    return 'Good fallback · primary routes favored style diversity';
+  }
+  return 'Good fallback · excluded for route diversity';
 }
 
-function ScoreDecomposition({
+export function ScoreDecomposition({
   candidate,
   isProvisional,
 }: {
@@ -90,40 +112,55 @@ function ScoreDecomposition({
   if (!score) return null;
   return (
     <div className="score-decomposition" aria-label="Final Safety calculation">
-      <span>
-        Base Performance <strong>{score.basePerformance.toFixed(1)}</strong>
-      </span>
-      <span>
-        Low-pick edge <strong>{signed(score.lowPickEdge)}</strong>
-      </span>
-      <span>
-        Lobby{isProvisional ? ' (prov.)' : ''} <strong>{signed(score.lobbyAdjustment)}</strong>
-      </span>
-      <span className="final">
-        {isProvisional ? 'Provisional' : 'Final Safety'} <strong>{score.finalSafety.toFixed(1)}</strong>
-      </span>
+      <div className="score-row">
+        <span className="term-label">Base</span>
+        <strong className="term-val">{score.basePerformance.toFixed(1)}</strong>
+      </div>
+      <div className="score-row">
+        <span className="term-label">+ Low-pick</span>
+        <strong className="term-val">{signed(score.lowPickEdge)}</strong>
+      </div>
+      <div className="score-row">
+        <span className="term-label">+ Lobby{isProvisional ? ' (prov.)' : ''}</span>
+        <strong className="term-val">{signed(score.lobbyAdjustment)}</strong>
+      </div>
+      <div className="score-row final-row">
+        <span className="term-label">{isProvisional ? 'Provisional' : 'Final Safety'}</span>
+        <strong className="term-val final-val">{score.finalSafety.toFixed(1)}</strong>
+      </div>
     </div>
   );
 }
 
-function OutcomeLine({ candidate }: { candidate: RecommendationCandidate }) {
+export function OutcomeLine({ candidate }: { candidate: RecommendationCandidate }) {
   const score = candidate.home;
   if (!score) return null;
   return (
     <div className="home-outcomes">
-      {score.reliability === 0 && <small>Insufficient sample · outcomes shrink to neutral</small>}
-      <span>
-        <strong>{percent(score.top4.raw)}</strong> Top 4
-      </span>
-      <span>
-        <strong>{score.averagePlacement.raw?.toFixed(2) ?? '—'}</strong> Avg
-      </span>
-      <span>
-        <strong>{percent(score.winRate.raw)}</strong> Win
-      </span>
-      <span title="Provider-displayed MetaTFT Pick Rate">
-        <strong>{pickRate(candidate)}</strong> Pick
-      </span>
+      {score.reliability === 0 && (
+        <div
+          className="limited-data-banner"
+          title="Insufficient sample · small samples are shrunk toward neutral."
+          role="note"
+        >
+          <span className="limited-data-badge">LIMITED DATA</span>
+          <span>Not enough games to trust performance stats yet.</span>
+        </div>
+      )}
+      <div className="outcome-metrics">
+        <span>
+          <strong>{percent(score.top4.raw)}</strong> Top 4
+        </span>
+        <span>
+          <strong>{score.averagePlacement.raw?.toFixed(2) ?? '—'}</strong> Avg
+        </span>
+        <span>
+          <strong>{percent(score.winRate.raw)}</strong> Win
+        </span>
+        <span title="Provider-displayed MetaTFT Pick Rate">
+          <strong>{pickRate(candidate)}</strong> Pick
+        </span>
+      </div>
     </div>
   );
 }
@@ -184,6 +221,13 @@ export function Home({
     () => selectAlternativeCandidates(candidates, portfolio, 5),
     [candidates, portfolio],
   );
+  const isProvisional = activeScan.stage === 'scanning' || activeScan.isProvisional;
+  const hasActiveLobby = Boolean(
+    activeScan.lobby &&
+      activeScan.stage !== 'failed' &&
+      activeScan.stage !== 'not-in-game' &&
+      activeScan.stage !== 'idle',
+  );
   const [checkerId, setCheckerId] = useState(candidates[0]?.playbook.id ?? '');
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
   const checked = checkedIds.flatMap((id) => {
@@ -206,11 +250,15 @@ export function Home({
         <button
           className="secondary"
           onClick={onScout}
-          disabled={activeScan.stage === 'scanning'}
+          disabled={activeScan.stage === 'scanning' || activeScan.stage === 'detected'}
           aria-label="Scan current lobby"
         >
           <Radio size={16} />
-          {activeScan.stage === 'scanning' ? 'Analyzing lobby…' : 'Scan current lobby'}
+          {activeScan.stage === 'scanning'
+            ? 'Analyzing lobby…'
+            : activeScan.stage === 'detected'
+              ? 'Preparing scan…'
+              : 'Scan current lobby'}
         </button>
       </div>
 
@@ -218,40 +266,46 @@ export function Home({
         <div>
           <Radio size={15} />
           <strong>
-            {activeScan.stage === 'scanning'
-              ? `ANALYZING — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
-              : activeScan.stage === 'complete'
-                ? `LOBBY READY — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
-                : activeScan.stage === 'partial-complete'
-                  ? activeScan.opponentsAnalyzed >= 6
-                    ? `PARTIAL — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
-                    : 'PARTIAL LOBBY DATA'
-                  : activeScan.stage === 'failed'
-                    ? 'LOBBY SCAN FAILED'
-                    : 'NO CURRENT LOBBY'}
+            {activeScan.stage === 'detected' || (activeScan.tftDetected && activeScan.stage === 'failed')
+              ? 'TFT GAME DETECTED'
+              : activeScan.stage === 'scanning'
+                ? `ANALYZING — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
+                : activeScan.stage === 'complete'
+                  ? `LOBBY READY — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
+                  : activeScan.stage === 'partial-complete'
+                    ? activeScan.opponentsAnalyzed >= 6
+                      ? `PARTIAL — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
+                      : 'PARTIAL LOBBY DATA'
+                    : activeScan.stage === 'failed'
+                      ? 'LOBBY SCAN FAILED'
+                      : 'NO CURRENT LOBBY'}
           </strong>
           <span>
-            {activeScan.stage === 'scanning'
-              ? `${activeScan.opponentsAnalyzed} / ${activeScan.opponentsTotal} opponents · ${activeScan.matchesProcessed} historical matches processed`
-              : activeScan.stage === 'complete'
-                ? `${activeScan.relevantGamesAvailable} / ${activeScan.relevantGamesTarget} relevant games · ${Math.round(activeScan.coverage * 100)}% coverage`
-                : activeScan.stage === 'partial-complete'
-                  ? activeScan.opponentsAnalyzed >= 6
-                    ? 'Lobby adjustment confidence reduced'
-                    : `${activeScan.opponentsAnalyzed} / ${activeScan.opponentsTotal} opponents analyzed · Ranking confidence incomplete`
-                  : activeScan.stage === 'not-in-game'
-                    ? `${activeScan.reason ?? 'No active TFT game detected'} · neutral contest adjustment`
-                    : activeScan.stage === 'failed'
-                      ? `${activeScan.error ?? 'Scouting unavailable'} · neutral contest adjustment`
-                      : 'Not scanned · neutral contest adjustment'}
+            {activeScan.stage === 'detected'
+              ? (activeScan.reason ?? 'Preparing lobby scan…')
+              : activeScan.tftDetected && activeScan.stage === 'failed'
+                ? (activeScan.error ? `Lobby scan unavailable — ${activeScan.error}` : 'Lobby scan unavailable')
+                : activeScan.stage === 'scanning'
+                  ? `${activeScan.opponentsAnalyzed} / ${activeScan.opponentsTotal} opponents · ${activeScan.matchesProcessed} historical matches processed`
+                  : activeScan.stage === 'complete'
+                    ? `${activeScan.relevantGamesAvailable} / ${activeScan.relevantGamesTarget} relevant games · ${Math.round(activeScan.coverage * 100)}% coverage`
+                    : activeScan.stage === 'partial-complete'
+                      ? activeScan.opponentsAnalyzed >= 6
+                        ? 'Lobby adjustment confidence reduced'
+                        : `${activeScan.opponentsAnalyzed} / ${activeScan.opponentsTotal} opponents analyzed · Ranking confidence incomplete`
+                      : activeScan.stage === 'not-in-game'
+                        ? `${activeScan.reason ?? 'No active TFT game detected'} · neutral contest adjustment`
+                        : activeScan.stage === 'failed'
+                          ? `${activeScan.error ?? 'Scouting unavailable'} · neutral contest adjustment`
+                          : (activeScan.reason ?? 'Waiting for a TFT game…')}
           </span>
         </div>
-        {activeScan.stage === 'scanning' && (
+        {(activeScan.stage === 'scanning' || activeScan.stage === 'detected') && (
           <strong className="scan-impact provisional">
             Recommendations provisional — wait before locking a route
           </strong>
         )}
-        {activeScan.lobby && activeScan.stage !== 'scanning' && (
+        {activeScan.lobby && activeScan.stage !== 'scanning' && activeScan.stage !== 'detected' && (
           <>
             <strong className="scan-impact">
               {orderChanged
@@ -287,7 +341,19 @@ export function Home({
 
       <div className="section-line">
         <h2>Primary routes</h2>
-        <span>{candidates.length} eligible comps considered · portfolio optimized together</span>
+        <span className="eligible-comps-note">
+          {candidates.length} eligible comps considered
+          <span
+            className="help-tooltip-trigger"
+            tabIndex={0}
+            role="button"
+            aria-label="Eligible comps explanation: Meets quality and minimum game count gates for Set 18, drawn from curated playbooks, compatible external meta comps, and discovered variants."
+            title="Eligible comps meet minimum quality and sample criteria for Set 18, drawn from curated playbooks, compatible external meta comps, and discovered variants."
+          >
+            <HelpCircle size={12} />
+          </span>
+          {' · '}portfolio optimized together
+        </span>
       </div>
       <div className="plan-grid home-plan-grid">
         {portfolio.plans.map(({ candidate: c }, index) => {
@@ -335,9 +401,9 @@ export function Home({
                     ? 'Provisional Safety'
                     : 'Final Safety'}
                 </span>
-                <b>{c.confidence.level} confidence</b>
+                <b>Score confidence: {c.confidence.level}</b>
                 {activeScan.lobby && prior && (
-                  <small className="score-delta">{signed(c.score - prior.score)} vs no lobby</small>
+                  <small className="score-delta">{formatLobbyDelta(c.score - prior.score)}</small>
                 )}
               </div>
               <div className="plan-outcomes home-score-panel">
@@ -348,8 +414,15 @@ export function Home({
                 <OutcomeLine candidate={c} />
               </div>
               <div className="plan-decision">
-                <span className={`contest contest-${c.contest.state.toLowerCase()}`}>
-                  <Radio size={13} /> Historical contest: {c.contest.state.toLowerCase()}
+                <span
+                  className={`contest-pill contest-${hasActiveLobby && c.contest.state !== 'Unavailable' ? c.contest.state.toLowerCase() : 'unavailable'}`}
+                >
+                  <Radio size={12} />{' '}
+                  {!hasActiveLobby || c.contest.state === 'Unavailable'
+                    ? 'CONTEST UNAVAILABLE'
+                    : isProvisional
+                      ? `${c.contest.state.toUpperCase()} CONTEST (PROV.)`
+                      : `${c.contest.state.toUpperCase()} CONTEST`}
                 </span>
                 <p className="card-reason">{c.reasons[1]}</p>
                 {c.contest.routeEvidence && c.contest.routeEvidence.opponentsWithRouteMatch > 0 && (
@@ -368,13 +441,30 @@ export function Home({
                   </div>
                 )}
                 {c.contest.pressuredUnits.length > 0 && (
-                  <div className="card-pressure-units" aria-label="Pressured critical units">
-                    {c.contest.pressuredUnits.slice(0, 3).map((unit) => (
-                      <span key={unit.championId}>
-                        {data.champions.find((champion) => champion.id === unit.championId)?.name} ·{' '}
-                        {unit.equivalentHistoricalUsers.toFixed(1)} equivalent users
+                  <div className="card-shared-pressure" aria-label="Shared-unit pressure">
+                    <div className="shared-pressure-header">
+                      <span className="shared-pressure-title">Shared-unit pressure</span>
+                      <span
+                        className="help-tooltip-trigger"
+                        tabIndex={0}
+                        role="button"
+                        aria-label="Equivalent users explanation: Evidence-weighted pressure from opponents' recent boards. This is not a count of players currently holding the unit."
+                        title="Evidence-weighted pressure from opponents' recent boards. This is not a count of players currently holding the unit."
+                      >
+                        <HelpCircle size={12} />
                       </span>
-                    ))}
+                    </div>
+                    <div className="shared-pressure-units">
+                      {c.contest.pressuredUnits.slice(0, 3).map((unit, uIndex) => {
+                        const champ = data.champions.find((champion) => champion.id === unit.championId);
+                        return (
+                          <span key={unit.championId}>
+                            {champ?.name ?? unit.championId} {unit.equivalentHistoricalUsers.toFixed(1)}
+                            {uIndex < Math.min(c.contest.pressuredUnits.length, 3) - 1 ? ' · ' : ''}
+                          </span>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
@@ -399,34 +489,82 @@ export function Home({
         <section className="other-routes" aria-labelledby="other-routes-title">
           <div className="section-line">
             <h2 id="other-routes-title">Other strong routes</h2>
-            <span>Next five by Final Safety</span>
+            <span>Next {alternatives.length} alternatives by Final Safety</span>
           </div>
-          <div className="alternative-list">
+          <div className="alternative-cards" role="list">
             {alternatives.map((candidate) => {
               const overallRank =
                 candidates.findIndex((entry) => entry.playbook.id === candidate.playbook.id) + 1;
+              const p = candidate.playbook;
+              const hasCandidateLobby =
+                hasActiveLobby && candidate.contest.state !== 'Unavailable';
+              const lobbyAdj = candidate.home?.lobbyAdjustment;
+
               return (
-                <article key={candidate.playbook.id}>
-                  <span className="alternative-rank">#{overallRank}</span>
-                  <div className="alternative-name">
-                    <strong>{candidate.playbook.title}</strong>
-                    <span>{candidate.playbook.features.style}</span>
+                <article className="alternative-card" key={p.id} role="listitem">
+                  <div className="alt-card-main">
+                    <div className="alternative-rank-title">
+                      <span className="alternative-rank">#{overallRank}</span>
+                      <div className="alternative-title-group">
+                        <strong className="alternative-title">{p.title}</strong>
+                        <span className="alternative-style-tag">{p.features.style}</span>
+                      </div>
+                    </div>
+
+                    {/* Compact unit portraits strip */}
+                    <div className="alternative-lineup" aria-label={`${p.title} units`}>
+                      {p.target.units.map((unit) => {
+                        const champion = data.champions.find((entry) => entry.id === unit.championId);
+                        return champion ? (
+                          <div
+                            key={unit.championId}
+                            className={`alt-unit ${unit.slot === 'core' ? 'is-core' : ''}`}
+                            title={`${champion.name} (${unit.slot})`}
+                          >
+                            <Portrait champion={champion} assets={assets} compact />
+                          </div>
+                        ) : null;
+                      })}
+                    </div>
+
+                    <OutcomeLine candidate={candidate} />
+                    <p className="alternative-reason">{humanizeExclusionReason(candidate, portfolio)}</p>
                   </div>
-                  <strong className="alternative-safety">
-                    {candidate.home?.finalSafety.toFixed(1)}
-                    <small> Safety</small>
-                  </strong>
-                  <OutcomeLine candidate={candidate} />
-                  <span className={`contest contest-${candidate.contest.state.toLowerCase()}`}>
-                    {candidate.contest.state} contest
-                  </span>
-                  <p>{exclusionReason(candidate, portfolio)}</p>
-                  <button
-                    aria-label={`Open ${candidate.playbook.title}`}
-                    onClick={() => onOpen(candidate.playbook.id)}
-                  >
-                    <ArrowRight size={15} />
-                  </button>
+
+                  <div className="alt-card-aside">
+                    <strong className="alternative-safety">
+                      {candidate.home?.finalSafety.toFixed(1) ?? candidate.score}
+                      <small> SAFETY</small>
+                    </strong>
+
+                    <span
+                      className={`contest-pill contest-${hasCandidateLobby ? candidate.contest.state.toLowerCase() : 'unavailable'}`}
+                    >
+                      {!hasCandidateLobby
+                        ? 'CONTEST UNAVAILABLE'
+                        : isProvisional
+                          ? `${candidate.contest.state.toUpperCase()} CONTEST (PROV.)`
+                          : `${candidate.contest.state.toUpperCase()} CONTEST`}
+                    </span>
+
+                    {hasCandidateLobby && lobbyAdj !== undefined && (
+                      <span
+                        className={`alt-lobby-adj ${lobbyAdj > 0 ? 'adj-positive' : lobbyAdj < 0 ? 'adj-negative' : 'adj-neutral'}`}
+                      >
+                        Lobby {signed(lobbyAdj)}
+                        {isProvisional ? ' (prov.)' : ''}
+                      </span>
+                    )}
+
+                    <button
+                      className="alternative-open-btn"
+                      aria-label={`View details for ${p.title}`}
+                      onClick={() => onOpen(p.id)}
+                    >
+                      <span>View details</span>
+                      <ArrowRight size={13} />
+                    </button>
+                  </div>
                 </article>
               );
             })}

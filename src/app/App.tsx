@@ -39,12 +39,14 @@ const DataSettings = lazy(() =>
 import type { LobbyPressure, LobbyScanState } from '../domain/models';
 import {
   createIdleScanState,
+  detectedScan,
   startScan,
   updateScanProgress,
   completeScan,
   notInGameScan,
   failScan,
 } from '../services/lobbyScan';
+import { TftGameDetector, type DetectorState } from '../services/tftGameDetector';
 import { discoverCurrentLobby, scanDiscoveredLobby } from '../services/currentLobby';
 import { scanLobby } from '../services/scouting';
 import { PREVIEW_OWN_RIOT_ID } from '../providers/riotPreview';
@@ -453,8 +455,22 @@ export function App() {
       setToast('Current game could not be saved.');
     }
   };
+
+  const detectorRef = useRef<TftGameDetector | null>(null);
+  const detectorLatchRef = useRef<{ state: DetectorState; fingerprint: string | null }>({
+    state: 'NO_GAME',
+    fingerprint: null,
+  });
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const historyStoreRef = useRef(historyStore);
+  historyStoreRef.current = historyStore;
+  const riotProviderRef = useRef(riotProvider);
+  riotProviderRef.current = riotProvider;
+
   useEffect(() => {
     const handleClear = () => {
+      detectorRef.current?.onManualClear();
       setLobby(null);
       setScanState(createIdleScanState());
     };
@@ -462,14 +478,26 @@ export function App() {
     return () => window.removeEventListener('strategist-clear-lobby', handleClear);
   }, []);
 
-  const startLobbyScan = async () => {
+  const startLobbyScan = async (options?: { isAuto?: boolean; tftDetected?: boolean }) => {
     if (!state || !riotProvider || !historyStore || scanState.stage === 'scanning') return;
+    if (!options?.isAuto) {
+      detectorRef.current?.onManualScan();
+    }
     if (!state.settings.riotId && !fixturePreview) {
+      if (options?.isAuto) {
+        setScanState({
+          ...createIdleScanState(),
+          stage: 'failed',
+          tftDetected: true,
+          error: 'Riot API key missing',
+          reason: 'Lobby scan unavailable — Riot API key missing',
+        });
+        return;
+      }
       navigate('data');
       return;
     }
     setLobby(null);
-    window.dispatchEvent(new Event('strategist-clear-lobby'));
     setScanState(startScan());
     try {
       const discovery = await discoverCurrentLobby(
@@ -483,10 +511,30 @@ export function App() {
           discovery.diagnostics.gameflow === 'no-tft-session' ||
           discovery.diagnostics.gameflow === 'no-active-tft-session' ||
           discovery.diagnostics.spectator === '404';
-        if (notInGame) {
+
+        const isAuthOrRateLimit =
+          discovery.diagnostics.spectator === '403' ||
+          discovery.diagnostics.spectator === 'rate-limited' ||
+          discovery.error.toLowerCase().includes('expired') ||
+          discovery.error.toLowerCase().includes('key') ||
+          discovery.error.toLowerCase().includes('rate limit');
+
+        if (notInGame && !options?.tftDetected) {
           setScanState(notInGameScan(discovery.error));
+        } else if (options?.tftDetected && isAuthOrRateLimit) {
+          setScanState({
+            ...failScan(discovery.error),
+            tftDetected: true,
+            error:
+              discovery.error.includes('expired') || discovery.diagnostics.spectator === '403'
+                ? 'Riot API key expired'
+                : discovery.error,
+          });
         } else {
-          setScanState(failScan(discovery.error));
+          setScanState({
+            ...failScan(discovery.error),
+            ...(options?.tftDetected ? { tftDetected: true } : {}),
+          });
         }
         return;
       }
@@ -521,10 +569,62 @@ export function App() {
         setLobby(null);
       }
     } catch (err) {
-      setScanState(failScan(err instanceof Error ? err.message : 'Lobby scan failed'));
+      const errMsg = err instanceof Error ? err.message : 'Lobby scan failed';
+      const isExpired =
+        err instanceof RiotProviderError && err.code === 'auth'
+          ? 'Riot API key expired'
+          : errMsg.toLowerCase().includes('expired')
+            ? 'Riot API key expired'
+            : errMsg;
+      setScanState({
+        ...failScan(isExpired),
+        ...(options?.tftDetected ? { tftDetected: true } : {}),
+      });
       setLobby(null);
     }
   };
+
+  const startLobbyScanRef = useRef(startLobbyScan);
+  startLobbyScanRef.current = startLobbyScan;
+
+  useEffect(() => {
+    if (!riotProvider) return;
+
+    const detector = new TftGameDetector(
+      () => riotProviderRef.current,
+      {
+        onDetected: () => {
+          setScanState(detectedScan('Preparing lobby scan…'));
+        },
+        onScan: async () => {
+          await startLobbyScanRef.current({ isAuto: true, tftDetected: true });
+        },
+        onGameEnded: () => {
+          setLobby(null);
+          setScanState(createIdleScanState('Previous lobby cleared.'));
+        },
+      },
+      {
+        pollIntervalMs: 2500,
+        initialState: detectorLatchRef.current.state,
+        initialFingerprint: detectorLatchRef.current.fingerprint,
+      },
+    );
+
+    detector.start();
+    detectorRef.current = detector;
+
+    return () => {
+      detectorLatchRef.current = {
+        state: detector.getState(),
+        fingerprint: detector.getCurrentFingerprint(),
+      };
+      detector.stop();
+      if (detectorRef.current === detector) {
+        detectorRef.current = null;
+      }
+    };
+  }, [riotProvider]);
 
   const liveHome = useMemo(() => {
     if (!state) return null;

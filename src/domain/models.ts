@@ -1032,6 +1032,7 @@ export interface LobbyPressure {
 }
 export type LobbyScanStage =
   | 'idle'
+  | 'detected'
   | 'scanning'
   | 'complete'
   | 'partial-complete'
@@ -1057,6 +1058,7 @@ export interface LobbyScanState {
   error?: string;
   reason?: string;
   isProvisional: boolean;
+  tftDetected?: boolean;
 }
 export interface PersonalProfile {
   schemaVersion?: 1;
