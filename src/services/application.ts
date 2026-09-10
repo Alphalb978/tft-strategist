@@ -386,7 +386,11 @@ export async function loadApplication(
     knowledgeNotice = `Knowledge database deferred: ${String(error)}`;
   }
 
-  const canonicalPlaybooks = catalog?.playbooks ?? rawPlaybooks;
+  const canonicalPlaybooks =
+    catalog?.playbooks && catalog.playbooks.length > 0 ? catalog.playbooks : rawPlaybooks;
+  if (catalog && catalog.playbooks.length === 0) {
+    catalog.playbooks = canonicalPlaybooks;
+  }
 
   result = createRecommendations(
     data,
@@ -547,7 +551,11 @@ export async function refreshApplication(
     existingExternalSnapshot: current.external,
   });
 
-  const canonicalPlaybooks = catalog?.playbooks ?? rawPlaybooks;
+  const canonicalPlaybooks =
+    catalog?.playbooks && catalog.playbooks.length > 0 ? catalog.playbooks : rawPlaybooks;
+  if (catalog && catalog.playbooks.length === 0) {
+    catalog.playbooks = canonicalPlaybooks;
+  }
 
   const result = createRecommendations(
     data,

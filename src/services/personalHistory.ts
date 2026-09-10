@@ -13,7 +13,10 @@ import type { RiotProvider } from '../providers/riot';
 import type { HistoryStore } from '../storage/history';
 import type { Repository } from '../storage/repository';
 import type { RuntimeKnowledgeCatalog } from './knowledgeCatalog';
-import { classifyPersonalBoard } from '../strategy/personalClassifier';
+import {
+  classifyPersonalBoard,
+  PERSONAL_COMP_CLASSIFIER_VERSION,
+} from '../strategy/personalClassifier';
 
 export interface RefreshPersonalHistoryResult {
   status: PersonalHistoryRefreshStatus;
@@ -141,6 +144,73 @@ export async function refreshPersonalHistory(
   };
 }
 
+export async function rederivePersonalMatchObservationsIfNeeded(
+  observations: PersonalMatchObservation[],
+  historyStore: HistoryStore,
+  repository: Repository,
+  catalog: RuntimeKnowledgeCatalog | null,
+  staticData: StaticData,
+): Promise<PersonalMatchObservation[]> {
+  let modified = false;
+  const rederivedList: PersonalMatchObservation[] = [];
+  const now = new Date().toISOString();
+
+  const targetSet =
+    typeof staticData.version.set === 'number'
+      ? staticData.version.set
+      : Number.parseInt(String(staticData.version.set), 10);
+
+  for (const obs of observations) {
+    const obsSet = typeof obs.set === 'number' ? obs.set : Number.parseInt(String(obs.set), 10);
+    const isCurrentSet = obsSet === targetSet;
+    const isOldClassifier = obs.classificationModelVersion !== PERSONAL_COMP_CLASSIFIER_VERSION;
+    const isZeroCandidateUnclassified =
+      isCurrentSet &&
+      obs.classificationState === 'unclassified' &&
+      (!obs.candidateCompIds || obs.candidateCompIds.length === 0) &&
+      (obs.classificationConfidence === 0 || obs.classifiedCompId === null);
+
+    if (isCurrentSet && (isOldClassifier || isZeroCandidateUnclassified)) {
+      const cached = await historyStore.getCompletedMatch(obs.matchId);
+      const participant = cached?.participants.find((p) => p.puuid === obs.accountPuuid) ?? {
+        puuid: obs.accountPuuid,
+        placement: obs.placement,
+        level: obs.level,
+        units: obs.units.map((u) => ({
+          championId: u.championId,
+          stars: u.stars ?? 1,
+          items: u.items ?? [],
+          rarity: null,
+          rawName: null,
+          unresolvedUnit: false,
+          unresolvedItems: [],
+        })),
+        traits: [],
+        augmentIds: [],
+        unresolvedAugmentIds: [],
+      };
+
+      const classification = classifyPersonalBoard(participant, obsSet, catalog, staticData);
+      obs.classifiedCompId = classification.compId;
+      obs.classificationState = classification.state;
+      obs.classificationConfidence = classification.confidence;
+      obs.classificationModelVersion = classification.classifierVersion;
+      obs.candidateCompIds = classification.candidateCompIds;
+      obs.runnerUpCompId = classification.runnerUpCompId;
+      obs.finalBoardHash = classification.finalBoardHash;
+      obs.updatedAt = now;
+      modified = true;
+      rederivedList.push(obs);
+    }
+  }
+
+  if (modified && rederivedList.length > 0) {
+    await repository.putPersonalMatchObservations(rederivedList);
+  }
+
+  return observations;
+}
+
 export function sampleConfidenceFor(games: number): PersonalSampleConfidence {
   if (games <= 2) return 'VERY LIMITED';
   if (games <= 4) return 'LIMITED';
@@ -154,6 +224,8 @@ export function derivePersonalCompPerformance(
   currentSet: number,
   corrections?: Map<string, PersonalMatchCorrection> | PersonalMatchCorrection[],
 ): PersonalCompPerformance[] {
+  const normCurrentSet =
+    typeof currentSet === 'number' ? currentSet : Number.parseInt(String(currentSet), 10);
   const correctionMap = new Map<string, PersonalMatchCorrection>();
   if (corrections) {
     const list = Array.isArray(corrections) ? corrections : [...corrections.values()];
@@ -169,7 +241,8 @@ export function derivePersonalCompPerformance(
   >();
 
   for (const obs of observations) {
-    if (obs.set !== currentSet) continue;
+    const obsSet = typeof obs.set === 'number' ? obs.set : Number.parseInt(String(obs.set), 10);
+    if (obsSet !== normCurrentSet) continue;
     if (uniqueMap.has(obs.matchId)) continue;
 
     const correction = correctionMap.get(obs.matchId);
@@ -177,8 +250,13 @@ export function derivePersonalCompPerformance(
       if (correction.state === 'canonical' && correction.canonicalCompId) {
         // Validate that the comp belongs to current set in catalog
         const validComp =
-          catalog?.playbooks.some((p) => p.set === currentSet && p.id === correction.canonicalCompId) ||
+          catalog?.playbooks.some(
+            (p) =>
+              (typeof p.set === 'number' ? p.set : Number.parseInt(String(p.set), 10)) ===
+                normCurrentSet && p.id === correction.canonicalCompId,
+          ) ||
           catalog?.comps.some((c) => c.id === correction.canonicalCompId);
+
         if (validComp) {
           uniqueMap.set(obs.matchId, {
             obs,
@@ -296,9 +374,20 @@ export function derivePersonalHistorySummary(
     }
   }
 
+  const normCurrentSet =
+    typeof currentSet === 'number' ? currentSet : Number.parseInt(String(currentSet), 10);
   const all = [...uniqueMap.values()];
-  const currentSetMatches = all.filter((obs) => obs.set === currentSet);
-  const archivedOldSetGames = all.filter((obs) => obs.set !== currentSet).length;
+  const currentSetMatches = all.filter(
+    (obs) =>
+      (typeof obs.set === 'number' ? obs.set : Number.parseInt(String(obs.set), 10)) ===
+      normCurrentSet,
+  );
+  const archivedOldSetGames = all.filter(
+    (obs) =>
+      (typeof obs.set === 'number' ? obs.set : Number.parseInt(String(obs.set), 10)) !==
+      normCurrentSet,
+  ).length;
+
 
   const currentSetGames = currentSetMatches.length;
   let currentSetAveragePlacement: number | null = null;

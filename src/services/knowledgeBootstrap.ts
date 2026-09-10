@@ -36,7 +36,25 @@ export async function bootstrapKnowledgeDatabase(
   const staticActive = activeRows.find((r) => r.kind === 'static');
   const curatedActive = activeRows.find((r) => r.kind === 'curated');
 
-  if (staticActive && curatedActive) {
+  let staticHealthy = false;
+  if (staticActive) {
+    const rows = await db.select<{ count: number }>(
+      'SELECT count(*) as count FROM champion_versions WHERE snapshot_id = $1',
+      [staticActive.snapshot_id],
+    );
+    staticHealthy = (rows[0]?.count ?? 0) > 0;
+  }
+
+  let curatedHealthy = false;
+  if (curatedActive) {
+    const rows = await db.select<{ count: number }>(
+      'SELECT count(*) as count FROM comp_versions WHERE snapshot_id = $1',
+      [curatedActive.snapshot_id],
+    );
+    curatedHealthy = (rows[0]?.count ?? 0) > 0;
+  }
+
+  if (staticActive && curatedActive && staticHealthy && curatedHealthy) {
     const extActive = (
       await db.select<{ snapshot_id: string }>(
         "SELECT snapshot_id FROM active_knowledge_snapshots WHERE kind = 'external-meta'",
@@ -50,6 +68,17 @@ export async function bootstrapKnowledgeDatabase(
       externalSnapshotId: extActive?.snapshot_id,
     };
   }
+
+  // Clear broken empty active snapshots so clean import can succeed
+  if (staticActive && !staticHealthy) {
+    await db.execute("DELETE FROM active_knowledge_snapshots WHERE kind = 'static'");
+    await db.execute('DELETE FROM source_snapshots WHERE snapshot_id = $1', [staticActive.snapshot_id]);
+  }
+  if (curatedActive && !curatedHealthy) {
+    await db.execute("DELETE FROM active_knowledge_snapshots WHERE kind = 'curated'");
+    await db.execute('DELETE FROM source_snapshots WHERE snapshot_id = $1', [curatedActive.snapshot_id]);
+  }
+
 
   // Import static knowledge first
   const staticResult = await importCommunityDragonKnowledge(db, data, { activate: true });

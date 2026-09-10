@@ -8,6 +8,8 @@ import type {
 } from '../domain/models';
 import type { RuntimeKnowledgeCatalog } from '../services/knowledgeCatalog';
 import { canonicalizeFinalBoard } from './canonicalBoard';
+import { loadPlaybooks } from '../providers/playbooks';
+
 
 export const PERSONAL_COMP_CLASSIFIER_VERSION = 'personal-comp-classifier-v2';
 
@@ -199,7 +201,13 @@ export function classifyPersonalBoard(
   catalog: RuntimeKnowledgeCatalog | null,
   staticData: StaticData,
 ): PersonalCompClassification {
-  if (set !== staticData.version.set) {
+  const normalizedSet = typeof set === 'number' ? set : Number.parseInt(String(set), 10);
+  const targetSet =
+    typeof staticData.version.set === 'number'
+      ? staticData.version.set
+      : Number.parseInt(String(staticData.version.set), 10);
+
+  if (!Number.isFinite(normalizedSet) || normalizedSet !== targetSet) {
     return {
       state: 'incompatible-set',
       compId: null,
@@ -216,7 +224,7 @@ export function classifyPersonalBoard(
     };
   }
 
-  const canonical = canonicalizeFinalBoard(participant, set, staticData);
+  const canonical = canonicalizeFinalBoard(participant, normalizedSet, staticData);
   if (!canonical.board || canonical.board.units.length === 0) {
     return {
       state: 'unclassified',
@@ -237,7 +245,13 @@ export function classifyPersonalBoard(
   const finalBoardHash = canonical.board.fingerprint;
   const boardUnitIds = new Set(canonical.board.units.map((u) => u.championId));
 
-  const candidatePool = (catalog?.playbooks ?? []).filter((p) => p.set === set);
+  const candidatePool = (
+    catalog?.playbooks && catalog.playbooks.length > 0
+      ? catalog.playbooks
+      : loadPlaybooks(staticData)
+  ).filter(
+    (p) => (typeof p.set === 'number' ? p.set : Number.parseInt(String(p.set), 10)) === normalizedSet,
+  );
   if (candidatePool.length === 0) {
     return {
       state: 'unclassified',
@@ -254,6 +268,7 @@ export function classifyPersonalBoard(
       closestComp: null,
     };
   }
+
 
   const scoredCandidates = evaluateCandidates(boardUnitIds, candidatePool);
 
@@ -355,6 +370,12 @@ export function projectBoardAnalysis(
   staticData: StaticData,
   level = units.length,
 ): PostGameBoardAnalysis {
+  const normalizedSet = typeof set === 'number' ? set : Number.parseInt(String(set), 10);
+  const targetSet =
+    typeof staticData.version.set === 'number'
+      ? staticData.version.set
+      : Number.parseInt(String(staticData.version.set), 10);
+
   const participant: MatchParticipant = {
     puuid: 'projected-player',
     placement: 1,
@@ -373,9 +394,9 @@ export function projectBoardAnalysis(
     unresolvedAugmentIds: [],
   };
 
-  const classification = classifyPersonalBoard(participant, set, catalog, staticData);
+  const classification = classifyPersonalBoard(participant, normalizedSet, catalog, staticData);
 
-  if (set !== staticData.version.set) {
+  if (!Number.isFinite(normalizedSet) || normalizedSet !== targetSet) {
     return {
       classification,
       closestComp: null,
@@ -385,7 +406,7 @@ export function projectBoardAnalysis(
     };
   }
 
-  const canonical = canonicalizeFinalBoard(participant, set, staticData);
+  const canonical = canonicalizeFinalBoard(participant, normalizedSet, staticData);
   if (!canonical.board || canonical.board.units.length === 0) {
     return {
       classification,
@@ -397,7 +418,13 @@ export function projectBoardAnalysis(
   }
 
   const boardUnitIds = new Set(canonical.board.units.map((u) => u.championId));
-  const candidatePool = (catalog?.playbooks ?? []).filter((p) => p.set === set);
+  const candidatePool = (
+    catalog?.playbooks && catalog.playbooks.length > 0
+      ? catalog.playbooks
+      : loadPlaybooks(staticData)
+  ).filter(
+    (p) => (typeof p.set === 'number' ? p.set : Number.parseInt(String(p.set), 10)) === normalizedSet,
+  );
   if (candidatePool.length === 0) {
     return {
       classification,
@@ -407,6 +434,7 @@ export function projectBoardAnalysis(
       technicalDetails: null,
     };
   }
+
 
   const scoredCandidates = evaluateCandidates(boardUnitIds, candidatePool);
   const top = scoredCandidates[0];

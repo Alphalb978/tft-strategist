@@ -28,9 +28,16 @@ function canonicalize(
   const champions = new Map(data.champions.map((unit) => [unit.id, unit]));
   const unresolved = new Set<string>();
   const reasons = new Set<string>();
-  if (set !== data.version.set) reasons.add('Board set does not match the active static set.');
+  const normalizedSet = typeof set === 'number' ? set : Number.parseInt(String(set), 10);
+  const targetSet =
+    typeof data.version.set === 'number'
+      ? data.version.set
+      : Number.parseInt(String(data.version.set), 10);
+  if (!Number.isFinite(normalizedSet) || normalizedSet !== targetSet)
+    reasons.add('Board set does not match the active static set.');
   if (!Number.isInteger(capacity) || capacity < 1)
     reasons.add('Board capacity is missing or invalid.');
+
   const normalized = new Map<string, CanonicalBoardUnit>();
   for (const input of units) {
     const champion = champions.get(input.championId);

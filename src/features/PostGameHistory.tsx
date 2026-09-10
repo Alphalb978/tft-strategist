@@ -33,6 +33,7 @@ import type { RiotProvider } from '../providers/riot';
 import type { HistoryStore } from '../storage/history';
 import type { Repository } from '../storage/repository';
 import type { ApplicationState } from '../services/application';
+import type { RuntimeKnowledgeCatalog } from '../services/knowledgeCatalog';
 import {
   checkCompletedMatch,
   confirmCompletedMatch,
@@ -48,8 +49,10 @@ import { PREVIEW_OWN_RIOT_ID } from '../providers/riotPreview';
 import {
   derivePersonalCompPerformance,
   derivePersonalHistorySummary,
+  rederivePersonalMatchObservationsIfNeeded,
   refreshPersonalHistory,
 } from '../services/personalHistory';
+
 import { linkMatchToRecommendation } from '../services/matchRecommendationLink';
 import { evaluateCalibrationV2 } from '../strategy/calibration';
 
@@ -87,6 +90,43 @@ export function PostGameHistory({
     action: 'confirm' | 'reject' | 'unlink';
     matchId: string | null;
   } | null>(null);
+
+  const effectivePlaybooks =
+    state.catalog?.playbooks && state.catalog.playbooks.length > 0
+      ? state.catalog.playbooks
+      : state.playbooks;
+
+  const effectiveCatalog: RuntimeKnowledgeCatalog =
+    state.catalog && state.catalog.playbooks.length > 0
+      ? state.catalog
+      : {
+          version: {
+            set: state.catalog?.version.set ?? state.data.version.set,
+            patch: state.catalog?.version.patch ?? state.data.version.patch,
+            hotfix: state.catalog?.version.hotfix ?? null,
+            sourceVersion:
+              state.catalog?.version.sourceVersion ?? state.data.version.sourceVersion,
+          },
+          snapshots: state.catalog?.snapshots ?? { static: null, curated: null, external: null },
+          sourceSnapshots: state.catalog?.sourceSnapshots ?? {
+            static: null,
+            curated: null,
+            external: null,
+          },
+          provenance: state.catalog?.provenance ?? {
+            static: state.data.version.provenance,
+            curated: state.data.version.provenance,
+            external: null,
+          },
+          champions: state.catalog?.champions ?? [],
+          traits: state.catalog?.traits ?? [],
+          items: state.catalog?.items ?? [],
+          augments: state.catalog?.augments ?? [],
+          comps: state.catalog?.comps ?? [],
+          playbooks: effectivePlaybooks,
+          metaObservations: state.catalog?.metaObservations ?? [],
+          externalSnapshot: state.catalog?.externalSnapshot ?? null,
+        };
 
   const getAccountIdentity = async () => {
     const effectiveRiotId =
@@ -160,6 +200,13 @@ export function PostGameHistory({
     } else {
       obs = await repository.listPersonalMatchObservations();
     }
+    obs = await rederivePersonalMatchObservationsIfNeeded(
+      obs,
+      historyStore,
+      repository,
+      effectiveCatalog,
+      state.data,
+    );
     setObservations(obs);
 
     const loadedCorrections = await repository.listPersonalMatchCorrections();
@@ -190,7 +237,7 @@ export function PostGameHistory({
         provider,
         historyStore,
         repository,
-        state.catalog ?? null,
+        effectiveCatalog,
         state.data,
         20,
         { force: true },
@@ -324,7 +371,7 @@ export function PostGameHistory({
 
   const compPerformances: PersonalCompPerformance[] = derivePersonalCompPerformance(
     observations,
-    state.catalog ?? null,
+    effectiveCatalog,
     state.data.version.set,
     corrections,
   );
@@ -516,7 +563,7 @@ export function PostGameHistory({
 
               const rawDetectedCompTitle =
                 obs.classificationState === 'classified' && obs.classifiedCompId
-                  ? (state.catalog?.playbooks.find((p) => p.id === obs.classifiedCompId)?.title ??
+                  ? (effectivePlaybooks.find((p) => p.id === obs.classifiedCompId)?.title ??
                     state.catalog?.comps.find((c) => c.id === obs.classifiedCompId)?.title ??
                     obs.classifiedCompId)
                   : obs.classificationState === 'ambiguous'
@@ -527,7 +574,7 @@ export function PostGameHistory({
 
               const compTitle =
                 correction?.state === 'canonical' && correction.canonicalCompId
-                  ? (state.catalog?.playbooks.find((p) => p.id === correction.canonicalCompId)?.title ??
+                  ? (effectivePlaybooks.find((p) => p.id === correction.canonicalCompId)?.title ??
                     state.catalog?.comps.find((c) => c.id === correction.canonicalCompId)?.title ??
                     correction.canonicalCompId)
                   : correction?.state === 'unclassified'
@@ -980,7 +1027,7 @@ export function PostGameHistory({
         const analysis = projectBoardAnalysis(
           selectedObservation.units,
           selectedObservation.set,
-          state.catalog ?? null,
+          effectiveCatalog,
           state.data,
           selectedObservation.level,
         );
@@ -990,13 +1037,13 @@ export function PostGameHistory({
         const rawDetectedCompTitle =
           classification.compTitle ??
           (detectedCompId
-            ? state.catalog?.playbooks.find((p) => p.id === detectedCompId)?.title ??
+            ? effectivePlaybooks.find((p) => p.id === detectedCompId)?.title ??
               state.catalog?.comps.find((c) => c.id === detectedCompId)?.title ??
               detectedCompId
             : analysis.closestComp?.compTitle ?? 'Unclassified Board');
 
         const closestPlaybook = analysis.closestComp
-          ? (state.catalog?.playbooks ?? []).find((p) => p.id === analysis.closestComp?.compId)
+          ? effectivePlaybooks.find((p) => p.id === analysis.closestComp?.compId) ?? null
           : null;
         const closestCompTitle = closestPlaybook?.title ?? analysis.closestComp?.compTitle ?? 'None';
 
@@ -1006,7 +1053,7 @@ export function PostGameHistory({
 
         const correctedPlaybook =
           correction?.state === 'canonical' && correction.canonicalCompId
-            ? (state.catalog?.playbooks ?? []).find((p) => p.id === correction.canonicalCompId) ?? null
+            ? effectivePlaybooks.find((p) => p.id === correction.canonicalCompId) ?? null
             : null;
 
         const effectiveCompTitle =
@@ -1579,8 +1626,14 @@ export function PostGameHistory({
 
               <div className="correction-comps-list">
                 {(() => {
-                  const currentSetPlaybooks = (state.catalog?.playbooks ?? []).filter(
-                    (p) => p.set === selectedObservation.set,
+                  const obsSet =
+                    typeof selectedObservation.set === 'number'
+                      ? selectedObservation.set
+                      : Number.parseInt(String(selectedObservation.set), 10);
+                  const currentSetPlaybooks = effectivePlaybooks.filter(
+                    (p) =>
+                      (typeof p.set === 'number' ? p.set : Number.parseInt(String(p.set), 10)) ===
+                      obsSet,
                   );
                   const query = correctionSearchQuery.trim().toLowerCase();
                   const filtered = query
