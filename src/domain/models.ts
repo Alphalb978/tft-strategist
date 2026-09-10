@@ -1400,6 +1400,23 @@ export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 
 export type CompClassificationState = 'classified' | 'ambiguous' | 'unclassified' | 'incompatible-set';
 
+export interface NearestCompCandidate {
+  compId: string;
+  compTitle: string;
+  affinity: number;
+  coreRecall: number;
+  targetRecall: number;
+  targetJaccard: number;
+  matchedUnits: string[];
+  missingUnits: string[];
+  extraUnits: string[];
+  coreMatched: string[];
+  coreMissing: string[];
+  carryAnchorMatched: boolean;
+  tankAnchorMatched: boolean;
+  explanationTags: string[];
+}
+
 export interface PersonalCompClassification {
   state: CompClassificationState;
   compId: string | null;
@@ -1411,6 +1428,28 @@ export interface PersonalCompClassification {
   finalBoardHash: string;
   classifierVersion: string;
   reasons: string[];
+  nearestMatches?: NearestCompCandidate[];
+  closestComp?: NearestCompCandidate | null;
+}
+
+export interface PostGameBoardAnalysis {
+  classification: PersonalCompClassification;
+  closestComp: NearestCompCandidate | null;
+  runnerUpComp: NearestCompCandidate | null;
+  nearestMatches: NearestCompCandidate[];
+  technicalDetails: {
+    classifierVersion: string;
+    bestAffinity: number;
+    runnerUpAffinity: number;
+    coreRecall: number;
+    anchorRecall: number;
+    targetRecall: number;
+    targetJaccard: number;
+    frontlineDampingApplied: boolean;
+    quadraticCoreDampingApplied: boolean;
+    winnerMargin: number;
+    clearedGates: boolean;
+  } | null;
 }
 
 export interface PersonalMatchUnit {

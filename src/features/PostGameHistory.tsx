@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   BarChart3,
+  Check,
   CheckCircle2,
   Clock3,
   Compass,
@@ -11,8 +12,10 @@ import {
   ShieldCheck,
   Swords,
   Trophy,
+  Users,
   X,
 } from 'lucide-react';
+import { projectBoardAnalysis } from '../strategy/personalClassifier';
 import type {
   MatchRecommendationLink,
   PersonalCompPerformance,
@@ -909,168 +912,469 @@ export function PostGameHistory({
       )}
 
       {/* Game Analysis Modal */}
-      {selectedObservation && (
-        <div className="analysis-modal-backdrop" onClick={() => setSelectedObservation(null)}>
-          <div className="analysis-modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="analysis-modal-header">
-              <div className="amh-title-group">
-                <span
-                  className={`modal-placement-badge ${selectedObservation.placement === 1 ? 'win' : selectedObservation.placement <= 4 ? 'top4' : ''}`}
-                >
-                  #{selectedObservation.placement}
-                </span>
-                <div>
-                  <h2>
-                    {selectedObservation.classificationState === 'classified' &&
-                    selectedObservation.classifiedCompId
-                      ? (state.catalog?.playbooks.find(
-                          (p) => p.id === selectedObservation.classifiedCompId,
-                        )?.title ?? selectedObservation.classifiedCompId)
-                      : selectedObservation.classificationState === 'ambiguous'
-                        ? 'Ambiguous Comp Match'
-                        : 'Unclassified Board'}
-                  </h2>
-                  <p>
-                    Level {selectedObservation.level} ·{' '}
-                    {new Date(selectedObservation.gameTimestamp).toLocaleString()}
-                  </p>
-                </div>
-              </div>
-              <button className="icon-close-btn" onClick={() => setSelectedObservation(null)}>
-                <X size={20} />
-              </button>
-            </div>
+      {selectedObservation && (() => {
+        const analysis = projectBoardAnalysis(
+          selectedObservation.units,
+          selectedObservation.set,
+          state.catalog ?? null,
+          state.data,
+          selectedObservation.level,
+        );
+        const classification = analysis.classification;
+        const stateKey = classification.state;
+        const detectedCompId = classification.compId ?? selectedObservation.classifiedCompId;
+        const detectedCompTitle = classification.compTitle ?? (detectedCompId ? state.catalog?.playbooks.find((p) => p.id === detectedCompId)?.title : null);
+        const closestPlaybook = analysis.closestComp
+          ? (state.catalog?.playbooks ?? []).find((p) => p.id === analysis.closestComp?.compId)
+          : null;
+        const closestCompTitle = closestPlaybook?.title ?? analysis.closestComp?.compTitle ?? 'None';
 
-            <div className="analysis-modal-body">
-              {/* Board Roster */}
-              <div className="analysis-section">
-                <h3>Final Board Units</h3>
-                <div className="modal-roster-row">
-                  {selectedObservation.units.map((unit, idx) => {
-                    const champion = state.data.champions.find((c) => c.id === unit.championId);
-                    return (
-                      champion && (
-                        <div key={`${unit.championId}-${idx}`} className="modal-portrait-slot">
-                          <Portrait champion={champion} assets={state.assets} />
-                          {unit.stars && unit.stars > 1 && (
-                            <span className="star-badge-modal">{'★'.repeat(unit.stars)}</span>
-                          )}
-                        </div>
-                      )
-                    );
-                  })}
+        return (
+          <div className="analysis-modal-backdrop" onClick={() => setSelectedObservation(null)}>
+            <div className="analysis-modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="analysis-modal-header">
+                <div className="amh-title-group">
+                  <span
+                    className={`modal-placement-badge ${selectedObservation.placement === 1 ? 'win' : selectedObservation.placement <= 4 ? 'top4' : ''}`}
+                  >
+                    #{selectedObservation.placement}
+                  </span>
+                  <div className="amh-title-text">
+                    <h2>
+                      {stateKey === 'classified'
+                        ? (detectedCompTitle ?? 'Classified Comp')
+                        : stateKey === 'ambiguous'
+                          ? 'Ambiguous Comp Match'
+                          : stateKey === 'incompatible-set'
+                            ? 'Incompatible Set Match'
+                            : 'Unclassified Board'}
+                    </h2>
+                    <p>
+                      Level {selectedObservation.level} ·{' '}
+                      {new Date(selectedObservation.gameTimestamp).toLocaleDateString()}{' '}
+                      {new Date(selectedObservation.gameTimestamp).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      {stateKey === 'ambiguous' && analysis.nearestMatches.length >= 2 && (
+                        <> · Closest: {analysis.nearestMatches[0].compTitle} / {analysis.nearestMatches[1].compTitle}</>
+                      )}
+                      {stateKey === 'unclassified' && analysis.closestComp && (
+                        <> · Closest match: {analysis.closestComp.compTitle}</>
+                      )}
+                    </p>
+                    <div className="amh-badges">
+                      <span className={`classification-pill ${stateKey}`}>
+                        {stateKey === 'classified'
+                          ? 'Classified'
+                          : stateKey === 'ambiguous'
+                            ? 'Ambiguous'
+                            : stateKey === 'incompatible-set'
+                              ? 'Incompatible Set'
+                              : 'Unclassified'}
+                      </span>
+                      {stateKey === 'classified' && (
+                        <span className="amh-affinity-badge high">
+                          {Math.round(classification.confidence * 100)} / 100 affinity · High Confidence
+                        </span>
+                      )}
+                      {stateKey === 'ambiguous' && (
+                        <span className="amh-affinity-badge ambiguous">
+                          {analysis.nearestMatches[0] ? Math.round(analysis.nearestMatches[0].affinity * 100) : 0} vs{' '}
+                          {analysis.nearestMatches[1] ? Math.round(analysis.nearestMatches[1].affinity * 100) : 0} / 100 affinity · Ambiguous
+                        </span>
+                      )}
+                      {stateKey === 'unclassified' && (
+                        <span className="amh-affinity-badge low">
+                          {analysis.closestComp ? Math.round(analysis.closestComp.affinity * 100) : 0} / 100 affinity · Low Affinity
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
+                <button className="icon-close-btn" onClick={() => setSelectedObservation(null)} aria-label="Close analysis">
+                  <X size={20} />
+                </button>
               </div>
 
-              {/* Personal Context vs Global Context */}
-              <div className="analysis-dual-context">
-                <div className="context-box personal-context">
-                  <h4>YOUR RESULTS</h4>
-                  {selectedObservation.classifiedCompId ? (
-                    (() => {
-                      const perf = compPerformances.find(
-                        (cp) => cp.compId === selectedObservation.classifiedCompId,
-                      );
-                      return perf ? (
-                        <div className="context-stats">
-                          <p>
-                            Games on this comp: <strong>{perf.games}</strong>
-                          </p>
-                          <p>
-                            Personal average: <strong>#{perf.averagePlacement.toFixed(2)}</strong>
-                          </p>
-                          <p>
-                            Personal Top 4: <strong>{Math.round(perf.top4Rate * 100)}%</strong>
-                          </p>
-                          <p>
-                            Sample confidence:{' '}
-                            <span className="confidence-inline">{perf.sampleConfidence}</span>
-                          </p>
-                          <p className="subdued-note">
-                            Evidence-adjusted estimate: #{perf.evidenceAdjustedEstimate.toFixed(2)}{' '}
-                            (shrunk toward 4.5)
-                          </p>
-                        </div>
+              <div className="analysis-modal-body">
+                {/* Board Comparison: Two-Column Side-by-Side */}
+                <div className="analysis-board-comparison">
+                  {/* Column 1: YOUR FINAL BOARD */}
+                  <div className="board-compare-card actual-card">
+                    <div className="board-compare-header">
+                      <h3><Users size={14} /> YOUR FINAL BOARD</h3>
+                      <span className="board-unit-count-pill">{selectedObservation.units.length} units</span>
+                    </div>
+                    <div className="board-unit-grid">
+                      {selectedObservation.units.map((unit, idx) => {
+                        const champion = state.data.champions.find((c) => c.id === unit.championId);
+                        const isMatched = analysis.closestComp
+                          ? analysis.closestComp.matchedUnits.includes(unit.championId)
+                          : false;
+                        return (
+                          <div key={`${unit.championId}-${idx}`} className="board-unit-cell">
+                            <div className={`unit-portrait-wrapper ${isMatched ? 'matched' : 'extra'}`}>
+                              {champion && <Portrait champion={champion} assets={state.assets} />}
+                              {unit.stars && unit.stars > 1 && (
+                                <span className="star-badge-modal">{'★'.repeat(unit.stars)}</span>
+                              )}
+                            </div>
+                            <span className={`unit-status-tag ${isMatched ? 'matched' : 'extra'}`}>
+                              {isMatched ? 'MATCHED' : 'EXTRA'}
+                            </span>
+                            <span className="unit-cell-name" title={champion?.name ?? unit.championId}>
+                              {champion?.name ?? unit.championId}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Column 2: CLOSEST / EXPECTED CANONICAL BOARD */}
+                  <div className="board-compare-card canonical-card">
+                    <div className="board-compare-header">
+                      <h3>
+                        <Compass size={14} />{' '}
+                        {stateKey === 'classified' ? 'EXPECTED CANONICAL BOARD' : 'CLOSEST CANONICAL BOARD'}
+                      </h3>
+                      <span className="board-unit-count-pill">
+                        {closestPlaybook?.title ?? closestCompTitle}
+                      </span>
+                    </div>
+                    <div className="board-unit-grid">
+                      {closestPlaybook ? (
+                        closestPlaybook.target.units.map((targetUnit) => {
+                          const champion = state.data.champions.find((c) => c.id === targetUnit.championId);
+                          const isMatched = analysis.closestComp
+                            ? analysis.closestComp.matchedUnits.includes(targetUnit.championId)
+                            : false;
+                          const isCarry = closestPlaybook.roles.some(
+                            (r) => r.role === 'carry' && r.championId === targetUnit.championId,
+                          );
+                          const isTank = closestPlaybook.roles.some(
+                            (r) => r.role === 'tank' && r.championId === targetUnit.championId,
+                          );
+                          const isCore = closestPlaybook.family.core.includes(targetUnit.championId);
+                          return (
+                            <div key={targetUnit.championId} className="board-unit-cell">
+                              <div className={`unit-portrait-wrapper ${isMatched ? 'matched' : 'missing'}`}>
+                                {isCarry && <span className="unit-role-pill carry">Carry</span>}
+                                {!isCarry && isTank && <span className="unit-role-pill tank">Tank</span>}
+                                {!isCarry && !isTank && isCore && <span className="unit-role-pill core">Core</span>}
+                                {champion && <Portrait champion={champion} assets={state.assets} />}
+                              </div>
+                              <span className={`unit-status-tag ${isMatched ? 'matched' : 'missing'}`}>
+                                {isMatched ? 'MATCHED' : 'MISSING'}
+                              </span>
+                              <span className="unit-cell-name" title={champion?.name ?? targetUnit.championId}>
+                                {champion?.name ?? targetUnit.championId}
+                              </span>
+                            </div>
+                          );
+                        })
                       ) : (
-                        <p className="subdued-note">1st observed game on this comp.</p>
-                      );
-                    })()
-                  ) : (
-                    <p className="subdued-note">No canonical comp classified for this board.</p>
-                  )}
+                        <p className="subdued-note">No canonical comp units available for comparison.</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="context-box global-context">
-                  <h4>GLOBAL META</h4>
-                  {selectedObservation.classifiedCompId ? (
-                    (() => {
-                      const obs = state.catalog?.metaObservations.find(
-                        (m) => m.compId === selectedObservation.classifiedCompId,
-                      );
-                      return obs ? (
-                        <div className="context-stats">
-                          <p>
-                            Global average:{' '}
-                            <strong>#{obs.averagePlacement?.toFixed(2) ?? '—'}</strong>
-                          </p>
-                          <p>
-                            Global Top 4:{' '}
-                            <strong>
-                              {obs.top4Rate ? `${Math.round(obs.top4Rate * 100)}%` : '—'}
-                            </strong>
-                          </p>
-                          <p>
-                            Global Win Rate:{' '}
-                            <strong>
-                              {obs.winRate ? `${Math.round(obs.winRate * 100)}%` : '—'}
-                            </strong>
-                          </p>
-                          <p>
-                            Observed Sample: <strong>{obs.sampleSize?.toLocaleString()}</strong>
-                          </p>
+                {/* Comparison Summary Bar */}
+                {analysis.closestComp && (
+                  <div className="comparison-summary-bar">
+                    <div className="summary-stat-chip">
+                      <span className="chip-label">Matched Core</span>
+                      <strong className="chip-val">
+                        {analysis.closestComp.coreMatched.length} /{' '}
+                        {closestPlaybook?.family.core.length ??
+                          analysis.closestComp.coreMatched.length + analysis.closestComp.coreMissing.length}
+                      </strong>
+                    </div>
+                    <div className="summary-stat-chip">
+                      <span className="chip-label">Missing Core</span>
+                      <span
+                        className="chip-sub"
+                        title={
+                          analysis.closestComp.coreMissing
+                            .map((id) => state.data.champions.find((c) => c.id === id)?.name ?? id)
+                            .join(', ') || 'None'
+                        }
+                      >
+                        {analysis.closestComp.coreMissing
+                          .map((id) => state.data.champions.find((c) => c.id === id)?.name ?? id)
+                          .join(', ') || 'None'}
+                      </span>
+                    </div>
+                    <div className="summary-stat-chip">
+                      <span className="chip-label">Extra / Splash</span>
+                      <span
+                        className="chip-sub"
+                        title={
+                          analysis.closestComp.extraUnits
+                            .map((id) => state.data.champions.find((c) => c.id === id)?.name ?? id)
+                            .join(', ') || 'None'
+                        }
+                      >
+                        {analysis.closestComp.extraUnits
+                          .map((id) => state.data.champions.find((c) => c.id === id)?.name ?? id)
+                          .join(', ') || 'None'}
+                      </span>
+                    </div>
+                    <div className="summary-stat-chip">
+                      <span className="chip-label">Carry Anchor</span>
+                      <strong
+                        className={`chip-val ${analysis.closestComp.carryAnchorMatched ? 'matched' : 'missing'}`}
+                      >
+                        {analysis.closestComp.carryAnchorMatched ? (
+                          <>
+                            <Check size={13} /> Matched
+                          </>
+                        ) : (
+                          'Missing'
+                        )}
+                      </strong>
+                    </div>
+                    <div className="summary-stat-chip">
+                      <span className="chip-label">Tank Anchor</span>
+                      <strong
+                        className={`chip-val ${analysis.closestComp.tankAnchorMatched ? 'matched' : 'missing'}`}
+                      >
+                        {analysis.closestComp.tankAnchorMatched ? (
+                          <>
+                            <Check size={13} /> Matched
+                          </>
+                        ) : (
+                          'Missing'
+                        )}
+                      </strong>
+                    </div>
+                  </div>
+                )}
+
+                {/* Nearest Matches Section (Top 3 Comps for Ambiguous or Unclassified) */}
+                {analysis && (stateKey === 'unclassified' || stateKey === 'ambiguous') && (
+                  <div className="nearest-matches-section">
+                    <h4>Closest Comp Matches (Similarity Index)</h4>
+                    <div className="nearest-matches-list">
+                      {analysis.nearestMatches.map((candidate, idx) => (
+                        <div key={candidate.compId} className="nearest-match-row">
+                          <div className="nm-left">
+                            <span className="nm-rank">#{idx + 1}</span>
+                            <span className="nm-title">{candidate.compTitle}</span>
+                          </div>
+                          <div className="nm-right">
+                            <div className="affinity-bar-track">
+                              <div
+                                className="affinity-bar-fill"
+                                style={{ width: `${Math.min(100, Math.round(candidate.affinity * 100))}%` }}
+                              />
+                            </div>
+                            <span className="nm-affinity">
+                              {Math.round(candidate.affinity * 100)} / 100 affinity
+                            </span>
+                          </div>
                         </div>
-                      ) : (
-                        <p className="subdued-note">No external meta snapshot for this comp.</p>
-                      );
-                    })()
-                  ) : (
-                    <p className="subdued-note">Global meta comparison unavailable.</p>
-                  )}
-                </div>
-              </div>
+                      ))}
+                    </div>
+                    <div className={`why-not-classified-box ${stateKey}`}>
+                      <strong>
+                        {stateKey === 'ambiguous'
+                          ? 'Ambiguous because:'
+                          : 'Not classified because:'}
+                      </strong>
+                      <ul>
+                        {classification.reasons.map((reason, idx) => (
+                          <li key={idx}>{reason}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
 
-              {/* Recommendation Context */}
-              {(() => {
-                const link = recommendationLinks.find(
-                  (l) => l.actualPlacement === selectedObservation.placement && l.actualClassifiedCompId === selectedObservation.classifiedCompId,
-                );
-                return (
-                  link &&
-                  link.state !== 'none' && (
-                    <div className="analysis-section recommendation-link-section">
-                      <h3>Recommendation vs Actual Outcome</h3>
-                      <div className="rec-link-box">
+                {/* Personal Context vs Global Context */}
+                <div className="analysis-dual-context">
+                  <div className="context-box personal-context">
+                    <h4>YOUR RESULTS</h4>
+                    {stateKey === 'classified' && detectedCompId ? (
+                      (() => {
+                        const perf = compPerformances.find(
+                          (cp) => cp.compId === detectedCompId,
+                        );
+                        return perf ? (
+                          <div className="context-stats">
+                            <p>
+                              Games on this comp: <strong>{perf.games}</strong>
+                            </p>
+                            <p>
+                              Personal average: <strong>#{perf.averagePlacement.toFixed(2)}</strong>
+                            </p>
+                            <p>
+                              Personal Top 4: <strong>{Math.round(perf.top4Rate * 100)}%</strong>
+                            </p>
+                            <p>
+                              Personal Win Rate: <strong>{Math.round(perf.winRate * 100)}%</strong>
+                            </p>
+                            <p>
+                              Sample confidence:{' '}
+                              <span className="confidence-inline">{perf.sampleConfidence}</span>
+                            </p>
+                            <p className="subdued-note">
+                              Evidence-adjusted estimate: #{perf.evidenceAdjustedEstimate.toFixed(2)}{' '}
+                              (shrunk toward 4.5)
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="subdued-note">1st observed game on this comp.</p>
+                        );
+                      })()
+                    ) : (
+                      <div className="context-stats">
+                        <p className="subdued-note">No reliable personal comp bucket yet.</p>
+                        <p className="subdued-note">
+                          Personal comp mastery requires confident classification to attribute results.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="context-box global-context">
+                    <h4>GLOBAL META</h4>
+                    {stateKey === 'classified' && detectedCompId ? (
+                      (() => {
+                        const obs = state.catalog?.metaObservations.find(
+                          (m) => m.compId === detectedCompId,
+                        );
+                        return obs ? (
+                          <div className="context-stats">
+                            <p>
+                              Global average:{' '}
+                              <strong>#{obs.averagePlacement?.toFixed(2) ?? '—'}</strong>
+                            </p>
+                            <p>
+                              Global Top 4:{' '}
+                              <strong>
+                                {obs.top4Rate ? `${Math.round(obs.top4Rate * 100)}%` : '—'}
+                              </strong>
+                            </p>
+                            <p>
+                              Global Win Rate:{' '}
+                              <strong>
+                                {obs.winRate ? `${Math.round(obs.winRate * 100)}%` : '—'}
+                              </strong>
+                            </p>
+                            <p>
+                              Observed Sample: <strong>{obs.sampleSize?.toLocaleString()}</strong>
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="subdued-note">No external meta snapshot for this comp.</p>
+                        );
+                      })()
+                    ) : (
+                      <p className="subdued-note">Global meta comparison unavailable.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Recommendation Context */}
+                {(() => {
+                  const link = recommendationLinks.find(
+                    (l) => l.matchId === selectedObservation.matchId ||
+                      (l.actualPlacement === selectedObservation.placement && l.actualClassifiedCompId === selectedObservation.classifiedCompId),
+                  );
+                  return (
+                    link &&
+                    link.state !== 'none' && (
+                      <div className="analysis-section recommendation-link-section">
+                        <h3>Recommendation vs Actual Outcome</h3>
                         <p className="rec-link-statement">{link.summaryStatement}</p>
-                        <div className="rec-link-details">
-                          {link.details.map((d, idx) => (
-                            <span key={idx}>{d}</span>
-                          ))}
+                        <div className="rec-link-columns">
+                          <div className="rec-col">
+                            <div className="rec-col-title">Before Game Recommendation</div>
+                            <div className="rec-col-body">
+                              <span><b>Plan:</b> #{link.recommendedRank} recommended</span>
+                              {link.finalSafety !== undefined && (
+                                <span><b>Final Safety:</b> {link.finalSafety.toFixed(1)}</span>
+                              )}
+                              {link.contestState && (
+                                <span><b>Lobby Contest:</b> {link.contestState}</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="rec-col">
+                            <div className="rec-col-title">Actual Outcome</div>
+                            <div className="rec-col-body">
+                              <span><b>Played Board:</b> {detectedCompTitle ?? closestCompTitle}</span>
+                              <span><b>Placement:</b> #{selectedObservation.placement}</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )
-                );
-              })()}
-            </div>
+                    )
+                  );
+                })()}
 
-            <div className="analysis-modal-footer">
-              <button className="primary" onClick={() => setSelectedObservation(null)}>
-                Close Analysis
-              </button>
+                {/* Collapsed Technical Details */}
+                {analysis.technicalDetails && (
+                  <details className="analysis-tech-details">
+                    <summary>Classification Technical Details</summary>
+                    <div className="tech-details-grid">
+                      <div className="tech-detail-item">
+                        <span>Classifier Version:</span>
+                        <strong>{analysis.technicalDetails.classifierVersion}</strong>
+                      </div>
+                      <div className="tech-detail-item">
+                        <span>Best Affinity:</span>
+                        <strong>{analysis.technicalDetails.bestAffinity}</strong>
+                      </div>
+                      <div className="tech-detail-item">
+                        <span>Runner-Up Affinity:</span>
+                        <strong>{analysis.technicalDetails.runnerUpAffinity}</strong>
+                      </div>
+                      <div className="tech-detail-item">
+                        <span>Core Recall:</span>
+                        <strong>{Math.round(analysis.technicalDetails.coreRecall * 100)}%</strong>
+                      </div>
+                      <div className="tech-detail-item">
+                        <span>Target Recall:</span>
+                        <strong>{Math.round(analysis.technicalDetails.targetRecall * 100)}%</strong>
+                      </div>
+                      <div className="tech-detail-item">
+                        <span>Target Jaccard:</span>
+                        <strong>{analysis.technicalDetails.targetJaccard}</strong>
+                      </div>
+                      <div className="tech-detail-item">
+                        <span>Anchor Recall:</span>
+                        <strong>{Math.round(analysis.technicalDetails.anchorRecall * 100)}%</strong>
+                      </div>
+                      <div className="tech-detail-item">
+                        <span>Winner Margin:</span>
+                        <strong>{analysis.technicalDetails.winnerMargin}</strong>
+                      </div>
+                      <div className="tech-detail-item">
+                        <span>Frontline Damped:</span>
+                        <strong>{analysis.technicalDetails.frontlineDampingApplied ? 'Yes' : 'No'}</strong>
+                      </div>
+                      <div className="tech-detail-item">
+                        <span>Cleared Gates:</span>
+                        <strong>{analysis.technicalDetails.clearedGates ? 'Yes' : 'No'}</strong>
+                      </div>
+                    </div>
+                  </details>
+                )}
+              </div>
+
+              <div className="analysis-modal-footer">
+                <button className="primary" onClick={() => setSelectedObservation(null)}>
+                  Close Analysis
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {pending && (
         <ConfirmDialog
