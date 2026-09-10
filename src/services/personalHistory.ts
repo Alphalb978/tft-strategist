@@ -3,6 +3,7 @@ import type {
   PersonalCompPerformance,
   PersonalHistoryRefreshStatus,
   PersonalHistorySummary,
+  PersonalMatchCorrection,
   PersonalMatchObservation,
   PersonalSampleConfidence,
   RiotIdentity,
@@ -151,39 +152,98 @@ export function derivePersonalCompPerformance(
   observations: PersonalMatchObservation[],
   catalog: RuntimeKnowledgeCatalog | null,
   currentSet: number,
+  corrections?: Map<string, PersonalMatchCorrection> | PersonalMatchCorrection[],
 ): PersonalCompPerformance[] {
+  const correctionMap = new Map<string, PersonalMatchCorrection>();
+  if (corrections) {
+    const list = Array.isArray(corrections) ? corrections : [...corrections.values()];
+    for (const c of list) {
+      correctionMap.set(c.matchId, c);
+    }
+  }
+
   // Deduplicate by match ID to guarantee each match counts exactly once
-  const uniqueMap = new Map<string, PersonalMatchObservation>();
+  const uniqueMap = new Map<
+    string,
+    { obs: PersonalMatchObservation; compId: string; confidence: number }
+  >();
+
   for (const obs of observations) {
-    if (obs.set === currentSet && obs.classificationState === 'classified' && obs.classifiedCompId) {
-      if (!uniqueMap.has(obs.matchId)) {
-        uniqueMap.set(obs.matchId, obs);
+    if (obs.set !== currentSet) continue;
+    if (uniqueMap.has(obs.matchId)) continue;
+
+    const correction = correctionMap.get(obs.matchId);
+    if (correction) {
+      if (correction.state === 'canonical' && correction.canonicalCompId) {
+        // Validate that the comp belongs to current set in catalog
+        const validComp =
+          catalog?.playbooks.some((p) => p.set === currentSet && p.id === correction.canonicalCompId) ||
+          catalog?.comps.some((c) => c.id === correction.canonicalCompId);
+        if (validComp) {
+          uniqueMap.set(obs.matchId, {
+            obs,
+            compId: correction.canonicalCompId,
+            confidence: 1.0, // Trusted ground-truth
+          });
+        } else {
+          // Invalid or old-set comp rejected safely: fall back to automatic if classified
+          if (obs.classificationState === 'classified' && obs.classifiedCompId) {
+            uniqueMap.set(obs.matchId, {
+              obs,
+              compId: obs.classifiedCompId,
+              confidence: obs.classificationConfidence,
+            });
+          }
+        }
+      } else if (correction.state === 'unclassified') {
+        // Explicitly unclassified: do not attribute to any comp
+        continue;
+      } else {
+        // Cleared or other: fall back to automatic
+        if (obs.classificationState === 'classified' && obs.classifiedCompId) {
+          uniqueMap.set(obs.matchId, {
+            obs,
+            compId: obs.classifiedCompId,
+            confidence: obs.classificationConfidence,
+          });
+        }
+      }
+    } else {
+      if (obs.classificationState === 'classified' && obs.classifiedCompId) {
+        uniqueMap.set(obs.matchId, {
+          obs,
+          compId: obs.classifiedCompId,
+          confidence: obs.classificationConfidence,
+        });
       }
     }
   }
 
-  const grouped = new Map<string, PersonalMatchObservation[]>();
-  for (const obs of uniqueMap.values()) {
-    const list = grouped.get(obs.classifiedCompId!) ?? [];
-    list.push(obs);
-    grouped.set(obs.classifiedCompId!, list);
+  const grouped = new Map<
+    string,
+    { obs: PersonalMatchObservation; confidence: number }[]
+  >();
+  for (const entry of uniqueMap.values()) {
+    const list = grouped.get(entry.compId) ?? [];
+    list.push({ obs: entry.obs, confidence: entry.confidence });
+    grouped.set(entry.compId, list);
   }
 
   const results: PersonalCompPerformance[] = [];
   for (const [compId, matches] of grouped.entries()) {
     const sorted = [...matches].sort(
-      (a, b) => Date.parse(b.gameTimestamp) - Date.parse(a.gameTimestamp),
+      (a, b) => Date.parse(b.obs.gameTimestamp) - Date.parse(a.obs.gameTimestamp),
     );
     const games = sorted.length;
-    const totalPlacement = sorted.reduce((sum, m) => sum + m.placement, 0);
+    const totalPlacement = sorted.reduce((sum, m) => sum + m.obs.placement, 0);
     const averagePlacement = Math.round((totalPlacement / games) * 100) / 100;
-    const top4Count = sorted.filter((m) => m.placement <= 4).length;
+    const top4Count = sorted.filter((m) => m.obs.placement <= 4).length;
     const top4Rate = Math.round((top4Count / games) * 100) / 100;
-    const winCount = sorted.filter((m) => m.placement === 1).length;
+    const winCount = sorted.filter((m) => m.obs.placement === 1).length;
     const winRate = Math.round((winCount / games) * 100) / 100;
-    const bestPlacement = Math.min(...sorted.map((m) => m.placement));
-    const recentPlacements = sorted.slice(0, 5).map((m) => m.placement);
-    const lastPlayed = sorted[0].gameTimestamp;
+    const bestPlacement = Math.min(...sorted.map((m) => m.obs.placement));
+    const recentPlacements = sorted.slice(0, 5).map((m) => m.obs.placement);
+    const lastPlayed = sorted[0].obs.gameTimestamp;
     const sampleConfidence = sampleConfidenceFor(games);
 
     // Empirical Bayes shrinkage toward neutral 4.5 baseline with M=4 prior weight
@@ -199,7 +259,7 @@ export function derivePersonalCompPerformance(
 
     const classificationConfidenceAvg =
       Math.round(
-        (sorted.reduce((sum, m) => sum + m.classificationConfidence, 0) / games) * 100,
+        (sorted.reduce((sum, m) => sum + m.confidence, 0) / games) * 100,
       ) / 100;
 
     results.push({

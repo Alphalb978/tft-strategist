@@ -1481,6 +1481,16 @@ export interface PersonalMatchObservation {
   updatedAt: string;
 }
 
+export type PersonalMatchCorrectionState = 'canonical' | 'unclassified' | 'cleared';
+
+export interface PersonalMatchCorrection {
+  matchId: string;
+  canonicalCompId: string | null;
+  state: PersonalMatchCorrectionState;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type PersonalSampleConfidence = 'VERY LIMITED' | 'LIMITED' | 'DEVELOPING' | 'MEANINGFUL';
 
 export interface PersonalCompPerformance {

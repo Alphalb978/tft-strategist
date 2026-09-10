@@ -10,17 +10,20 @@ import {
   Link2,
   RefreshCw,
   ShieldCheck,
+  Search,
   Swords,
   Trophy,
   Users,
   X,
 } from 'lucide-react';
-import { projectBoardAnalysis } from '../strategy/personalClassifier';
+import { evaluatePlaybookCandidate, projectBoardAnalysis } from '../strategy/personalClassifier';
 import type {
   MatchRecommendationLink,
   PersonalCompPerformance,
   PersonalHistoryRefreshStatus,
   PersonalHistorySummary,
+  PersonalMatchCorrection,
+  PersonalMatchCorrectionState,
   PersonalMatchObservation,
   PersonalProfile,
   PlanSession,
@@ -68,6 +71,9 @@ export function PostGameHistory({
   const [history, setHistory] = useState<PostGameHistoryState | null>(null);
   const [activeTab, setActiveTab] = useState<PostGameTab>('recent');
   const [observations, setObservations] = useState<PersonalMatchObservation[]>([]);
+  const [corrections, setCorrections] = useState<Map<string, PersonalMatchCorrection>>(new Map());
+  const [showCorrectionDialog, setShowCorrectionDialog] = useState(false);
+  const [correctionSearchQuery, setCorrectionSearchQuery] = useState('');
   const [refreshStatus, setRefreshStatus] = useState<PersonalHistoryRefreshStatus | null>(null);
   const [refreshingPersonal, setRefreshingPersonal] = useState(false);
   const [selectedObservation, setSelectedObservation] = useState<PersonalMatchObservation | null>(
@@ -107,6 +113,37 @@ export function PostGameHistory({
     }
   };
 
+  const handleSaveCorrection = async (
+    matchId: string,
+    canonicalCompId: string | null,
+    corrState: PersonalMatchCorrectionState,
+  ) => {
+    const now = new Date().toISOString();
+    const existing = corrections.get(matchId);
+    const correction: PersonalMatchCorrection = {
+      matchId,
+      canonicalCompId,
+      state: corrState,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    await repository.putPersonalMatchCorrection(correction);
+    setCorrections((prev) => {
+      const next = new Map(prev);
+      next.set(matchId, correction);
+      return next;
+    });
+  };
+
+  const handleClearCorrection = async (matchId: string) => {
+    await repository.deletePersonalMatchCorrection(matchId);
+    setCorrections((prev) => {
+      const next = new Map(prev);
+      next.delete(matchId);
+      return next;
+    });
+  };
+
   const reload = async () => {
     const loaded = await loadPostGameHistory(
       repository,
@@ -124,6 +161,10 @@ export function PostGameHistory({
       obs = await repository.listPersonalMatchObservations();
     }
     setObservations(obs);
+
+    const loadedCorrections = await repository.listPersonalMatchCorrections();
+    const corrMap = new Map(loadedCorrections.map((c) => [c.matchId, c]));
+    setCorrections(corrMap);
   };
 
   useEffect(() => {
@@ -285,6 +326,7 @@ export function PostGameHistory({
     observations,
     state.catalog ?? null,
     state.data.version.set,
+    corrections,
   );
 
   const profileSummary: PersonalHistorySummary = derivePersonalHistorySummary(
@@ -468,7 +510,11 @@ export function PostGameHistory({
             </article>
           ) : (
             observations.map((obs) => {
-              const compTitle =
+              const correction = corrections.get(obs.matchId);
+              const isUserCorrected =
+                correction && (correction.state === 'canonical' || correction.state === 'unclassified');
+
+              const rawDetectedCompTitle =
                 obs.classificationState === 'classified' && obs.classifiedCompId
                   ? (state.catalog?.playbooks.find((p) => p.id === obs.classifiedCompId)?.title ??
                     state.catalog?.comps.find((c) => c.id === obs.classifiedCompId)?.title ??
@@ -478,6 +524,15 @@ export function PostGameHistory({
                     : obs.classificationState === 'incompatible-set'
                       ? `Old Set (Set ${obs.set})`
                       : 'Unclassified Board';
+
+              const compTitle =
+                correction?.state === 'canonical' && correction.canonicalCompId
+                  ? (state.catalog?.playbooks.find((p) => p.id === correction.canonicalCompId)?.title ??
+                    state.catalog?.comps.find((c) => c.id === correction.canonicalCompId)?.title ??
+                    correction.canonicalCompId)
+                  : correction?.state === 'unclassified'
+                    ? 'Unclassified Board'
+                    : rawDetectedCompTitle;
 
               const link = recommendationLinks.find((l) => l.actualPlacement === obs.placement && l.actualClassifiedCompId === obs.classifiedCompId);
               const isTop4 = obs.placement <= 4;
@@ -509,13 +564,22 @@ export function PostGameHistory({
                             minute: '2-digit',
                           })}
                         </span>
+                        {isUserCorrected && (
+                          <span className="recent-classifier-detected-sub">
+                            Classifier detected: {rawDetectedCompTitle} · {Math.round(obs.classificationConfidence * 100)} affinity
+                          </span>
+                        )}
                       </div>
                       <div className="recent-game-badges">
-                        <span className={`classification-pill ${obs.classificationState}`}>
-                          {obs.classificationState === 'classified'
-                            ? `Classified · ${Math.round(obs.classificationConfidence * 100)}%`
-                            : obs.classificationState}
-                        </span>
+                        {isUserCorrected ? (
+                          <span className="classification-pill user-corrected">User corrected</span>
+                        ) : (
+                          <span className={`classification-pill ${obs.classificationState}`}>
+                            {obs.classificationState === 'classified'
+                              ? `Classified · ${Math.round(obs.classificationConfidence * 100)}%`
+                              : obs.classificationState}
+                          </span>
+                        )}
                         {link && link.state === 'linked' && (
                           <span className="recommendation-link-pill linked">
                             Plan #{link.recommendedRank}
@@ -923,11 +987,53 @@ export function PostGameHistory({
         const classification = analysis.classification;
         const stateKey = classification.state;
         const detectedCompId = classification.compId ?? selectedObservation.classifiedCompId;
-        const detectedCompTitle = classification.compTitle ?? (detectedCompId ? state.catalog?.playbooks.find((p) => p.id === detectedCompId)?.title : null);
+        const rawDetectedCompTitle =
+          classification.compTitle ??
+          (detectedCompId
+            ? state.catalog?.playbooks.find((p) => p.id === detectedCompId)?.title ??
+              state.catalog?.comps.find((c) => c.id === detectedCompId)?.title ??
+              detectedCompId
+            : analysis.closestComp?.compTitle ?? 'Unclassified Board');
+
         const closestPlaybook = analysis.closestComp
           ? (state.catalog?.playbooks ?? []).find((p) => p.id === analysis.closestComp?.compId)
           : null;
         const closestCompTitle = closestPlaybook?.title ?? analysis.closestComp?.compTitle ?? 'None';
+
+        const correction = corrections.get(selectedObservation.matchId);
+        const isUserCorrected =
+          correction && (correction.state === 'canonical' || correction.state === 'unclassified');
+
+        const correctedPlaybook =
+          correction?.state === 'canonical' && correction.canonicalCompId
+            ? (state.catalog?.playbooks ?? []).find((p) => p.id === correction.canonicalCompId) ?? null
+            : null;
+
+        const effectiveCompTitle =
+          correction?.state === 'canonical'
+            ? (correctedPlaybook?.title ?? correction.canonicalCompId ?? 'Corrected Comp')
+            : correction?.state === 'unclassified'
+              ? 'Unclassified Board'
+              : stateKey === 'classified'
+                ? (rawDetectedCompTitle ?? 'Classified Comp')
+                : stateKey === 'ambiguous'
+                  ? 'Ambiguous Comp Match'
+                  : stateKey === 'incompatible-set'
+                    ? 'Incompatible Set Match'
+                    : 'Unclassified Board';
+
+        const boardUnitIds = new Set(selectedObservation.units.map((u) => u.championId));
+
+        let comparisonPlaybook = closestPlaybook;
+        let comparisonCandidate = analysis.closestComp;
+
+        if (correction?.state === 'canonical' && correctedPlaybook) {
+          comparisonPlaybook = correctedPlaybook;
+          comparisonCandidate = evaluatePlaybookCandidate(boardUnitIds, correctedPlaybook);
+        } else if (correction?.state === 'unclassified') {
+          comparisonPlaybook = null;
+          comparisonCandidate = null;
+        }
 
         return (
           <div className="analysis-modal-backdrop" onClick={() => setSelectedObservation(null)}>
@@ -940,15 +1046,7 @@ export function PostGameHistory({
                     #{selectedObservation.placement}
                   </span>
                   <div className="amh-title-text">
-                    <h2>
-                      {stateKey === 'classified'
-                        ? (detectedCompTitle ?? 'Classified Comp')
-                        : stateKey === 'ambiguous'
-                          ? 'Ambiguous Comp Match'
-                          : stateKey === 'incompatible-set'
-                            ? 'Incompatible Set Match'
-                            : 'Unclassified Board'}
-                    </h2>
+                    <h2>{effectiveCompTitle}</h2>
                     <p>
                       Level {selectedObservation.level} ·{' '}
                       {new Date(selectedObservation.gameTimestamp).toLocaleDateString()}{' '}
@@ -956,39 +1054,63 @@ export function PostGameHistory({
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
-                      {stateKey === 'ambiguous' && analysis.nearestMatches.length >= 2 && (
+                      {!isUserCorrected && stateKey === 'ambiguous' && analysis.nearestMatches.length >= 2 && (
                         <> · Closest: {analysis.nearestMatches[0].compTitle} / {analysis.nearestMatches[1].compTitle}</>
                       )}
-                      {stateKey === 'unclassified' && analysis.closestComp && (
+                      {!isUserCorrected && stateKey === 'unclassified' && analysis.closestComp && (
                         <> · Closest match: {analysis.closestComp.compTitle}</>
                       )}
                     </p>
+                    {isUserCorrected && (
+                      <p className="classifier-detected-note">
+                        Classifier detected: {rawDetectedCompTitle} ·{' '}
+                        {Math.round(
+                          (classification.confidence ||
+                            (analysis.closestComp ? analysis.closestComp.affinity : 0)) * 100,
+                        )}{' '}
+                        affinity
+                      </p>
+                    )}
                     <div className="amh-badges">
-                      <span className={`classification-pill ${stateKey}`}>
-                        {stateKey === 'classified'
-                          ? 'Classified'
-                          : stateKey === 'ambiguous'
-                            ? 'Ambiguous'
-                            : stateKey === 'incompatible-set'
-                              ? 'Incompatible Set'
-                              : 'Unclassified'}
-                      </span>
-                      {stateKey === 'classified' && (
+                      {isUserCorrected ? (
+                        <span className="classification-pill user-corrected">User corrected</span>
+                      ) : (
+                        <span className={`classification-pill ${stateKey}`}>
+                          {stateKey === 'classified'
+                            ? 'Classified'
+                            : stateKey === 'ambiguous'
+                              ? 'Ambiguous'
+                              : stateKey === 'incompatible-set'
+                                ? 'Incompatible Set'
+                                : 'Unclassified'}
+                        </span>
+                      )}
+                      {!isUserCorrected && stateKey === 'classified' && (
                         <span className="amh-affinity-badge high">
                           {Math.round(classification.confidence * 100)} / 100 affinity · High Confidence
                         </span>
                       )}
-                      {stateKey === 'ambiguous' && (
+                      {!isUserCorrected && stateKey === 'ambiguous' && (
                         <span className="amh-affinity-badge ambiguous">
                           {analysis.nearestMatches[0] ? Math.round(analysis.nearestMatches[0].affinity * 100) : 0} vs{' '}
                           {analysis.nearestMatches[1] ? Math.round(analysis.nearestMatches[1].affinity * 100) : 0} / 100 affinity · Ambiguous
                         </span>
                       )}
-                      {stateKey === 'unclassified' && (
+                      {!isUserCorrected && stateKey === 'unclassified' && (
                         <span className="amh-affinity-badge low">
                           {analysis.closestComp ? Math.round(analysis.closestComp.affinity * 100) : 0} / 100 affinity · Low Affinity
                         </span>
                       )}
+                      <button
+                        className="secondary correct-comp-btn"
+                        onClick={() => {
+                          setCorrectionSearchQuery('');
+                          setShowCorrectionDialog(true);
+                        }}
+                        title="Manually correct detected comp"
+                      >
+                        Correct comp
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1009,8 +1131,8 @@ export function PostGameHistory({
                     <div className="board-unit-grid">
                       {selectedObservation.units.map((unit, idx) => {
                         const champion = state.data.champions.find((c) => c.id === unit.championId);
-                        const isMatched = analysis.closestComp
-                          ? analysis.closestComp.matchedUnits.includes(unit.championId)
+                        const isMatched = comparisonCandidate
+                          ? comparisonCandidate.matchedUnits.includes(unit.championId)
                           : false;
                         return (
                           <div key={`${unit.championId}-${idx}`} className="board-unit-cell">
@@ -1032,31 +1154,35 @@ export function PostGameHistory({
                     </div>
                   </div>
 
-                  {/* Column 2: CLOSEST / EXPECTED CANONICAL BOARD */}
+                  {/* Column 2: CANONICAL BOARD */}
                   <div className="board-compare-card canonical-card">
                     <div className="board-compare-header">
                       <h3>
                         <Compass size={14} />{' '}
-                        {stateKey === 'classified' ? 'EXPECTED CANONICAL BOARD' : 'CLOSEST CANONICAL BOARD'}
+                        {comparisonPlaybook
+                          ? comparisonPlaybook.title
+                          : isUserCorrected && correction?.state === 'unclassified'
+                            ? 'UNCLASSIFIED BOARD'
+                            : stateKey === 'classified'
+                              ? 'EXPECTED CANONICAL BOARD'
+                              : 'CLOSEST CANONICAL BOARD'}
                       </h3>
                       <span className="board-unit-count-pill">
-                        {closestPlaybook?.title ?? closestCompTitle}
+                        {comparisonPlaybook?.title ?? closestCompTitle}
                       </span>
                     </div>
                     <div className="board-unit-grid">
-                      {closestPlaybook ? (
-                        closestPlaybook.target.units.map((targetUnit) => {
+                      {comparisonPlaybook && comparisonCandidate ? (
+                        comparisonPlaybook.target.units.map((targetUnit) => {
                           const champion = state.data.champions.find((c) => c.id === targetUnit.championId);
-                          const isMatched = analysis.closestComp
-                            ? analysis.closestComp.matchedUnits.includes(targetUnit.championId)
-                            : false;
-                          const isCarry = closestPlaybook.roles.some(
+                          const isMatched = comparisonCandidate.matchedUnits.includes(targetUnit.championId);
+                          const isCarry = comparisonPlaybook.roles.some(
                             (r) => r.role === 'carry' && r.championId === targetUnit.championId,
                           );
-                          const isTank = closestPlaybook.roles.some(
+                          const isTank = comparisonPlaybook.roles.some(
                             (r) => r.role === 'tank' && r.championId === targetUnit.championId,
                           );
-                          const isCore = closestPlaybook.family.core.includes(targetUnit.championId);
+                          const isCore = comparisonPlaybook.family.core.includes(targetUnit.championId);
                           return (
                             <div key={targetUnit.championId} className="board-unit-cell">
                               <div className={`unit-portrait-wrapper ${isMatched ? 'matched' : 'missing'}`}>
@@ -1075,21 +1201,25 @@ export function PostGameHistory({
                           );
                         })
                       ) : (
-                        <p className="subdued-note">No canonical comp units available for comparison.</p>
+                        <p className="subdued-note">
+                          {isUserCorrected && correction?.state === 'unclassified'
+                            ? 'Match marked unclassified. No canonical comparison target.'
+                            : 'No canonical comp units available for comparison.'}
+                        </p>
                       )}
                     </div>
                   </div>
                 </div>
 
                 {/* Comparison Summary Bar */}
-                {analysis.closestComp && (
+                {comparisonCandidate && (
                   <div className="comparison-summary-bar">
                     <div className="summary-stat-chip">
                       <span className="chip-label">Matched Core</span>
                       <strong className="chip-val">
-                        {analysis.closestComp.coreMatched.length} /{' '}
-                        {closestPlaybook?.family.core.length ??
-                          analysis.closestComp.coreMatched.length + analysis.closestComp.coreMissing.length}
+                        {comparisonCandidate.coreMatched.length} /{' '}
+                        {comparisonPlaybook?.family.core.length ??
+                          comparisonCandidate.coreMatched.length + comparisonCandidate.coreMissing.length}
                       </strong>
                     </div>
                     <div className="summary-stat-chip">
@@ -1097,12 +1227,12 @@ export function PostGameHistory({
                       <span
                         className="chip-sub"
                         title={
-                          analysis.closestComp.coreMissing
+                          comparisonCandidate.coreMissing
                             .map((id) => state.data.champions.find((c) => c.id === id)?.name ?? id)
                             .join(', ') || 'None'
                         }
                       >
-                        {analysis.closestComp.coreMissing
+                        {comparisonCandidate.coreMissing
                           .map((id) => state.data.champions.find((c) => c.id === id)?.name ?? id)
                           .join(', ') || 'None'}
                       </span>
@@ -1112,12 +1242,12 @@ export function PostGameHistory({
                       <span
                         className="chip-sub"
                         title={
-                          analysis.closestComp.extraUnits
+                          comparisonCandidate.extraUnits
                             .map((id) => state.data.champions.find((c) => c.id === id)?.name ?? id)
                             .join(', ') || 'None'
                         }
                       >
-                        {analysis.closestComp.extraUnits
+                        {comparisonCandidate.extraUnits
                           .map((id) => state.data.champions.find((c) => c.id === id)?.name ?? id)
                           .join(', ') || 'None'}
                       </span>
@@ -1125,9 +1255,9 @@ export function PostGameHistory({
                     <div className="summary-stat-chip">
                       <span className="chip-label">Carry Anchor</span>
                       <strong
-                        className={`chip-val ${analysis.closestComp.carryAnchorMatched ? 'matched' : 'missing'}`}
+                        className={`chip-val ${comparisonCandidate.carryAnchorMatched ? 'matched' : 'missing'}`}
                       >
-                        {analysis.closestComp.carryAnchorMatched ? (
+                        {comparisonCandidate.carryAnchorMatched ? (
                           <>
                             <Check size={13} /> Matched
                           </>
@@ -1139,9 +1269,9 @@ export function PostGameHistory({
                     <div className="summary-stat-chip">
                       <span className="chip-label">Tank Anchor</span>
                       <strong
-                        className={`chip-val ${analysis.closestComp.tankAnchorMatched ? 'matched' : 'missing'}`}
+                        className={`chip-val ${comparisonCandidate.tankAnchorMatched ? 'matched' : 'missing'}`}
                       >
-                        {analysis.closestComp.tankAnchorMatched ? (
+                        {comparisonCandidate.tankAnchorMatched ? (
                           <>
                             <Check size={13} /> Matched
                           </>
@@ -1153,10 +1283,14 @@ export function PostGameHistory({
                   </div>
                 )}
 
-                {/* Nearest Matches Section (Top 3 Comps for Ambiguous or Unclassified) */}
-                {analysis && (stateKey === 'unclassified' || stateKey === 'ambiguous') && (
+                {/* Nearest Matches Section (Always visible for auditability) */}
+                {analysis && analysis.nearestMatches.length > 0 && (
                   <div className="nearest-matches-section">
-                    <h4>Closest Comp Matches (Similarity Index)</h4>
+                    <h4>
+                      {isUserCorrected
+                        ? 'Classifier Nearest Matches (Audit Trail)'
+                        : 'Closest Comp Matches (Similarity Index)'}
+                    </h4>
                     <div className="nearest-matches-list">
                       {analysis.nearestMatches.map((candidate, idx) => (
                         <div key={candidate.compId} className="nearest-match-row">
@@ -1178,18 +1312,22 @@ export function PostGameHistory({
                         </div>
                       ))}
                     </div>
-                    <div className={`why-not-classified-box ${stateKey}`}>
-                      <strong>
-                        {stateKey === 'ambiguous'
-                          ? 'Ambiguous because:'
-                          : 'Not classified because:'}
-                      </strong>
-                      <ul>
-                        {classification.reasons.map((reason, idx) => (
-                          <li key={idx}>{reason}</li>
-                        ))}
-                      </ul>
-                    </div>
+                    {classification.reasons.length > 0 && (
+                      <div className={`why-not-classified-box ${stateKey}`}>
+                        <strong>
+                          {isUserCorrected
+                            ? 'Original Classifier Assessment:'
+                            : stateKey === 'ambiguous'
+                              ? 'Ambiguous because:'
+                              : 'Not classified because:'}
+                        </strong>
+                        <ul>
+                          {classification.reasons.map((reason, idx) => (
+                            <li key={idx}>{reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1306,7 +1444,7 @@ export function PostGameHistory({
                           <div className="rec-col">
                             <div className="rec-col-title">Actual Outcome</div>
                             <div className="rec-col-body">
-                              <span><b>Played Board:</b> {detectedCompTitle ?? closestCompTitle}</span>
+                              <span><b>Played Board:</b> {effectiveCompTitle ?? closestCompTitle}</span>
                               <span><b>Placement:</b> #{selectedObservation.placement}</span>
                             </div>
                           </div>
@@ -1375,6 +1513,139 @@ export function PostGameHistory({
           </div>
         );
       })()}
+
+      {/* Manual Comp Correction Searchable Selector */}
+      {showCorrectionDialog && selectedObservation && (
+        <div className="correction-modal-backdrop" onClick={() => setShowCorrectionDialog(false)}>
+          <div className="correction-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="correction-modal-header">
+              <div className="cmh-title-group">
+                <h3>Correct Comp</h3>
+                <p>Choose ground-truth canonical comp for Match {selectedObservation.matchId} (Set {selectedObservation.set})</p>
+              </div>
+              <button
+                className="icon-close-btn"
+                onClick={() => setShowCorrectionDialog(false)}
+                aria-label="Close correction selector"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="correction-modal-body">
+              <div className="correction-search-box">
+                <Search size={16} className="search-icon-inline" />
+                <input
+                  type="text"
+                  className="correction-search-input"
+                  placeholder="Search current-set canonical comps..."
+                  value={correctionSearchQuery}
+                  onChange={(e) => setCorrectionSearchQuery(e.target.value)}
+                  autoFocus
+                />
+                {correctionSearchQuery && (
+                  <button
+                    className="clear-query-btn"
+                    onClick={() => setCorrectionSearchQuery('')}
+                    aria-label="Clear search"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              <div className="correction-quick-actions">
+                <button
+                  type="button"
+                  className="secondary correction-action-btn unclassified-btn"
+                  onClick={async () => {
+                    await handleSaveCorrection(selectedObservation.matchId, null, 'unclassified');
+                    setShowCorrectionDialog(false);
+                  }}
+                >
+                  Leave unclassified
+                </button>
+                <button
+                  type="button"
+                  className="secondary correction-action-btn clear-btn"
+                  onClick={async () => {
+                    await handleClearCorrection(selectedObservation.matchId);
+                    setShowCorrectionDialog(false);
+                  }}
+                >
+                  Clear correction
+                </button>
+              </div>
+
+              <div className="correction-comps-list">
+                {(() => {
+                  const currentSetPlaybooks = (state.catalog?.playbooks ?? []).filter(
+                    (p) => p.set === selectedObservation.set,
+                  );
+                  const query = correctionSearchQuery.trim().toLowerCase();
+                  const filtered = query
+                    ? currentSetPlaybooks.filter(
+                        (p) =>
+                          p.title.toLowerCase().includes(query) ||
+                          p.id.toLowerCase().includes(query) ||
+                          p.family.core.some((id) =>
+                            (state.data.champions.find((c) => c.id === id)?.name ?? id)
+                              .toLowerCase()
+                              .includes(query),
+                          ),
+                      )
+                    : currentSetPlaybooks;
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="empty-correction-comps">
+                        No canonical comps found matching &ldquo;{correctionSearchQuery}&rdquo;
+                      </div>
+                    );
+                  }
+
+                  const currentCorrection = corrections.get(selectedObservation.matchId);
+                  return filtered.map((playbook) => {
+                    const isSelected =
+                      currentCorrection?.state === 'canonical' &&
+                      currentCorrection.canonicalCompId === playbook.id;
+                    return (
+                      <div
+                        key={playbook.id}
+                        className={`correction-comp-item ${isSelected ? 'selected' : ''}`}
+                        onClick={async () => {
+                          await handleSaveCorrection(
+                            selectedObservation.matchId,
+                            playbook.id,
+                            'canonical',
+                          );
+                          setShowCorrectionDialog(false);
+                        }}
+                      >
+                        <div className="cci-info">
+                          <span className="cci-title">{playbook.title}</span>
+                          <span className="cci-details">
+                            Core:{' '}
+                            {playbook.family.core
+                              .slice(0, 5)
+                              .map((id) => state.data.champions.find((c) => c.id === id)?.name ?? id)
+                              .join(', ')}
+                          </span>
+                        </div>
+                        {isSelected && (
+                          <span className="cci-selected-badge">
+                            <Check size={14} /> Active
+                          </span>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pending && (
         <ConfirmDialog

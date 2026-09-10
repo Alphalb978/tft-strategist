@@ -9,6 +9,7 @@ it('runs the real SQLite migration and enforces immutable match identity', () =>
   db.exec(readFileSync(new URL('../storage/schema_m3.sql', import.meta.url), 'utf8'));
   db.exec(readFileSync(new URL('../storage/schema_m8.sql', import.meta.url), 'utf8'));
   db.exec(readFileSync(new URL('../storage/schema_m9.sql', import.meta.url), 'utf8'));
+  db.exec(readFileSync(new URL('../storage/schema_m13d2.sql', import.meta.url), 'utf8'));
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
   expect(tables.map((t) => t.name)).toEqual(
     expect.arrayContaining([
@@ -25,6 +26,7 @@ it('runs the real SQLite migration and enforces immutable match identity', () =>
       'plan_sessions',
       'postgame_reconciliations',
       'postgame_reviews',
+      'personal_match_corrections',
     ]),
   );
   db.prepare('INSERT INTO completed_matches VALUES (?,?,?,?)').run('same', '{}', 18, '18.1');

@@ -2,6 +2,7 @@ import type {
   MatchParticipant,
   NearestCompCandidate,
   PersonalCompClassification,
+  Playbook,
   PostGameBoardAnalysis,
   StaticData,
 } from '../domain/models';
@@ -45,138 +46,150 @@ interface ScoredCandidateInternal {
   candidateObj: NearestCompCandidate;
 }
 
+export function evaluateSingleCandidateInternal(
+  boardUnitIds: Set<string>,
+  playbook: Playbook,
+): ScoredCandidateInternal {
+  const compId = playbook.id;
+  const compTitle = playbook.title;
+  const coreUnits = new Set(playbook.family.core);
+  const targetUnits = new Set(playbook.target.units.map((u) => u.championId));
+  const carryAnchors = playbook.roles
+    .filter((r) => r.role === 'carry')
+    .map((r) => r.championId);
+  const tankAnchors = playbook.roles
+    .filter((r) => r.role === 'tank')
+    .map((r) => r.championId);
+
+  const coreOverlap = [...coreUnits].filter((id) => boardUnitIds.has(id)).length;
+  const coreRecall = coreUnits.size > 0 ? coreOverlap / coreUnits.size : 0;
+
+  const targetOverlap = [...targetUnits].filter((id) => boardUnitIds.has(id)).length;
+  const targetRecall = targetUnits.size > 0 ? targetOverlap / targetUnits.size : 0;
+
+  const unionSize = new Set([...boardUnitIds, ...targetUnits]).size;
+  const targetJaccard = unionSize > 0 ? targetOverlap / unionSize : 0;
+
+  const carryOverlap = carryAnchors.filter((id) => boardUnitIds.has(id)).length;
+  const carryRecall = carryAnchors.length > 0 ? carryOverlap / carryAnchors.length : 1;
+
+  const tankOverlap = tankAnchors.filter((id) => boardUnitIds.has(id)).length;
+  const tankRecall = tankAnchors.length > 0 ? tankOverlap / tankAnchors.length : 1;
+
+  const anchorRecall =
+    carryAnchors.length > 0 && tankAnchors.length > 0
+      ? carryRecall * 0.65 + tankRecall * 0.35
+      : carryAnchors.length > 0
+        ? carryRecall
+        : tankRecall;
+
+  const sizeFit =
+    1 -
+    Math.abs(boardUnitIds.size - targetUnits.size) /
+      Math.max(boardUnitIds.size, targetUnits.size, 1);
+
+  let score =
+    CLASSIFIER_CONFIG.weights.core * coreRecall +
+    CLASSIFIER_CONFIG.weights.targetRecall * targetRecall +
+    CLASSIFIER_CONFIG.weights.targetJaccard * targetJaccard +
+    CLASSIFIER_CONFIG.weights.anchors * anchorRecall +
+    CLASSIFIER_CONFIG.weights.sizeFit * sizeFit;
+
+  let frontlineDampingApplied = false;
+  if (carryAnchors.length > 0 && carryOverlap === 0) {
+    score *= CLASSIFIER_CONFIG.thresholds.frontlineDamping;
+    frontlineDampingApplied = true;
+  }
+
+  let quadraticCoreDampingApplied = false;
+  if (coreRecall < 0.35) {
+    score *= Math.pow(coreRecall / 0.35, 2);
+    quadraticCoreDampingApplied = true;
+  }
+
+  const clearsGates =
+    score >= CLASSIFIER_CONFIG.thresholds.minimumScore &&
+    coreRecall >= CLASSIFIER_CONFIG.thresholds.minimumCoreRecall &&
+    (carryAnchors.length === 0 || carryOverlap > 0);
+
+  const matchedUnits = playbook.target.units
+    .filter((u) => boardUnitIds.has(u.championId))
+    .map((u) => u.championId);
+  const missingUnits = playbook.target.units
+    .filter((u) => !boardUnitIds.has(u.championId))
+    .map((u) => u.championId);
+  const extraUnits = [...boardUnitIds].filter((id) => !targetUnits.has(id));
+  const coreMatched = [...coreUnits].filter((id) => boardUnitIds.has(id));
+  const coreMissing = [...coreUnits].filter((id) => !boardUnitIds.has(id));
+  const carryAnchorMatched = carryAnchors.length === 0 || carryOverlap > 0;
+  const tankAnchorMatched = tankAnchors.length === 0 || tankOverlap > 0;
+
+  const explanationTags: string[] = [];
+  if (coreUnits.size > 0) {
+    explanationTags.push(`Core ${coreMatched.length}/${coreUnits.size}`);
+  }
+  if (carryAnchors.length > 0) {
+    explanationTags.push(carryAnchorMatched ? 'Carry Matched' : 'Carry Missing');
+  }
+  if (tankAnchors.length > 0) {
+    explanationTags.push(tankAnchorMatched ? 'Tank Matched' : 'Tank Missing');
+  }
+  if (extraUnits.length > 0) {
+    explanationTags.push(`${extraUnits.length} Extra/Splash`);
+  }
+  if (missingUnits.length > 0) {
+    explanationTags.push(`Missing ${missingUnits.length}`);
+  }
+
+  const candidateObj: NearestCompCandidate = {
+    compId,
+    compTitle,
+    affinity: Math.round(score * 100) / 100,
+    coreRecall: Math.round(coreRecall * 100) / 100,
+    targetRecall: Math.round(targetRecall * 100) / 100,
+    targetJaccard: Math.round(targetJaccard * 100) / 100,
+    matchedUnits,
+    missingUnits,
+    extraUnits,
+    coreMatched,
+    coreMissing,
+    carryAnchorMatched,
+    tankAnchorMatched,
+    explanationTags,
+  };
+
+  return {
+    compId,
+    compTitle,
+    score,
+    coreRecall,
+    targetRecall,
+    targetJaccard,
+    anchorRecall,
+    carryOverlap,
+    carryAnchorsCount: carryAnchors.length,
+    tankOverlap,
+    tankAnchorsCount: tankAnchors.length,
+    frontlineDampingApplied,
+    quadraticCoreDampingApplied,
+    clearsGates,
+    candidateObj,
+  };
+}
+
+export function evaluatePlaybookCandidate(
+  boardUnitIds: Set<string>,
+  playbook: Playbook,
+): NearestCompCandidate {
+  return evaluateSingleCandidateInternal(boardUnitIds, playbook).candidateObj;
+}
+
 function evaluateCandidates(
   boardUnitIds: Set<string>,
   candidatePool: NonNullable<RuntimeKnowledgeCatalog['playbooks']>,
 ): ScoredCandidateInternal[] {
   return candidatePool
-    .map((playbook) => {
-      const compId = playbook.id;
-      const compTitle = playbook.title;
-      const coreUnits = new Set(playbook.family.core);
-      const targetUnits = new Set(playbook.target.units.map((u) => u.championId));
-      const carryAnchors = playbook.roles
-        .filter((r) => r.role === 'carry')
-        .map((r) => r.championId);
-      const tankAnchors = playbook.roles
-        .filter((r) => r.role === 'tank')
-        .map((r) => r.championId);
-
-      const coreOverlap = [...coreUnits].filter((id) => boardUnitIds.has(id)).length;
-      const coreRecall = coreUnits.size > 0 ? coreOverlap / coreUnits.size : 0;
-
-      const targetOverlap = [...targetUnits].filter((id) => boardUnitIds.has(id)).length;
-      const targetRecall = targetUnits.size > 0 ? targetOverlap / targetUnits.size : 0;
-
-      const unionSize = new Set([...boardUnitIds, ...targetUnits]).size;
-      const targetJaccard = unionSize > 0 ? targetOverlap / unionSize : 0;
-
-      const carryOverlap = carryAnchors.filter((id) => boardUnitIds.has(id)).length;
-      const carryRecall = carryAnchors.length > 0 ? carryOverlap / carryAnchors.length : 1;
-
-      const tankOverlap = tankAnchors.filter((id) => boardUnitIds.has(id)).length;
-      const tankRecall = tankAnchors.length > 0 ? tankOverlap / tankAnchors.length : 1;
-
-      const anchorRecall =
-        carryAnchors.length > 0 && tankAnchors.length > 0
-          ? carryRecall * 0.65 + tankRecall * 0.35
-          : carryAnchors.length > 0
-            ? carryRecall
-            : tankRecall;
-
-      const sizeFit =
-        1 -
-        Math.abs(boardUnitIds.size - targetUnits.size) /
-          Math.max(boardUnitIds.size, targetUnits.size, 1);
-
-      let score =
-        CLASSIFIER_CONFIG.weights.core * coreRecall +
-        CLASSIFIER_CONFIG.weights.targetRecall * targetRecall +
-        CLASSIFIER_CONFIG.weights.targetJaccard * targetJaccard +
-        CLASSIFIER_CONFIG.weights.anchors * anchorRecall +
-        CLASSIFIER_CONFIG.weights.sizeFit * sizeFit;
-
-      let frontlineDampingApplied = false;
-      if (carryAnchors.length > 0 && carryOverlap === 0) {
-        score *= CLASSIFIER_CONFIG.thresholds.frontlineDamping;
-        frontlineDampingApplied = true;
-      }
-
-      let quadraticCoreDampingApplied = false;
-      if (coreRecall < 0.35) {
-        score *= Math.pow(coreRecall / 0.35, 2);
-        quadraticCoreDampingApplied = true;
-      }
-
-      const clearsGates =
-        score >= CLASSIFIER_CONFIG.thresholds.minimumScore &&
-        coreRecall >= CLASSIFIER_CONFIG.thresholds.minimumCoreRecall &&
-        (carryAnchors.length === 0 || carryOverlap > 0);
-
-      const matchedUnits = playbook.target.units
-        .filter((u) => boardUnitIds.has(u.championId))
-        .map((u) => u.championId);
-      const missingUnits = playbook.target.units
-        .filter((u) => !boardUnitIds.has(u.championId))
-        .map((u) => u.championId);
-      const extraUnits = [...boardUnitIds].filter((id) => !targetUnits.has(id));
-      const coreMatched = [...coreUnits].filter((id) => boardUnitIds.has(id));
-      const coreMissing = [...coreUnits].filter((id) => !boardUnitIds.has(id));
-      const carryAnchorMatched = carryAnchors.length === 0 || carryOverlap > 0;
-      const tankAnchorMatched = tankAnchors.length === 0 || tankOverlap > 0;
-
-      const explanationTags: string[] = [];
-      if (coreUnits.size > 0) {
-        explanationTags.push(`Core ${coreMatched.length}/${coreUnits.size}`);
-      }
-      if (carryAnchors.length > 0) {
-        explanationTags.push(carryAnchorMatched ? 'Carry Matched' : 'Carry Missing');
-      }
-      if (tankAnchors.length > 0) {
-        explanationTags.push(tankAnchorMatched ? 'Tank Matched' : 'Tank Missing');
-      }
-      if (extraUnits.length > 0) {
-        explanationTags.push(`${extraUnits.length} Extra/Splash`);
-      }
-      if (missingUnits.length > 0) {
-        explanationTags.push(`Missing ${missingUnits.length}`);
-      }
-
-      const candidateObj: NearestCompCandidate = {
-        compId,
-        compTitle,
-        affinity: Math.round(score * 100) / 100,
-        coreRecall: Math.round(coreRecall * 100) / 100,
-        targetRecall: Math.round(targetRecall * 100) / 100,
-        targetJaccard: Math.round(targetJaccard * 100) / 100,
-        matchedUnits,
-        missingUnits,
-        extraUnits,
-        coreMatched,
-        coreMissing,
-        carryAnchorMatched,
-        tankAnchorMatched,
-        explanationTags,
-      };
-
-      return {
-        compId,
-        compTitle,
-        score,
-        coreRecall,
-        targetRecall,
-        targetJaccard,
-        anchorRecall,
-        carryOverlap,
-        carryAnchorsCount: carryAnchors.length,
-        tankOverlap,
-        tankAnchorsCount: tankAnchors.length,
-        frontlineDampingApplied,
-        quadraticCoreDampingApplied,
-        clearsGates,
-        candidateObj,
-      };
-    })
+    .map((playbook) => evaluateSingleCandidateInternal(boardUnitIds, playbook))
     .sort((a, b) => b.score - a.score || a.compId.localeCompare(b.compId));
 }
 

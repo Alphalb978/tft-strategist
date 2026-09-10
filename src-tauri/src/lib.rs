@@ -49,6 +49,12 @@ pub fn run() {
                             sql: include_str!("../../src/storage/schema_m13d.sql"),
                             kind: MigrationKind::Up,
                         },
+                        Migration {
+                            version: 7,
+                            description: "personal match manual comp corrections",
+                            sql: include_str!("../../src/storage/schema_m13d2.sql"),
+                            kind: MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

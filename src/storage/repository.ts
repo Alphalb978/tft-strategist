@@ -15,6 +15,8 @@ import {
 import type {
   MatchReconciliation,
   HomeRecommendationModelConfig,
+  PersonalMatchCorrection,
+  PersonalMatchCorrectionState,
   PersonalMatchObservation,
   PersonalProfile,
   PlanSession,
@@ -81,6 +83,10 @@ export interface Repository {
   listPersonalMatchObservations(accountPuuid?: string): Promise<PersonalMatchObservation[]>;
   putPersonalMatchObservation(observation: PersonalMatchObservation): Promise<void>;
   putPersonalMatchObservations(observations: PersonalMatchObservation[]): Promise<void>;
+  listPersonalMatchCorrections(): Promise<PersonalMatchCorrection[]>;
+  getPersonalMatchCorrection(matchId: string): Promise<PersonalMatchCorrection | null>;
+  putPersonalMatchCorrection(correction: PersonalMatchCorrection): Promise<void>;
+  deletePersonalMatchCorrection(matchId: string): Promise<void>;
   getKnowledgeRepository?(): KnowledgeRepository;
   getSqlDatabase?(): SqlDatabase;
 }
@@ -247,6 +253,25 @@ export class MemoryRepository implements Repository {
     }
     this.entries.set('personal-match-observations', structuredClone([...map.values()]));
   }
+  async listPersonalMatchCorrections(): Promise<PersonalMatchCorrection[]> {
+    return (
+      (this.entries.get('personal-match-corrections') as PersonalMatchCorrection[] | undefined) ?? []
+    );
+  }
+  async getPersonalMatchCorrection(matchId: string): Promise<PersonalMatchCorrection | null> {
+    const list = await this.listPersonalMatchCorrections();
+    return list.find((c) => c.matchId === matchId) ?? null;
+  }
+  async putPersonalMatchCorrection(correction: PersonalMatchCorrection): Promise<void> {
+    const list = await this.listPersonalMatchCorrections();
+    const filtered = list.filter((c) => c.matchId !== correction.matchId);
+    this.entries.set('personal-match-corrections', structuredClone([...filtered, correction]));
+  }
+  async deletePersonalMatchCorrection(matchId: string): Promise<void> {
+    const list = await this.listPersonalMatchCorrections();
+    const filtered = list.filter((c) => c.matchId !== matchId);
+    this.entries.set('personal-match-corrections', structuredClone(filtered));
+  }
 }
 class BrowserRepository implements Repository {
   mode = 'Browser local storage' as const;
@@ -394,6 +419,23 @@ class BrowserRepository implements Repository {
       map.set(obs.matchId, obs);
     }
     await this.set('personal-match-observations', [...map.values()]);
+  }
+  async listPersonalMatchCorrections(): Promise<PersonalMatchCorrection[]> {
+    return (await this.get<PersonalMatchCorrection[]>('personal-match-corrections')) ?? [];
+  }
+  async getPersonalMatchCorrection(matchId: string): Promise<PersonalMatchCorrection | null> {
+    const list = await this.listPersonalMatchCorrections();
+    return list.find((c) => c.matchId === matchId) ?? null;
+  }
+  async putPersonalMatchCorrection(correction: PersonalMatchCorrection): Promise<void> {
+    const list = await this.listPersonalMatchCorrections();
+    const filtered = list.filter((c) => c.matchId !== correction.matchId);
+    await this.set('personal-match-corrections', [...filtered, correction]);
+  }
+  async deletePersonalMatchCorrection(matchId: string): Promise<void> {
+    const list = await this.listPersonalMatchCorrections();
+    const filtered = list.filter((c) => c.matchId !== matchId);
+    await this.set('personal-match-corrections', filtered);
   }
 }
 class SqlRepository implements Repository {
@@ -669,6 +711,64 @@ class SqlRepository implements Repository {
     for (const obs of observations) {
       await this.putPersonalMatchObservation(obs);
     }
+  }
+  async listPersonalMatchCorrections(): Promise<PersonalMatchCorrection[]> {
+    const rows = await this.db.select<
+      {
+        match_id: string;
+        canonical_comp_id: string | null;
+        state: string;
+        created_at: string;
+        updated_at: string;
+      }[]
+    >('SELECT * FROM personal_match_corrections');
+    return rows.map((row) => ({
+      matchId: row.match_id,
+      canonicalCompId: row.canonical_comp_id,
+      state: row.state as PersonalMatchCorrectionState,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+  }
+  async getPersonalMatchCorrection(matchId: string): Promise<PersonalMatchCorrection | null> {
+    const rows = await this.db.select<
+      {
+        match_id: string;
+        canonical_comp_id: string | null;
+        state: string;
+        created_at: string;
+        updated_at: string;
+      }[]
+    >('SELECT * FROM personal_match_corrections WHERE match_id = $1', [matchId]);
+    if (!rows[0]) return null;
+    return {
+      matchId: rows[0].match_id,
+      canonicalCompId: rows[0].canonical_comp_id,
+      state: rows[0].state as PersonalMatchCorrectionState,
+      createdAt: rows[0].created_at,
+      updatedAt: rows[0].updated_at,
+    };
+  }
+  async putPersonalMatchCorrection(correction: PersonalMatchCorrection): Promise<void> {
+    await this.db.execute(
+      `INSERT INTO personal_match_corrections (
+        match_id, canonical_comp_id, state, created_at, updated_at
+      ) VALUES ($1,$2,$3,$4,$5)
+      ON CONFLICT(match_id) DO UPDATE SET
+        canonical_comp_id=excluded.canonical_comp_id,
+        state=excluded.state,
+        updated_at=excluded.updated_at`,
+      [
+        correction.matchId,
+        correction.canonicalCompId,
+        correction.state,
+        correction.createdAt,
+        correction.updatedAt,
+      ],
+    );
+  }
+  async deletePersonalMatchCorrection(matchId: string): Promise<void> {
+    await this.db.execute('DELETE FROM personal_match_corrections WHERE match_id = $1', [matchId]);
   }
 }
 export async function openRepository(): Promise<Repository> {
