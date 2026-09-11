@@ -43,6 +43,8 @@ export const MIGRATION_SQL_FILES = [
   'schema_m8.sql',
   'schema_m9.sql',
   'schema_m13.sql',
+  'schema_m13d.sql',
+  'schema_m13d2.sql',
 ] as const;
 
 /**
@@ -57,10 +59,13 @@ export function applyAllMigrations(db: DatabaseSync): void {
   }
 }
 
-export async function openKnowledgeDatabase(): Promise<SqlDatabase | null> {
+import { getSharedSqlDatabase } from './database';
+import type Database from '@tauri-apps/plugin-sql';
+
+export async function openKnowledgeDatabase(existingDb?: Database): Promise<SqlDatabase | null> {
   if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-    const { default: Database } = await import('@tauri-apps/plugin-sql');
-    return (await Database.load('sqlite:strategist.db')) as unknown as SqlDatabase;
+    const db = existingDb ?? (await getSharedSqlDatabase());
+    return db as unknown as SqlDatabase;
   }
   return null;
 }

@@ -48,7 +48,6 @@ export function RiotApiSettings({
       let result: RiotConnectionStatus;
       if (action === 'save') {
         const value = input.current?.value.trim() ?? '';
-        if (input.current) input.current.value = '';
         if (!value || !provider.saveCredential) {
           setNotice('Enter a Riot API key. Secure storage requires the desktop app.');
           return;
@@ -58,6 +57,7 @@ export function RiotApiSettings({
           return;
         }
         result = await provider.saveCredential(value);
+        if (input.current) input.current.value = '';
       } else if (action === 'remove' && provider.removeCredential)
         result = await provider.removeCredential();
       else if (action === 'test' && provider.testConnection)
@@ -69,9 +69,11 @@ export function RiotApiSettings({
       setStatus(result);
       setNotice(
         action === 'save'
-          ? 'Saved securely and active for this session.'
+          ? 'Replacement key saved securely. Test connection to verify it.'
           : action === 'remove'
-            ? 'Stored credential removed.'
+            ? result.source === 'native-environment'
+              ? 'Stored Riot API key removed. Environment override still active.'
+              : 'Stored Riot API key removed.'
             : riotStatusLabel(result.status),
       );
       window.dispatchEvent(new Event('riot-credential-status'));
@@ -88,6 +90,7 @@ export function RiotApiSettings({
       setBusy(false);
     }
   }
+  const hasKey = Boolean(status.storedConfigured || status.keyDetected);
   return (
     <section className="panel riot-api-settings" aria-label="Riot API settings">
       <div className="panel-heading">
@@ -109,6 +112,17 @@ export function RiotApiSettings({
               : 'Unavailable'}
         </strong>
       </p>
+      {status.source === 'native-environment' && (
+        <div className="riot-env-warning" role="alert">
+          <div>
+            <strong>Environment override still active</strong>
+            <div>
+              Requests are currently using the RIOT_API_KEY environment variable. Save a replacement
+              key below to override it for this session.
+            </div>
+          </div>
+        </div>
+      )}
       <label className="setting-label">
         API key
         <input
@@ -127,7 +141,7 @@ export function RiotApiSettings({
           disabled={busy || !provider.saveCredential}
           onClick={() => void run('save')}
         >
-          Save key
+          {hasKey ? 'Replace key' : 'Save key'}
         </button>
         <button
           className="secondary"

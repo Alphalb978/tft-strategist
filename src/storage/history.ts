@@ -1,4 +1,9 @@
 import type Database from '@tauri-apps/plugin-sql';
+import {
+  getSharedSqlDatabase,
+  withSqliteWriteLock,
+  withSqliteRetry,
+} from './database';
 import type {
   CompletedMatch,
   LobbyPressure,
@@ -152,6 +157,21 @@ export class MemoryHistoryStore implements HistoryStore {
 export class SqlHistoryStore implements HistoryStore {
   mode = 'SQLite' as const;
   constructor(private readonly db: Database) {}
+
+  private async executeWrite(
+    query: string,
+    params?: unknown[],
+  ): Promise<{ rowsAffected: number; lastInsertId?: number }> {
+    return withSqliteWriteLock(() =>
+      withSqliteRetry(async () => {
+        return (await this.db.execute(query, params)) as {
+          rowsAffected: number;
+          lastInsertId?: number;
+        };
+      }),
+    );
+  }
+
   async getIdentity(gameName: string, tagLine: string, platform: string) {
     const rows = await this.db.select<
       {
@@ -202,7 +222,7 @@ export class SqlHistoryStore implements HistoryStore {
       : null;
   }
   async putIdentity(identity: RiotIdentity, fetchedAt: string) {
-    await this.db.execute(
+    await this.executeWrite(
       'INSERT INTO riot_accounts (puuid,game_name,tag_line,platform,regional_route,fetched_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT(puuid) DO UPDATE SET game_name=excluded.game_name,tag_line=excluded.tag_line,platform=excluded.platform,regional_route=excluded.regional_route,fetched_at=excluded.fetched_at',
       [
         identity.puuid,
@@ -245,7 +265,7 @@ export class SqlHistoryStore implements HistoryStore {
     }
   }
   async putRecentIndex(index: RecentMatchIndex) {
-    await this.db.execute(
+    await this.executeWrite(
       'INSERT INTO riot_match_indexes (puuid,regional_route,target_count,requested_count,match_ids,exhausted,fetched_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(puuid,regional_route) DO UPDATE SET target_count=excluded.target_count,requested_count=excluded.requested_count,match_ids=excluded.match_ids,exhausted=excluded.exhausted,fetched_at=excluded.fetched_at',
       [
         index.puuid,
@@ -270,7 +290,7 @@ export class SqlHistoryStore implements HistoryStore {
     }
   }
   async putCompletedMatch(match: CompletedMatch, fetchedAt: string) {
-    await this.db.execute(
+    await this.executeWrite(
       'INSERT OR IGNORE INTO riot_completed_matches (match_id,payload,set_number,patch,game_timestamp,fetched_at) VALUES ($1,$2,$3,$4,$5,$6)',
       [
         match.id,
@@ -299,7 +319,7 @@ export class SqlHistoryStore implements HistoryStore {
     }
   }
   async putProfile(profile: OpponentProfile, sourceFingerprint: string) {
-    await this.db.execute(
+    await this.executeWrite(
       'INSERT INTO riot_opponent_profiles (puuid,set_number,patch,derivation_version,source_fingerprint,payload,generated_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(puuid,set_number,patch,derivation_version) DO UPDATE SET source_fingerprint=excluded.source_fingerprint,payload=excluded.payload,generated_at=excluded.generated_at',
       [
         profile.puuid,
@@ -313,7 +333,7 @@ export class SqlHistoryStore implements HistoryStore {
     );
   }
   async putScanSnapshot(scan: LobbyPressure) {
-    await this.db.execute(
+    await this.executeWrite(
       'INSERT INTO riot_scan_snapshots (id,state,requested_opponents,target_games,elapsed_ms,payload,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
       [
         crypto.randomUUID(),
@@ -328,10 +348,11 @@ export class SqlHistoryStore implements HistoryStore {
   }
 }
 
-export async function openHistoryStore(): Promise<HistoryStore> {
-  if ('__TAURI_INTERNALS__' in window) {
-    const { default: Database } = await import('@tauri-apps/plugin-sql');
-    return new SqlHistoryStore(await Database.load('sqlite:strategist.db'));
+export async function openHistoryStore(existingDb?: Database): Promise<HistoryStore> {
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    const db = existingDb ?? (await getSharedSqlDatabase());
+    return new SqlHistoryStore(db);
   }
   return new MemoryHistoryStore();
 }
+

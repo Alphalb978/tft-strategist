@@ -4,6 +4,7 @@ mod credentials;
 mod external_meta;
 mod lcu;
 mod riot;
+mod screen_capture;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -60,6 +61,9 @@ pub fn run() {
                 .build(),
         )
         .manage(riot::RiotState::from_environment())
+        .manage(screen_capture::ScreenCaptureStateHandle {
+            inner: screen_capture::ScreenCaptureManager::new(),
+        })
         .invoke_handler(tauri::generate_handler![
             external_meta::external_meta_snapshot,
             external_meta::external_meta_history,
@@ -79,6 +83,10 @@ pub fn run() {
             riot::riot_tft_ladder,
             riot::riot_tft_summoner_by_id,
             riot::riot_current_game,
+            screen_capture::screen_capture_get_state,
+            screen_capture::screen_capture_configure,
+            screen_capture::screen_capture_get_preview,
+            screen_capture::screen_capture_poll,
         ])
         .run(tauri::generate_context!())
         .expect("Unable to start TFT Strategist");

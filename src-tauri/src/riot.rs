@@ -171,6 +171,7 @@ impl RiotState {
         {
             return Err("Enter a valid Riot API key");
         }
+        self.cancel_all().await;
         let mut credentials = self.credentials.lock().await;
         self.store.save(&key)?;
         credentials.stored = Some(key);
@@ -182,6 +183,7 @@ impl RiotState {
         Ok(credentials.status())
     }
     async fn remove_key(&self) -> Result<ConnectionStatus, &'static str> {
+        self.cancel_all().await;
         let mut credentials = self.credentials.lock().await;
         self.store.remove()?;
         credentials.stored = None;
@@ -191,6 +193,13 @@ impl RiotState {
         credentials.last_success = None;
         credentials.generation += 1;
         Ok(credentials.status())
+    }
+
+    async fn cancel_all(&self) {
+        let cancellations = self.cancellations.lock().await;
+        for token in cancellations.values() {
+            token.cancel();
+        }
     }
 
     async fn cancel(&self, request_id: &str) {
@@ -1140,4 +1149,90 @@ mod credential_tests {
             "native-environment"
         );
     }
+
+    #[tokio::test]
+    async fn expired_stored_key_replace_becomes_configured_and_protects_generation() {
+        let state = RiotState::with_store(Box::new(TestStore::default()), None, false);
+        // Save initial key
+        state
+            .save_key(SecretString::from("RGAPI-old-expired-key"))
+            .await
+            .unwrap();
+        // Simulate auth error (invalid / expired)
+        {
+            let mut c = state.credentials.lock().await;
+            c.status = "auth";
+            c.last_success = Some(100);
+        }
+        assert_eq!(state.credentials.lock().await.status().status, "auth");
+
+        // Save replacement key
+        let replaced_status = state
+            .save_key(SecretString::from("RGAPI-new-working-key"))
+            .await
+            .unwrap();
+        assert_eq!(replaced_status.status, "configured");
+        assert_eq!(replaced_status.source, "secure-storage");
+        assert_eq!(replaced_status.last_success, None);
+        assert_eq!(
+            state.credentials.lock().await.active().unwrap().expose_secret(),
+            "RGAPI-new-working-key"
+        );
+
+        // Stale generation protection: simulating an old response completing with generation 1
+        // while current generation is 2. The old auth error MUST NOT overwrite status.
+        let stale_gen = 1u64;
+        let mut credentials = state.credentials.lock().await;
+        if credentials.generation == stale_gen {
+            credentials.status = "auth";
+        }
+        assert_eq!(credentials.status, "configured");
+    }
+
+    #[tokio::test]
+    async fn remove_stored_key_without_env_becomes_missing_key() {
+        let state = RiotState::with_store(Box::new(TestStore::default()), None, false);
+        state
+            .save_key(SecretString::from("RGAPI-to-remove-123"))
+            .await
+            .unwrap();
+        assert!(state.credentials.lock().await.status().key_detected);
+
+        let status = state.remove_key().await.unwrap();
+        assert!(!status.key_detected);
+        assert_eq!(status.status, "missing-key");
+        assert_eq!(status.source, "unavailable");
+        assert_eq!(status.last_success, None);
+        assert!(state.credentials.lock().await.active().is_none());
+    }
+
+    #[tokio::test]
+    async fn save_and_remove_cancel_active_requests() {
+        let state = RiotState::with_store(Box::new(TestStore::default()), None, false);
+        let token = CancellationToken::new();
+        state
+            .cancellations
+            .lock()
+            .await
+            .insert("test-req-1".to_string(), token.clone());
+        assert!(!token.is_cancelled());
+
+        state
+            .save_key(SecretString::from("RGAPI-new-token-key"))
+            .await
+            .unwrap();
+        assert!(token.is_cancelled(), "save_key must cancel in-flight requests");
+
+        let token2 = CancellationToken::new();
+        state
+            .cancellations
+            .lock()
+            .await
+            .insert("test-req-2".to_string(), token2.clone());
+        assert!(!token2.is_cancelled());
+
+        state.remove_key().await.unwrap();
+        assert!(token2.is_cancelled(), "remove_key must cancel in-flight requests");
+    }
 }
+

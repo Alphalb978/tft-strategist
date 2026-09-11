@@ -1,5 +1,10 @@
 import type Database from '@tauri-apps/plugin-sql';
 import {
+  getSharedSqlDatabase,
+  withSqliteWriteLock,
+  withSqliteRetry,
+} from './database';
+import {
   SqlKnowledgeRepository,
   MemoryKnowledgeRepository,
   type KnowledgeRepository,
@@ -30,12 +35,33 @@ import {
   DEFAULT_HOME_RECOMMENDATION_CONFIG,
   normalizeHomeRecommendationConfig,
 } from '../strategy/homeScoring';
+export interface ScreenIntelligenceSettings {
+  enabled: boolean;
+  saveDebugFrames: boolean;
+  captureRate: 1 | 2 | 5;
+  captureSource: 'auto' | 'mock';
+  /** Backwards compatibility alias for captureRate */
+  captureFps: number;
+  /** Backwards compatibility alias for captureSource */
+  sourceMode: 'auto' | 'mock';
+}
+
+export const defaultScreenIntelligenceSettings: ScreenIntelligenceSettings = {
+  enabled: false,
+  saveDebugFrames: false,
+  captureRate: 2,
+  captureSource: 'auto',
+  captureFps: 2,
+  sourceMode: 'auto',
+};
+
 export interface Settings {
   personalWeight: number;
   historyWindow: number;
   riotId: string;
   riotPlatform: RiotPlatform;
   homeRecommendation: HomeRecommendationModelConfig;
+  screenIntelligence: ScreenIntelligenceSettings;
 }
 export const defaultSettings: Settings = {
   personalWeight: 0.05,
@@ -43,14 +69,47 @@ export const defaultSettings: Settings = {
   riotId: '',
   riotPlatform: 'EUW1',
   homeRecommendation: DEFAULT_HOME_RECOMMENDATION_CONFIG,
+  screenIntelligence: defaultScreenIntelligenceSettings,
 };
-export function normalizeSettings(value?: Partial<Settings> | null): Settings {
+export type SettingsInput = Partial<Omit<Settings, 'screenIntelligence'>> & {
+  screenIntelligence?: Partial<ScreenIntelligenceSettings> | Record<string, unknown> | null;
+};
+
+export function normalizeSettings(value?: SettingsInput | null): Settings {
   let riotPlatform = defaultSettings.riotPlatform;
   try {
     riotPlatform = parsePlatform(value?.riotPlatform ?? riotPlatform);
   } catch {
     /* Unknown saved values fail closed to the explicit default. */
   }
+  const rawScreen = value?.screenIntelligence as
+    | (Partial<ScreenIntelligenceSettings> & {
+        captureRate?: unknown;
+        captureSource?: unknown;
+        captureFps?: unknown;
+        sourceMode?: unknown;
+        [key: string]: unknown;
+      })
+    | undefined;
+
+  const rawRate = Number(rawScreen?.captureRate ?? rawScreen?.captureFps);
+  const captureRate: 1 | 2 | 5 = [1, 2, 5].includes(rawRate as 1 | 2 | 5)
+    ? (rawRate as 1 | 2 | 5)
+    : defaultScreenIntelligenceSettings.captureRate;
+
+  const rawSource = rawScreen?.captureSource ?? rawScreen?.sourceMode;
+  const captureSource: 'auto' | 'mock' = rawSource === 'mock' ? 'mock' : 'auto';
+
+  // Explicit whitelist: runtime telemetry, preview images, and ephemeral state are never stored
+  const screenIntelligence: ScreenIntelligenceSettings = {
+    enabled: rawScreen?.enabled === true,
+    saveDebugFrames: rawScreen?.saveDebugFrames === true,
+    captureRate,
+    captureSource,
+    captureFps: captureRate,
+    sourceMode: captureSource,
+  };
+
   return {
     personalWeight: Math.min(
       0.1,
@@ -62,7 +121,20 @@ export function normalizeSettings(value?: Partial<Settings> | null): Settings {
     riotId: typeof value?.riotId === 'string' ? value.riotId : '',
     riotPlatform,
     homeRecommendation: normalizeHomeRecommendationConfig(value?.homeRecommendation),
+    screenIntelligence,
   };
+}
+
+export function settingsAffectRecommendations(
+  previous?: Settings | null,
+  next?: Settings | null,
+): boolean {
+  if (!previous || !next) return true;
+  if (previous.personalWeight !== next.personalWeight) return true;
+  if (previous.historyWindow !== next.historyWindow) return true;
+  if (JSON.stringify(previous.homeRecommendation) !== JSON.stringify(next.homeRecommendation))
+    return true;
+  return false;
 }
 export interface Repository {
   mode: 'SQLite' | 'Browser local storage' | 'Memory';
@@ -438,11 +510,31 @@ class BrowserRepository implements Repository {
     await this.set('personal-match-corrections', filtered);
   }
 }
-class SqlRepository implements Repository {
+export class SqlRepository implements Repository {
   mode = 'SQLite' as const;
   constructor(private db: Database) {}
+
+  private async executeWrite(
+    query: string,
+    params?: unknown[],
+  ): Promise<{ rowsAffected: number; lastInsertId?: number }> {
+    return withSqliteWriteLock(() =>
+      withSqliteRetry(async () => {
+        return (await this.db.execute(query, params)) as {
+          rowsAffected: number;
+          lastInsertId?: number;
+        };
+      }),
+    );
+  }
+
   getSqlDatabase(): SqlDatabase {
-    return this.db;
+    return {
+      select: <T = unknown>(query: string, bindParams?: unknown[]) =>
+        this.db.select<T[]>(query, bindParams),
+      execute: (query: string, bindParams?: unknown[]) =>
+        this.executeWrite(query, bindParams),
+    };
   }
   getKnowledgeRepository(): KnowledgeRepository {
     return new SqlKnowledgeRepository(this.db);
@@ -458,20 +550,20 @@ class SqlRepository implements Repository {
   }
   async set<T>(key: string, value: T) {
     const referenced = await referenceDerived(value, (k, v) => this.set(k, v));
-    await this.db.execute(
+    await this.executeWrite(
       'INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
       [key, JSON.stringify(referenced)],
     );
     if (key === 'static') {
       const data = value as StaticData;
-      await this.db.execute(
+      await this.executeWrite(
         'INSERT INTO static_cache (key,payload,fetched_at,source_version) VALUES ($1,$2,$3,$4) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at,source_version=excluded.source_version',
         [key, JSON.stringify(value), data.version.provenance.fetchedAt, data.version.sourceVersion],
       );
     }
     if (key === 'selection' && value) {
       const plan = value as unknown as SelectedPlan;
-      await this.db.execute(
+      await this.executeWrite(
         'INSERT INTO selected_plans (id,payload,match_id) VALUES ($1,$2,$3) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,match_id=excluded.match_id',
         [plan.id, JSON.stringify(plan), plan.matchId ?? null],
       );
@@ -490,7 +582,7 @@ class SqlRepository implements Repository {
     return rows.map((row) => JSON.parse(row.payload) as PlanSession);
   }
   private async insertPlanSession(session: PlanSession) {
-    await this.db.execute(
+    await this.executeWrite(
       'INSERT INTO plan_sessions (id,state,locked_at,ended_at,payload,match_id) VALUES ($1,$2,$3,$4,$5,$6)',
       [
         session.id,
@@ -528,7 +620,7 @@ class SqlRepository implements Repository {
   async updatePlanSession(session: PlanSession) {
     assertSessionSnapshotIntegrity(session);
     assertSessionLifecycle(session);
-    const result = await this.db.execute(
+    const result = await this.executeWrite(
       'UPDATE plan_sessions SET state=$1,ended_at=$2,payload=$3,match_id=$4 WHERE id=$5',
       [
         session.state,
@@ -553,7 +645,7 @@ class SqlRepository implements Repository {
     );
     if (existing[0]?.state === 'matched' && existing[0].match_id !== reconciliation.matchId)
       throw new Error('Unlink the existing match before choosing another candidate.');
-    await this.db.execute(
+    await this.executeWrite(
       'INSERT INTO postgame_reconciliations (chain_id,terminal_session_id,state,match_id,payload,checked_at,decided_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(chain_id) DO UPDATE SET state=excluded.state,match_id=excluded.match_id,payload=excluded.payload,checked_at=excluded.checked_at,decided_at=excluded.decided_at',
       [
         reconciliation.chainId,
@@ -573,7 +665,7 @@ class SqlRepository implements Repository {
     return rows.map((row) => JSON.parse(row.payload) as PostGameReview);
   }
   async putPostGameReview(review: PostGameReview) {
-    await this.db.execute(
+    await this.executeWrite(
       'INSERT INTO postgame_reviews (chain_id,match_id,derivation_fingerprint,payload,created_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(chain_id) DO UPDATE SET match_id=excluded.match_id,derivation_fingerprint=excluded.derivation_fingerprint,payload=excluded.payload,created_at=excluded.created_at',
       [
         review.chainId,
@@ -585,7 +677,7 @@ class SqlRepository implements Repository {
     );
   }
   async deletePostGameReview(chainId: string) {
-    await this.db.execute('DELETE FROM postgame_reviews WHERE chain_id=$1', [chainId]);
+    await this.executeWrite('DELETE FROM postgame_reviews WHERE chain_id=$1', [chainId]);
   }
   async getPersonalProfile(set: number) {
     const rows = await this.db.select<{ payload: string }[]>(
@@ -595,7 +687,7 @@ class SqlRepository implements Repository {
     return rows[0] ? (JSON.parse(rows[0].payload) as PersonalProfile) : null;
   }
   async putPersonalProfile(profile: PersonalProfile) {
-    await this.db.execute(
+    await this.executeWrite(
       'INSERT INTO personal_profiles (key,payload) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload',
       [`set:${profile.set}`, JSON.stringify(profile)],
     );
@@ -664,7 +756,7 @@ class SqlRepository implements Repository {
       runnerUpCompId: observation.runnerUpCompId,
       units: observation.units,
     });
-    await this.db.execute(
+    await this.executeWrite(
       `INSERT INTO personal_match_observations (
         match_id, account_puuid, set_number, patch, riot_game_version,
         game_timestamp, placement, level, queue_id, game_type,
@@ -750,7 +842,7 @@ class SqlRepository implements Repository {
     };
   }
   async putPersonalMatchCorrection(correction: PersonalMatchCorrection): Promise<void> {
-    await this.db.execute(
+    await this.executeWrite(
       `INSERT INTO personal_match_corrections (
         match_id, canonical_comp_id, state, created_at, updated_at
       ) VALUES ($1,$2,$3,$4,$5)
@@ -768,21 +860,22 @@ class SqlRepository implements Repository {
     );
   }
   async deletePersonalMatchCorrection(matchId: string): Promise<void> {
-    await this.db.execute('DELETE FROM personal_match_corrections WHERE match_id = $1', [matchId]);
+    await this.executeWrite('DELETE FROM personal_match_corrections WHERE match_id = $1', [matchId]);
   }
 }
-export async function openRepository(): Promise<Repository> {
-  if ('__TAURI_INTERNALS__' in window) {
-    const { default: Database } = await import('@tauri-apps/plugin-sql');
-    return new SqlRepository(await Database.load('sqlite:strategist.db'));
+export async function openRepository(existingDb?: Database): Promise<Repository> {
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    const db = existingDb ?? (await getSharedSqlDatabase());
+    return new SqlRepository(db);
   }
   return new BrowserRepository();
 }
 
-export async function openKnowledgeRepository(): Promise<KnowledgeRepository> {
+export async function openKnowledgeRepository(existingDb?: Database): Promise<KnowledgeRepository> {
   if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-    const { default: Database } = await import('@tauri-apps/plugin-sql');
-    return new SqlKnowledgeRepository(await Database.load('sqlite:strategist.db'));
+    const db = existingDb ?? (await getSharedSqlDatabase());
+    return new SqlKnowledgeRepository(db);
   }
   return new MemoryKnowledgeRepository();
 }
+

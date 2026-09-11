@@ -12,7 +12,13 @@ import {
   RefreshCw,
   Radio,
 } from 'lucide-react';
-import { openRepository, type Repository, type Settings } from '../storage/repository';
+import {
+  openRepository,
+  normalizeSettings,
+  settingsAffectRecommendations,
+  type Repository,
+  type Settings,
+} from '../storage/repository';
 import {
   createRecommendations,
   rescoreHomeRecommendations,
@@ -213,8 +219,39 @@ export function App() {
       setRefreshing(false);
     }
   };
-  const saveSettings = async (settings: Settings) => {
+  const saveSettingsGenerationRef = useRef(0);
+  const saveSettings = async (incomingSettings: Settings) => {
     if (!state || !repository.current) return;
+    const previousSettings = state.settings;
+    const settings = normalizeSettings(incomingSettings);
+    const affectsRecommendations = settingsAffectRecommendations(previousSettings, settings);
+    const affectsLobby =
+      settings.historyWindow !== previousSettings.historyWindow ||
+      settings.riotPlatform !== previousSettings.riotPlatform;
+
+    const saveGen = ++saveSettingsGenerationRef.current;
+
+    // Fast path: When only Screen Intelligence or non-recommendation settings change
+    if (!affectsRecommendations && !affectsLobby) {
+      // 1. Immediately update in-memory state without recomputing recommendations or rescoring Home
+      setState((current) => (current ? { ...current, settings } : current));
+
+      // 2. Persist asynchronously to SQLite without blocking UI
+      void repository.current
+        .set('settings', settings)
+        .then(() => {
+          // Persisted successfully
+        })
+        .catch((error) => {
+          console.error('Settings save failed', error);
+          if (saveSettingsGenerationRef.current === saveGen) {
+            setState((current) => (current ? { ...current, settings: previousSettings } : current));
+            setToast('Settings could not be saved. Your previous settings are unchanged.');
+          }
+        });
+      return;
+    }
+
     try {
       await repository.current.set('settings', settings);
       setState({
@@ -227,19 +264,16 @@ export function App() {
           state.meta,
           state.discovery,
           state.personal,
-
           state.external,
         ),
       });
-      if (
-        settings.historyWindow !== state.settings.historyWindow ||
-        settings.riotPlatform !== state.settings.riotPlatform
-      ) {
+      if (affectsLobby) {
         setLobby(null);
         setScanState(createIdleScanState());
       }
       setToast('Settings saved locally.');
-    } catch {
+    } catch (error) {
+      console.error('Settings save failed', error);
       setToast('Settings could not be saved. Your previous settings are unchanged.');
     }
   };
@@ -695,7 +729,16 @@ export function App() {
   const liveHome = useMemo(() => {
     if (!state) return null;
     return rescoreHomeRecommendations(state, lobby ?? undefined);
-  }, [lobby, state]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    lobby,
+    state?.registry,
+    state?.data,
+    state?.settings.homeRecommendation,
+    state?.external,
+    state?.meta,
+    state?.discovery,
+  ]);
   const currentPortfolio = liveHome?.portfolio ?? state?.portfolio;
   const sessionPortfolio = state?.activeSession?.snapshot.portfolio ?? null;
   const viewedPortfolio =

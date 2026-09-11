@@ -48,6 +48,7 @@ describe('application persistence and refresh', () => {
       riotId: '',
       riotPlatform: 'EUW1',
       homeRecommendation: defaultSettings.homeRecommendation,
+      screenIntelligence: defaultSettings.screenIntelligence,
     });
     expect(result.portfolio.plans).toHaveLength(3);
   });
