@@ -13,24 +13,30 @@ import { CurrentGameEditor } from './SmartCompanion';
 import { fusedForPlan, relatedExternal, externalTrend } from '../strategy/evidenceFusion';
 import { opportunitySignals } from '../strategy/opportunities';
 import { externalStatus } from '../providers/externalMeta';
+import type { LiveScreenState } from '../strategy/liveScreenFusion';
 export function GameCompanion({
   plan,
   state,
   candidate,
   lobby,
   onCurrentGame,
+  liveScreen,
 }: {
   plan: Playbook;
   state: ApplicationState;
   candidate: RecommendationCandidate;
   lobby?: LobbyPressure;
   onCurrentGame: (g: CurrentGameState) => void;
+  liveScreen?: LiveScreenState | null;
 }) {
   const game = state.activeSession?.manualState.currentGame ?? state.currentGame;
   const [scenario, setScenario] = useState<CurrentGameState | null>(null);
   const [contest, setContest] = useState(false);
   const now = new Date().toISOString();
-  const live = useMemo(() => rescoreRecommendations(state, lobby, now), [state, lobby, now]);
+  const live = useMemo(
+    () => rescoreRecommendations(state, lobby, now, undefined, liveScreen),
+    [state, lobby, now, liveScreen],
+  );
   const current =
     live.plans.find((p) => p.candidate.playbook.id === plan.id)?.candidate ?? candidate;
   const simulated = useMemo(

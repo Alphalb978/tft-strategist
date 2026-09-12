@@ -55,9 +55,10 @@ import {
 import { TftGameDetector, type DetectorState } from '../services/tftGameDetector';
 import { discoverCurrentLobby, scanDiscoveredLobby } from '../services/currentLobby';
 import { scanLobby } from '../services/scouting';
-import { PREVIEW_OWN_RIOT_ID } from '../providers/riotPreview';
+import { createRiotPreviewProvider, PREVIEW_OWN_RIOT_ID } from '../providers/riotPreview';
 import { NativeRiotProvider } from '../providers/riot';
-import { createRiotPreviewProvider } from '../providers/riotPreview';
+import { subscribeToLiveScreen } from '../services/screenIntelligenceService';
+import type { LiveScreenState } from '../strategy/liveScreenFusion';
 import { openHistoryStore, type HistoryStore } from '../storage/history';
 const CompLibrary = lazy(() =>
   import('../features/CompLibrary').then((module) => ({ default: module.CompLibrary })),
@@ -696,7 +697,7 @@ export function App() {
               });
               const existingObs = await currentRepo.listPersonalMatchObservations(resolvedIdentity.puuid);
               const existingIds = new Set(existingObs.map((o) => o.matchId));
-              const hasNewMatch = recentIds.some((id) => !existingIds.has(id));
+              const hasNewMatch = recentIds.some((id: string) => !existingIds.has(id));
 
               if (hasNewMatch) {
                 const { refreshPersonalHistory } = await import('../services/personalHistory');
@@ -746,12 +747,40 @@ export function App() {
     };
   }, [riotProvider]);
 
+  const [liveScreen, setLiveScreen] = useState<LiveScreenState | null>(null);
+
+  useEffect(() => {
+    const isEnabled = Boolean(state?.settings.screenIntelligence?.enabled);
+    if (!isEnabled) {
+      setLiveScreen(null);
+      return;
+    }
+    const forceMock =
+      state?.settings.screenIntelligence?.captureSource === 'mock' ||
+      state?.settings.screenIntelligence?.sourceMode === 'mock';
+
+    const unsubscribe = subscribeToLiveScreen(
+      (nextLive) => {
+        setLiveScreen(nextLive);
+      },
+      { enabled: isEnabled, forceMock, intervalMs: 1000 },
+    );
+    return () => {
+      unsubscribe();
+    };
+  }, [
+    state?.settings.screenIntelligence?.enabled,
+    state?.settings.screenIntelligence?.captureSource,
+    state?.settings.screenIntelligence?.sourceMode,
+  ]);
+
   const liveHome = useMemo(() => {
     if (!state) return null;
-    return rescoreHomeRecommendations(state, lobby ?? undefined);
+    return rescoreHomeRecommendations(state, lobby ?? undefined, undefined, liveScreen);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     lobby,
+    liveScreen,
     state?.registry,
     state?.data,
     state?.settings.homeRecommendation,
@@ -777,6 +806,7 @@ export function App() {
             ? scoreCandidate(p, {
                 data: state.data,
                 currentGame: state.activeSession?.manualState.currentGame ?? state.currentGame,
+                liveScreen,
                 version: state.data.version,
                 now: new Date().toISOString(),
                 lobby: lobby ?? undefined,
@@ -938,6 +968,7 @@ export function App() {
                     session={state.activeSession}
                     snapshotContext={page === 'active' || detailContext === 'session'}
                     activeMode={page === 'active' && !detail}
+                    liveScreen={liveScreen}
                     onBack={() => {
                       if (page === 'active' && detail) setDetail(null);
                       else if (page === 'active') navigate('home');

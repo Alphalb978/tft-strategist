@@ -770,6 +770,9 @@ export interface HomeScoreBreakdown {
   basePerformance: number;
   lowPickEdge: number;
   lobbyAdjustment: number;
+  liveOwnedAffinity?: number;
+  liveShopOpportunity?: number;
+  liveSummary?: string;
   finalSafety: number;
   reliability: number;
   evidenceSource: string;

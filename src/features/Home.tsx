@@ -124,6 +124,18 @@ export function ScoreDecomposition({
         <span className="term-label">+ Lobby{isProvisional ? ' (prov.)' : ''}</span>
         <strong className="term-val">{signed(score.lobbyAdjustment)}</strong>
       </div>
+      {typeof score.liveOwnedAffinity === 'number' && score.liveOwnedAffinity > 0 && (
+        <div className="score-row live-row">
+          <span className="term-label">+ Live owned</span>
+          <strong className="term-val live-val">+{score.liveOwnedAffinity.toFixed(1)}</strong>
+        </div>
+      )}
+      {typeof score.liveShopOpportunity === 'number' && score.liveShopOpportunity > 0 && (
+        <div className="score-row live-row">
+          <span className="term-label">+ Live shop</span>
+          <strong className="term-val live-val">+{score.liveShopOpportunity.toFixed(1)}</strong>
+        </div>
+      )}
       <div className="score-row final-row">
         <span className="term-label">{isProvisional ? 'Provisional' : 'Final Safety'}</span>
         <strong className="term-val final-val">{score.finalSafety.toFixed(1)}</strong>

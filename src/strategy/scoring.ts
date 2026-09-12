@@ -17,6 +17,7 @@ import type {
 import type { CurrentGameState } from '../domain/intelligence';
 import { contextualContributions, strategicScenarios } from './currentGame';
 import { candidateContestFor } from './lobbyPressure';
+import { deriveLiveScreenContributions, type LiveScreenState } from './liveScreenFusion';
 export const clamp = (n: number, lo = 0, hi = 1) =>
   Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : lo));
 const weights: Record<FeatureKey, number> = {
@@ -46,6 +47,7 @@ export interface ScoringContext {
   scenarioPressure?: string[];
   external?: ExternalSnapshot | null;
   currentGame?: CurrentGameState;
+  liveScreen?: LiveScreenState | null;
   data?: StaticData;
   version: ActiveSetVersion;
   now: string;
@@ -246,6 +248,8 @@ export function scoreCandidate(p: Playbook, context: ScoringContext): Recommenda
   });
   const contextual = contextualContributions(p, context.currentGame, context.data);
   components.push(...contextual);
+  const liveContributions = deriveLiveScreenContributions(p, context.liveScreen, context.data);
+  components.push(...liveContributions);
   const score =
     Math.round(
       clamp(

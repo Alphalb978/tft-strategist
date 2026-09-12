@@ -212,6 +212,7 @@ export function Playbook({
   activeMode,
   lobby,
   onCurrentGame,
+  liveScreen,
 }: {
   plan: PlaybookModel;
   candidate: RecommendationCandidate;
@@ -233,6 +234,7 @@ export function Playbook({
   activeMode: boolean;
   lobby?: import('../domain/models').LobbyPressure;
   onCurrentGame: (game: import('../domain/intelligence').CurrentGameState) => void;
+  liveScreen?: import('../strategy/liveScreenFusion').LiveScreenState | null;
 }) {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [view, setView] = useState('quick');
@@ -432,6 +434,7 @@ export function Playbook({
           candidate={candidate}
           lobby={lobby}
           onCurrentGame={onCurrentGame}
+          liveScreen={liveScreen}
         />
       )}
       {view === 'details' && (

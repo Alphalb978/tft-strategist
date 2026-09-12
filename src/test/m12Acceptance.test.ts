@@ -9,7 +9,8 @@ import { fusedForPlan } from '../strategy/evidenceFusion';
 import { validatePlaybook } from '../rules/validation';
 describe('M12 human acceptance integration', () => {
   it('adds legal external-only references, fuses exact matches and restores internal fallback', () => {
-    const snapshot = normalizePublicComps(captured, data, NOW);
+    const now = new Date().toISOString();
+    const snapshot = normalizePublicComps(captured, data, now);
     const matched = {
       ...snapshot.comps[0],
       id: 'exact-curated',
@@ -30,7 +31,7 @@ describe('M12 human acceptance integration', () => {
         [],
       );
     expect(buildCompRegistry(playbooks, data).length).toBe(playbooks.length);
-    expect(fusedForPlan(playbooks[0], snapshot, data, NOW).externalWeight).toBeGreaterThan(100);
+    expect(fusedForPlan(playbooks[0], snapshot, data, now).externalWeight).toBeGreaterThan(100);
   });
   it('never shows templates or invents an unset level', () => {
     expect(

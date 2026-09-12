@@ -177,3 +177,24 @@ Not needed for V1. Later evaluate only for explanation quality; it may receive s
 - Opponent scan architecture exists; a working scan is strongly preferred.
 - Critical tests pass.
 - No protected-process functionality exists.
+
+## Live Screen Intelligence & Recommendation Fusion (M14D)
+
+### Bounded live modifiers
+Live computer vision recognition provides bounded nudges to in-game recommendations:
+- Owned live adjustment: `+1.5` per core piece, `+1.0` 2-star bonus ($\ge 3$ copies), `+0.75` per target flex piece, hard cap `+8.0`.
+- Shop opportunity: `+1.5` for stable/confident core piece in current shop, `+0.5` for target flex piece, hard cap `+3.0`.
+
+### Neutral lobby preservation (PvE / Tocker's Trials)
+When zero opponents exist in the lobby (such as in Tocker's Trials or before live lobby resolution), `lobbyAdjustment` strictly evaluates to `0.0`. Opponent contest must never be fabricated, and missing opponents must never be rewarded as a clean-lobby bonus (`+4.0`) without verified opponent evidence coverage.
+
+### Coverage damping & smooth temporal decay
+- Low-confidence computer vision detection is dampened: when unit identification coverage falls below $60\%$, owned affinity is scaled by `(coverage / 0.60)`.
+- Temporal freshness is strictly bounded: full weight for $\le 2.5\text{s}$, smooth linear decay from $2.5\text{s}$ to $5.0\text{s}$, and cleanly zeroed out at $\ge 5.0\text{s}$ or whenever the TFT window is closed or obscured.
+
+### Pressure preservation & plan invariance
+- Live owned state cannot erase strong opponent contest pressure: heavy lobby penalties remain dominant against modest owned gains.
+- The user's selected active plan is never silently switched by live screen updates; live rescoring provides visual guidance and alternative rankings without mutating locked decisions.
+
+### Authoritative terminology
+The computer vision pipeline must be documented as **screen intelligence**, **computer vision**, or **live screen recognition/tracking** rather than OCR, accurately reflecting the multi-zone template matching and spatial occupancy tracking models.

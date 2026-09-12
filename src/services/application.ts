@@ -30,6 +30,7 @@ import { isStaticData } from '../domain/staticSchema';
 import { stableFingerprint, staticSetCompatibilityFingerprint } from '../domain/fingerprint';
 import { reconcileIntelligence } from '../strategy/intelligenceCompatibility';
 import type { CurrentGameState } from '../domain/intelligence';
+import type { LiveScreenState } from '../strategy/liveScreenFusion';
 import { validateCurrentGame } from '../strategy/currentGame';
 import { auditStaticData } from '../rules/ruleSet';
 import { COMP_CLASSIFIER } from '../strategy/compClassifier';
@@ -213,6 +214,7 @@ export function rescoreRecommendations(
   lobby?: LobbyPressure,
   now = new Date().toISOString(),
   scenarioPressure?: string[],
+  liveScreen?: LiveScreenState | null,
 ) {
   return optimizePortfolio(
     state.registry
@@ -230,6 +232,7 @@ export function rescoreRecommendations(
           currentGame: state.activeSession?.manualState.currentGame ?? state.currentGame,
           external: state.external,
           scenarioPressure,
+          liveScreen,
         }),
       ),
     now,
@@ -241,6 +244,7 @@ export function rescoreHomeRecommendations(
   state: ApplicationState,
   lobby?: LobbyPressure,
   now = new Date().toISOString(),
+  liveScreen?: LiveScreenState | null,
 ) {
   return homeRecommendations(
     state.registry
@@ -256,6 +260,7 @@ export function rescoreHomeRecommendations(
       meta: state.meta,
       discovery: state.discovery,
       lobby,
+      liveScreen,
     },
   );
 }

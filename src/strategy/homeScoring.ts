@@ -14,6 +14,7 @@ import type {
 } from '../domain/models';
 import { fusedForPlan, relatedExternal } from './evidenceFusion';
 import { clamp, scoreCandidate } from './scoring';
+import { deriveLiveScreenModifiers, type LiveScreenState } from './liveScreenFusion';
 
 export const HOME_RECOMMENDATION_MODEL_VERSION = 'contest-edge-v1';
 export const HOME_BASE_PERCENTILE_MINIMUM_POPULATION = 5;
@@ -271,7 +272,13 @@ export function lobbyAdjustment(
   contest: RecommendationCandidate['contest'],
   config: HomeRecommendationModelConfig,
 ) {
-  if (contest.value === null || contest.provenance === 'unavailable') return 0;
+  if (
+    contest.value === null ||
+    contest.provenance === 'unavailable' ||
+    contest.state === 'Unavailable' ||
+    contest.evidenceCoverage <= 0
+  )
+    return 0;
   const value = clamp(contest.value);
   const hasObservedRouteContest =
     (contest.routeEvidence?.opponentsWithRouteMatch ?? 0) > 0 ||
@@ -308,6 +315,7 @@ export interface HomeScoringContext {
   meta?: AggregateMetaDataset | null;
   discovery?: DiscoveryDataset | null;
   lobby?: LobbyPressure;
+  liveScreen?: LiveScreenState | null;
 }
 
 export function scoreHomeCandidates(playbooks: Playbook[], context: HomeScoringContext) {
@@ -364,6 +372,7 @@ export function scoreHomeCandidates(playbooks: Playbook[], context: HomeScoringC
         meta: context.meta,
         discovery: context.discovery,
         external: context.external,
+        liveScreen: context.liveScreen,
       });
       const percentile = percentiles.get(entry.playbook.id) ?? null;
       const performancePercentile = performancePercentiles.get(entry.playbook.id) ?? null;
@@ -374,7 +383,14 @@ export function scoreHomeCandidates(playbooks: Playbook[], context: HomeScoringC
         config,
       );
       const lobby = lobbyAdjustment(generic.contest, config);
-      const finalSafety = round(clamp(entry.basePerformance + rarity + lobby, 0, 100));
+      const live = deriveLiveScreenModifiers(entry.playbook, context.liveScreen, context.data);
+      const finalSafety = round(
+        clamp(
+          entry.basePerformance + rarity + lobby + live.ownedAffinity + live.shopOpportunity,
+          0,
+          100,
+        ),
+      );
       const home: HomeScoreBreakdown = {
         modelVersion: HOME_RECOMMENDATION_MODEL_VERSION,
         config,
@@ -382,6 +398,9 @@ export function scoreHomeCandidates(playbooks: Playbook[], context: HomeScoringC
         basePerformance: entry.basePerformance,
         lowPickEdge: rarity,
         lobbyAdjustment: lobby,
+        liveOwnedAffinity: live.ownedAffinity,
+        liveShopOpportunity: live.shopOpportunity,
+        liveSummary: live.summary,
         finalSafety,
         reliability: round(entry.evidence.reliability),
         evidenceSource: entry.evidence.source,
@@ -394,12 +413,16 @@ export function scoreHomeCandidates(playbooks: Playbook[], context: HomeScoringC
           performancePercentile === null ? null : round(performancePercentile),
         popularityPercentile: percentile === null ? null : round(percentile),
       };
+      const liveReasons: string[] = [];
+      if (live.ownedAffinity > 0) liveReasons.push(`owned +${live.ownedAffinity.toFixed(1)}`);
+      if (live.shopOpportunity > 0) liveReasons.push(`shop +${live.shopOpportunity.toFixed(1)}`);
+      const liveSuffix = liveReasons.length ? ` · live ${liveReasons.join(', ')}` : '';
       return {
         ...generic,
         score: finalSafety,
         home,
         reasons: [
-          `Base ${home.basePerformance.toFixed(1)} · low-pick ${home.lowPickEdge >= 0 ? '+' : ''}${home.lowPickEdge.toFixed(1)} · lobby ${home.lobbyAdjustment >= 0 ? '+' : ''}${home.lobbyAdjustment.toFixed(1)}.`,
+          `Base ${home.basePerformance.toFixed(1)} · low-pick ${home.lowPickEdge >= 0 ? '+' : ''}${home.lowPickEdge.toFixed(1)} · lobby ${home.lobbyAdjustment >= 0 ? '+' : ''}${home.lobbyAdjustment.toFixed(1)}${liveSuffix}.`,
           `${home.evidenceSource} · ${Math.round(home.reliability * 100)}% reliability.`,
         ],
       };
