@@ -178,6 +178,7 @@ export function ScreenIntelligenceSection({
       startPoller(gen, isMock);
     }
     return () => {
+      toggleGenerationRef.current += 1;
       stopPoller();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

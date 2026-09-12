@@ -84,8 +84,10 @@ pub fn run() {
             riot::riot_tft_summoner_by_id,
             riot::riot_current_game,
             screen_capture::screen_capture_get_state,
+            screen_capture::screen_capture_status,
             screen_capture::screen_capture_configure,
             screen_capture::screen_capture_get_preview,
+            screen_capture::screen_capture_preview,
             screen_capture::screen_capture_poll,
         ])
         .run(tauri::generate_context!())

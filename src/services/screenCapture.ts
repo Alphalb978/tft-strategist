@@ -4,6 +4,7 @@ import {
   type CapturedFramePreview,
   type ScreenCaptureConfig,
   type ScreenCaptureState,
+  type ScreenCaptureStatus,
   type ScreenCaptureTelemetry,
 } from '../providers/mockScreenCapture';
 
@@ -11,10 +12,16 @@ export type {
   CapturedFramePreview,
   ScreenCaptureConfig,
   ScreenCaptureState,
+  ScreenCaptureStatus,
   ScreenCaptureTelemetry,
 };
 
 let mockProviderInstance: MockScreenCaptureProvider | null = null;
+let activePreviewPollersCount = 0;
+
+export function getActivePreviewPollersCount(): number {
+  return activePreviewPollersCount;
+}
 
 export function getMockScreenCaptureProvider(): MockScreenCaptureProvider {
   if (!mockProviderInstance) {
@@ -47,6 +54,28 @@ export async function getCaptureState(forceMock = false): Promise<ScreenCaptureS
   return getMockScreenCaptureProvider().getState();
 }
 
+export async function getCaptureStatus(forceMock = false): Promise<ScreenCaptureStatus> {
+  if (!forceMock && isTauri()) {
+    try {
+      return await invoke<ScreenCaptureStatus>('screen_capture_status');
+    } catch {
+      return {
+        enabled: false,
+        detected: false,
+        processName: null,
+        windowTitle: null,
+        sourceWidth: 0,
+        sourceHeight: 0,
+        captureFps: 0,
+        processingTimeMs: 0,
+        lastFrameAgeMs: null,
+      };
+    }
+  }
+
+  return getMockScreenCaptureProvider().getStatus();
+}
+
 export async function configureCapture(
   config: ScreenCaptureConfig,
   forceMock = false,
@@ -73,13 +102,17 @@ export async function configureCapture(
 export async function getLatestPreview(forceMock = false): Promise<CapturedFramePreview | null> {
   if (!forceMock && isTauri()) {
     try {
-      return await invoke<CapturedFramePreview | null>('screen_capture_get_preview');
+      return await invoke<CapturedFramePreview | null>('screen_capture_preview');
     } catch {
       return null;
     }
   }
 
   return getMockScreenCaptureProvider().getPreview();
+}
+
+export async function getCapturePreview(forceMock = false): Promise<CapturedFramePreview | null> {
+  return getLatestPreview(forceMock);
 }
 
 export async function pollCapture(
@@ -115,6 +148,7 @@ export function subscribeToCapturePreview(
   onUpdate: (preview: CapturedFramePreview | null, state: ScreenCaptureState) => void,
   options: { intervalMs?: number; forceMock?: boolean } = {},
 ): () => void {
+  activePreviewPollersCount += 1;
   const intervalMs = options.intervalMs ?? 1000;
   let active = true;
   let inFlight = false;
@@ -166,5 +200,6 @@ export function subscribeToCapturePreview(
   return () => {
     active = false;
     clearInterval(timer);
+    activePreviewPollersCount = Math.max(0, activePreviewPollersCount - 1);
   };
 }

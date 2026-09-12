@@ -95,6 +95,29 @@ pub struct CapturedFramePreview {
     pub data_base64: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenCaptureStatus {
+    pub enabled: bool,
+    pub detected: bool,
+    pub process_name: Option<String>,
+    pub window_title: Option<String>,
+    pub source_width: u32,
+    pub source_height: u32,
+    pub capture_fps: f32,
+    pub processing_time_ms: f32,
+    pub last_frame_age_ms: Option<u64>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RawFrameBuffer {
+    pub width: u32,
+    pub height: u32,
+    pub bgra: Vec<u8>,
+    pub captured_at: Instant,
+    pub timestamp: String,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct WindowCandidateMeta {
     pub pid: u32,
@@ -151,8 +174,6 @@ pub fn score_window_candidate(candidate: &WindowCandidateMeta) -> Option<u32> {
         score += 500;
     } else if class_lower == "riotwindowclass" {
         score += 300;
-    } else if title_lower.contains("tft") || title_lower.contains("league of legends") {
-        score += 200;
     } else {
         return None;
     }
@@ -695,6 +716,7 @@ fn save_debug_frame_locally(jpeg_data: &[u8], timestamp: &str) {
 pub struct ScreenCaptureManager {
     config: RwLock<ScreenCaptureConfig>,
     state: RwLock<ScreenCaptureState>,
+    latest_raw_frame: RwLock<Option<Arc<RawFrameBuffer>>>,
     latest_preview: RwLock<Option<CapturedFramePreview>>,
     is_running: AtomicBool,
     worker_running: AtomicBool,
@@ -708,6 +730,7 @@ impl ScreenCaptureManager {
         Arc::new(Self {
             config: RwLock::new(ScreenCaptureConfig::default()),
             state: RwLock::new(ScreenCaptureState::default()),
+            latest_raw_frame: RwLock::new(None),
             latest_preview: RwLock::new(None),
             is_running: AtomicBool::new(false),
             worker_running: AtomicBool::new(false),
@@ -721,14 +744,64 @@ impl ScreenCaptureManager {
         self.state.read().unwrap().clone()
     }
 
+    pub fn get_status(&self) -> ScreenCaptureStatus {
+        let state = self.state.read().unwrap();
+        let cfg = self.config.read().unwrap();
+        let raw = self.latest_raw_frame.read().unwrap();
+        let age_ms = raw.as_ref().map(|f| f.captured_at.elapsed().as_millis() as u64);
+        let is_detected = state.state == "capturing";
+
+        ScreenCaptureStatus {
+            enabled: cfg.enabled,
+            detected: is_detected,
+            process_name: state.process_name.clone(),
+            window_title: state.window_title.clone(),
+            source_width: state.width,
+            source_height: state.height,
+            capture_fps: state.capture_fps,
+            processing_time_ms: state.processing_time_ms.unwrap_or(0.0),
+            last_frame_age_ms: age_ms,
+        }
+    }
+
     pub fn get_preview(&self) -> Option<CapturedFramePreview> {
-        self.latest_preview.read().unwrap().clone()
+        let raw_opt = self.latest_raw_frame.read().unwrap().clone();
+        let raw = raw_opt?;
+
+        let preview_width = 640.min(raw.width);
+        let preview_height = ((preview_width as f32 / raw.width as f32) * raw.height as f32).round() as u32;
+
+        let process_start = Instant::now();
+        let jpeg = create_preview_jpeg(
+            &raw.bgra,
+            raw.width,
+            raw.height,
+            preview_width,
+            preview_height,
+            70,
+        ).ok()?;
+        let process_elapsed = process_start.elapsed().as_secs_f32() * 1000.0;
+
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&jpeg);
+        let data_url = format!("data:image/jpeg;base64,{}", b64);
+
+        let preview = CapturedFramePreview {
+            width: preview_width,
+            height: preview_height,
+            timestamp: raw.timestamp.clone(),
+            processing_time_ms: process_elapsed,
+            data_base64: data_url,
+        };
+
+        *self.latest_preview.write().unwrap() = Some(preview.clone());
+        Some(preview)
     }
 
     pub fn poll(&self, include_preview: bool) -> ScreenCaptureTelemetry {
         let state = self.state.read().unwrap();
         let preview = if include_preview {
-            self.latest_preview.read().unwrap().clone()
+            self.get_preview()
         } else {
             None
         };
@@ -774,6 +847,7 @@ impl ScreenCaptureManager {
                 debug_saving: cfg.save_debug_frames,
                 error_message: None,
             };
+            *self.latest_raw_frame.write().unwrap() = None;
             *self.latest_preview.write().unwrap() = None;
             // Interrupt sleeping worker thread immediately (<10ms perceived stop)
             self.stop_notify.1.notify_all();
@@ -864,60 +938,51 @@ impl ScreenCaptureManager {
 
                 let mock_width = 1920u32;
                 let mock_height = 1080u32;
-                let preview_width = 640u32;
-                let preview_height = 360u32;
 
                 let process_start = Instant::now();
                 let bgra = generate_mock_frame_bgra(seq, mock_width, mock_height);
-                let preview_jpeg = create_preview_jpeg(
-                    &bgra,
-                    mock_width,
-                    mock_height,
-                    preview_width,
-                    preview_height,
-                    70,
-                );
                 let process_elapsed = process_start.elapsed().as_secs_f32() * 1000.0;
 
-                if let Ok(jpeg) = preview_jpeg {
-                    use base64::Engine;
-                    let b64 = base64::engine::general_purpose::STANDARD.encode(&jpeg);
-                    let data_url = format!("data:image/jpeg;base64,{}", b64);
+                let raw_buffer = Arc::new(RawFrameBuffer {
+                    width: mock_width,
+                    height: mock_height,
+                    bgra,
+                    captured_at: Instant::now(),
+                    timestamp: timestamp_now.clone(),
+                });
 
-                    if save_debug {
-                        let bytes_clone = jpeg.clone();
-                        let ts_clone = timestamp_now.clone();
-                        std::thread::spawn(move || {
-                            save_debug_frame_locally(&bytes_clone, &ts_clone);
-                        });
+                if save_debug {
+                    let preview_width = 640u32;
+                    let preview_height = 360u32;
+                    if let Ok(jpeg) = create_preview_jpeg(
+                        &raw_buffer.bgra,
+                        mock_width,
+                        mock_height,
+                        preview_width,
+                        preview_height,
+                        70,
+                    ) {
+                        save_debug_frame_locally(&jpeg, &timestamp_now);
                     }
+                }
 
-                    let preview = CapturedFramePreview {
-                        width: preview_width,
-                        height: preview_height,
-                        timestamp: timestamp_now.clone(),
-                        processing_time_ms: process_elapsed,
-                        data_base64: data_url,
-                    };
+                if self.is_running.load(Ordering::SeqCst)
+                    && self.generation.load(Ordering::SeqCst) == thread_gen
+                {
+                    *self.latest_raw_frame.write().unwrap() = Some(raw_buffer);
 
-                    if self.is_running.load(Ordering::SeqCst)
-                        && self.generation.load(Ordering::SeqCst) == thread_gen
-                    {
-                        *self.latest_preview.write().unwrap() = Some(preview);
-
-                        let mut st = self.state.write().unwrap();
-                        st.state = "capturing".to_string();
-                        st.window_title = Some("TFT [MOCK]".to_string());
-                        st.process_name = Some("TFTClient-Win64-Shipping".to_string());
-                        st.width = mock_width;
-                        st.height = mock_height;
-                        st.capture_source = "mock-fixture".to_string();
-                        st.capture_fps = target_fps as f32;
-                        st.last_frame_timestamp = Some(timestamp_now);
-                        st.processing_time_ms = Some(process_elapsed);
-                        st.debug_saving = save_debug;
-                        st.error_message = None;
-                    }
+                    let mut st = self.state.write().unwrap();
+                    st.state = "capturing".to_string();
+                    st.window_title = Some("TFT [MOCK]".to_string());
+                    st.process_name = Some("TFTClient-Win64-Shipping".to_string());
+                    st.width = mock_width;
+                    st.height = mock_height;
+                    st.capture_source = "mock-fixture".to_string();
+                    st.capture_fps = target_fps as f32;
+                    st.last_frame_timestamp = Some(timestamp_now);
+                    st.processing_time_ms = Some(process_elapsed);
+                    st.debug_saving = save_debug;
+                    st.error_message = None;
                 }
             } else {
                 // Windows-native capture execution
@@ -931,69 +996,57 @@ impl ScreenCaptureManager {
 
                         match capture_result {
                             Ok((bgra, width, height)) => {
-                                // Calculate preview dimensions maintaining aspect ratio (target max width 640)
-                                let preview_width = 640.min(width);
-                                let preview_height = ((preview_width as f32 / width as f32) * height as f32).round() as u32;
-
-                                let preview_jpeg = create_preview_jpeg(
-                                    &bgra,
+                                let raw_buffer = Arc::new(RawFrameBuffer {
                                     width,
                                     height,
-                                    preview_width,
-                                    preview_height,
-                                    70,
-                                );
+                                    bgra,
+                                    captured_at: Instant::now(),
+                                    timestamp: timestamp_now.clone(),
+                                });
 
-                                if let Ok(jpeg) = preview_jpeg {
-                                    use base64::Engine;
-                                    let b64 = base64::engine::general_purpose::STANDARD.encode(&jpeg);
-                                    let data_url = format!("data:image/jpeg;base64,{}", b64);
-
-                                    if save_debug {
-                                        let bytes_clone = jpeg.clone();
-                                        let ts_clone = timestamp_now.clone();
-                                        std::thread::spawn(move || {
-                                            save_debug_frame_locally(&bytes_clone, &ts_clone);
-                                        });
+                                if save_debug {
+                                    let preview_width = 640.min(width);
+                                    let preview_height = ((preview_width as f32 / width as f32) * height as f32).round() as u32;
+                                    if let Ok(jpeg) = create_preview_jpeg(
+                                        &raw_buffer.bgra,
+                                        width,
+                                        height,
+                                        preview_width,
+                                        preview_height,
+                                        70,
+                                    ) {
+                                        save_debug_frame_locally(&jpeg, &timestamp_now);
                                     }
+                                }
 
-                                    let preview = CapturedFramePreview {
-                                        width: preview_width,
-                                        height: preview_height,
-                                        timestamp: timestamp_now.clone(),
-                                        processing_time_ms: process_elapsed,
-                                        data_base64: data_url,
-                                    };
+                                if self.is_running.load(Ordering::SeqCst)
+                                    && self.generation.load(Ordering::SeqCst) == thread_gen
+                                {
+                                    *self.latest_raw_frame.write().unwrap() = Some(raw_buffer);
 
-                                    if self.is_running.load(Ordering::SeqCst)
-                                        && self.generation.load(Ordering::SeqCst) == thread_gen
-                                    {
-                                        *self.latest_preview.write().unwrap() = Some(preview);
-
-                                        let elapsed_since_last = last_capture_time.elapsed().as_secs_f32();
-                                        if elapsed_since_last > 0.05 {
-                                            let instant_fps = 1.0 / elapsed_since_last;
-                                            fps_tracker = if fps_tracker == 0.0 {
-                                                instant_fps
-                                            } else {
-                                                fps_tracker * 0.7 + instant_fps * 0.3
-                                            };
-                                        }
-                                        last_capture_time = Instant::now();
-
-                                        let mut st = self.state.write().unwrap();
-                                        st.state = "capturing".to_string();
-                                        st.window_title = Some(window.title);
-                                        st.process_name = Some(window.process_name);
-                                        st.width = width;
-                                        st.height = height;
-                                        st.capture_source = "Windows TFT window".to_string();
-                                        st.capture_fps = (fps_tracker * 10.0).round() / 10.0;
-                                        st.last_frame_timestamp = Some(timestamp_now);
-                                        st.processing_time_ms = Some(process_elapsed);
-                                        st.debug_saving = save_debug;
-                                        st.error_message = None;
+                                    let elapsed_since_last = last_capture_time.elapsed().as_secs_f32();
+                                    if elapsed_since_last > 0.05 {
+                                        let instant_fps = 1.0 / elapsed_since_last;
+                                        fps_tracker = if fps_tracker == 0.0 {
+                                            instant_fps
+                                        } else {
+                                            fps_tracker * 0.7 + instant_fps * 0.3
+                                        };
                                     }
+                                    last_capture_time = Instant::now();
+
+                                    let mut st = self.state.write().unwrap();
+                                    st.state = "capturing".to_string();
+                                    st.window_title = Some(window.title);
+                                    st.process_name = Some(window.process_name);
+                                    st.width = width;
+                                    st.height = height;
+                                    st.capture_source = "Windows TFT window".to_string();
+                                    st.capture_fps = (fps_tracker * 10.0).round() / 10.0;
+                                    st.last_frame_timestamp = Some(timestamp_now);
+                                    st.processing_time_ms = Some(process_elapsed);
+                                    st.debug_saving = save_debug;
+                                    st.error_message = None;
                                 }
                             }
                             Err(err) => {
@@ -1020,6 +1073,7 @@ impl ScreenCaptureManager {
                             st.capture_source = "none".to_string();
                             st.capture_fps = 0.0;
                             st.error_message = None;
+                            *self.latest_raw_frame.write().unwrap() = None;
                             *self.latest_preview.write().unwrap() = None;
                         }
                     }
@@ -1062,6 +1116,13 @@ pub fn screen_capture_get_state(
 }
 
 #[tauri::command]
+pub fn screen_capture_status(
+    state: tauri::State<'_, ScreenCaptureStateHandle>,
+) -> ScreenCaptureStatus {
+    state.inner.get_status()
+}
+
+#[tauri::command]
 pub fn screen_capture_configure(
     config: ScreenCaptureConfig,
     state: tauri::State<'_, ScreenCaptureStateHandle>,
@@ -1071,6 +1132,13 @@ pub fn screen_capture_configure(
 
 #[tauri::command]
 pub fn screen_capture_get_preview(
+    state: tauri::State<'_, ScreenCaptureStateHandle>,
+) -> Option<CapturedFramePreview> {
+    state.inner.get_preview()
+}
+
+#[tauri::command]
+pub fn screen_capture_preview(
     state: tauri::State<'_, ScreenCaptureStateHandle>,
 ) -> Option<CapturedFramePreview> {
     state.inner.get_preview()

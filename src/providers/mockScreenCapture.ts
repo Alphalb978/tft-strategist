@@ -44,6 +44,18 @@ export interface CapturedFramePreview {
   dataBase64: string;
 }
 
+export interface ScreenCaptureStatus {
+  enabled: boolean;
+  detected: boolean;
+  processName?: string | null;
+  windowTitle?: string | null;
+  sourceWidth: number;
+  sourceHeight: number;
+  captureFps: number;
+  processingTimeMs: number;
+  lastFrameAgeMs?: number | null;
+}
+
 export interface ScreenCaptureConfig {
   enabled: boolean;
   saveDebugFrames: boolean;
@@ -134,6 +146,21 @@ export class MockScreenCaptureProvider {
 
   public getPreview(): CapturedFramePreview | null {
     return this.latestPreview ? { ...this.latestPreview } : null;
+  }
+
+  public getStatus(): ScreenCaptureStatus {
+    const isDetected = this.state.state === 'capturing';
+    return {
+      enabled: this.config.enabled,
+      detected: isDetected,
+      processName: this.state.processName,
+      windowTitle: this.state.windowTitle,
+      sourceWidth: this.state.width ?? 0,
+      sourceHeight: this.state.height ?? 0,
+      captureFps: this.state.captureFps ?? 0,
+      processingTimeMs: this.state.processingTimeMs ?? 0,
+      lastFrameAgeMs: isDetected ? 50 : null,
+    };
   }
 
   public poll(includePreview = false): ScreenCaptureTelemetry {

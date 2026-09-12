@@ -70,13 +70,16 @@ const PostGameHistory = lazy(() =>
   import('../features/PostGameHistory').then((module) => ({ default: module.PostGameHistory })),
 );
 import { RiotScouting } from '../features/RiotScouting';
-type Page = 'home' | 'scout' | 'active' | 'library' | 'history' | 'data';
-type DetailContext = 'current' | 'session';
+export type Page = 'home' | 'scout' | 'active' | 'library' | 'history' | 'data';
+export type DetailContext = 'current' | 'session';
+export type AppLoadState = 'loading' | 'ready' | 'error';
+
 export function App() {
   const [state, setState] = useState<ApplicationState | null>(null),
     [page, setPage] = useState<Page>('home'),
     [detail, setDetail] = useState<string | null>(null),
     [detailContext, setDetailContext] = useState<DetailContext>('current'),
+    [loadStatus, setLoadStatus] = useState<AppLoadState>('loading'),
     [error, setError] = useState(''),
     [toast, setToast] = useState(''),
     [refreshing, setRefreshing] = useState(false),
@@ -91,16 +94,23 @@ export function App() {
   const manualWrites = useRef(Promise.resolve());
   const metaController = useRef<AbortController | null>(null);
   const [metaProgress, setMetaProgress] = useState<MetaProgress | null>(null);
+  const initGenerationRef = useRef(0);
+
   useEffect(() => {
     let alive = true;
+    const currentGen = ++initGenerationRef.current;
+    setLoadStatus('loading');
+    setError('');
+
     (async () => {
       try {
         const [repo, history] = await Promise.all([openRepository(), openHistoryStore()]);
         const loaded = await loadApplication(repo);
-        if (alive) {
+        if (alive && initGenerationRef.current === currentGen) {
           repository.current = repo;
           setHistoryStore(history);
           setState(loaded);
+          setLoadStatus('ready');
           setError('');
           if (
             loaded.meta &&
@@ -109,13 +119,17 @@ export function App() {
               loaded.meta.intelligence?.knowledgeFingerprint !== loaded.data.knowledge?.fingerprint)
           ) {
             setMetaRefreshing(true);
-            setState({
-              ...loaded,
-              notices: [
-                ...loaded.notices,
-                'Building strategy intelligence from your cached matches…',
-              ],
-            });
+            setState((current) =>
+              current
+                ? {
+                    ...current,
+                    notices: [
+                      ...current.notices,
+                      'Building strategy intelligence from your cached matches…',
+                    ],
+                  }
+                : current,
+            );
             try {
               const { rebuildCachedIntelligence } = await import('../services/intelligenceRefresh');
               const meta = await rebuildCachedIntelligence(
@@ -126,7 +140,7 @@ export function App() {
                 history,
                 repo,
               );
-              if (alive)
+              if (alive && initGenerationRef.current === currentGen) {
                 setState((current) =>
                   current
                     ? {
@@ -144,8 +158,9 @@ export function App() {
                       }
                     : current,
                 );
+              }
             } catch {
-              if (alive)
+              if (alive && initGenerationRef.current === currentGen) {
                 setState((current) =>
                   current
                     ? {
@@ -157,16 +172,21 @@ export function App() {
                       }
                     : current,
                 );
+              }
             } finally {
-              if (alive) setMetaRefreshing(false);
+              if (alive && initGenerationRef.current === currentGen) setMetaRefreshing(false);
             }
           }
         }
-      } catch {
-        if (alive)
-          setError(
-            'Unable to load local data. Check the bundled snapshot and storage availability, then retry.',
-          );
+      } catch (err) {
+        if (alive && initGenerationRef.current === currentGen) {
+          const message =
+            err instanceof Error
+              ? err.message
+              : 'Unable to load local data. Check the bundled snapshot and storage availability, then retry.';
+          setError(message);
+          setLoadStatus('error');
+        }
       }
     })();
     return () => {
@@ -867,30 +887,27 @@ export function App() {
               </div>
             }
           >
-            {!state ? (
-              <div className="loading-state">
-                {error ? (
-                  <>
-                    <Database size={36} />
-                    <h1>Let’s get your data ready.</h1>
-                    <p>{error}</p>
-                    <button
-                      className="primary"
-                      onClick={() => {
-                        setError('');
-                        setAttempt((a) => a + 1);
-                      }}
-                    >
-                      Retry local load
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <Hexagon className="spin" size={38} />
-                    <h1>Preparing your plans</h1>
-                    <p>Loading the active set and validating source playbooks…</p>
-                  </>
-                )}
+            {loadStatus === 'error' || Boolean(error) ? (
+              <div className="loading-state" role="alert">
+                <Database size={36} />
+                <h1>Let’s get your data ready.</h1>
+                <p>{error || 'An unexpected error occurred while preparing your plans.'}</p>
+                <button
+                  className="primary"
+                  onClick={() => {
+                    setError('');
+                    setLoadStatus('loading');
+                    setAttempt((a) => a + 1);
+                  }}
+                >
+                  Retry local load
+                </button>
+              </div>
+            ) : loadStatus === 'loading' || !state ? (
+              <div className="loading-state" role="status">
+                <Hexagon className="spin" size={38} />
+                <h1>Preparing your plans</h1>
+                <p>Loading the active set and validating source playbooks…</p>
               </div>
             ) : (
               <>
