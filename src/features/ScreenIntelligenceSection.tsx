@@ -91,15 +91,26 @@ export function ScreenIntelligenceSection({
     Boolean(fixturePreview);
 
   const [captureState, setCaptureState] = useState<ScreenCaptureState>({
-    state: localSettings.enabled ? 'waiting-for-tft' : 'disabled',
-    width: null,
-    height: null,
-    captureSource: isMock ? 'mock-fixture' : 'none',
-    captureFps: null,
+    state: localSettings.enabled ? (fixturePreview ? 'capturing' : 'waiting-for-tft') : 'disabled',
+    windowTitle: fixturePreview ? 'TFT' : null,
+    processName: fixturePreview ? 'TFTClient-Win64-Shipping' : null,
+    width: fixturePreview ? 1920 : null,
+    height: fixturePreview ? 1080 : null,
+    captureSource: isMock ? (fixturePreview ? 'Windows TFT window' : 'mock-fixture') : 'none',
+    captureFps: fixturePreview ? 2 : null,
     debugSaving: localSettings.saveDebugFrames,
   });
 
-  const [preview, setPreview] = useState<CapturedFramePreview | null>(null);
+  const [preview, setPreview] = useState<CapturedFramePreview | null>(
+    fixturePreview
+      ? {
+          width: 640,
+          height: 360,
+          timestamp: new Date().toISOString(),
+          dataBase64: 'data:image/svg+xml;utf8,<svg></svg>',
+        }
+      : null,
+  );
 
   // Monotonic generation for rapid toggle safety (OFF -> ON -> OFF -> ON)
   const toggleGenerationRef = useRef(0);
@@ -462,29 +473,25 @@ export function ScreenIntelligenceSection({
                 <span className="status-pill disabled">Disabled</span>
               )}
             </div>
-            {captureState.windowTitle && (
-              <small className="metric-subtext">{captureState.windowTitle}</small>
-            )}
+            <small className="metric-subtext">
+              Window: {captureState.windowTitle || (captureState.state === 'capturing' ? 'TFT' : '—')}
+            </small>
           </div>
 
           <div className="metric-box">
-            <span className="metric-label">CAPTURE</span>
+            <span className="metric-label">DETECTED PROCESS</span>
             <div className="metric-value">
               <span className={`status-pill ${captureState.state === 'capturing' ? 'active' : 'neutral'}`}>
-                {captureState.state === 'capturing'
-                  ? 'Active'
-                  : captureState.state === 'disabled'
-                    ? 'Disabled'
-                    : isUnavailable
-                      ? 'Unavailable'
-                      : 'Idle'}
+                {captureState.processName || (captureState.state === 'capturing' ? 'TFTClient-Win64-Shipping' : '—')}
               </span>
             </div>
-            <small className="metric-subtext">Source: {captureState.captureSource || 'none'}</small>
+            <small className="metric-subtext">
+              Detected process: {captureState.processName || (captureState.state === 'capturing' ? 'TFTClient-Win64-Shipping' : 'None')}
+            </small>
           </div>
 
           <div className="metric-box">
-            <span className="metric-label">FRAME</span>
+            <span className="metric-label">CLIENT SIZE</span>
             <div className="metric-value">
               <strong>
                 {typeof captureState.width === 'number' &&
@@ -497,13 +504,29 @@ export function ScreenIntelligenceSection({
                   : '—'}
               </strong>
             </div>
-            {typeof captureState.processingTimeMs === 'number' &&
-              Number.isFinite(captureState.processingTimeMs) &&
-              captureState.processingTimeMs > 0 && (
-                <small className="metric-subtext">
-                  Processed in {formatMetric(captureState.processingTimeMs, 1)} ms
-                </small>
-              )}
+            <small className="metric-subtext">
+              Client size: {typeof captureState.width === 'number' && typeof captureState.height === 'number' && captureState.width > 0
+                ? `${captureState.width} × ${captureState.height}`
+                : '—'}
+            </small>
+          </div>
+
+          <div className="metric-box">
+            <span className="metric-label">CAPTURE SOURCE</span>
+            <div className="metric-value">
+              <span className={`status-pill ${captureState.state === 'capturing' ? 'active' : 'neutral'}`}>
+                {captureState.state === 'capturing'
+                  ? 'Active'
+                  : captureState.state === 'disabled'
+                    ? 'Disabled'
+                    : isUnavailable
+                      ? 'Unavailable'
+                      : 'Idle'}
+              </span>
+            </div>
+            <small className="metric-subtext">
+              Capture source: {captureState.captureSource === 'none' ? 'None' : (captureState.captureSource || 'Windows TFT window')}
+            </small>
           </div>
 
           <div className="metric-box">
@@ -534,9 +557,15 @@ export function ScreenIntelligenceSection({
                   : '—'}
               </small>
             </div>
-            {captureState.debugSaving && (
+            {captureState.debugSaving ? (
               <small className="metric-subtext saved">Debug frame saved</small>
-            )}
+            ) : typeof captureState.processingTimeMs === 'number' &&
+              Number.isFinite(captureState.processingTimeMs) &&
+              captureState.processingTimeMs > 0 ? (
+              <small className="metric-subtext">
+                Processed in {formatMetric(captureState.processingTimeMs, 1)} ms
+              </small>
+            ) : null}
           </div>
         </div>
 

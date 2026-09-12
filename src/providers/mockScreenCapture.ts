@@ -8,6 +8,7 @@ export type ScreenCaptureStateValue =
 export interface ScreenCaptureState {
   state: ScreenCaptureStateValue;
   windowTitle?: string | null;
+  processName?: string | null;
   width?: number | null;
   height?: number | null;
   captureSource: string;
@@ -21,6 +22,7 @@ export interface ScreenCaptureState {
 export interface ScreenCaptureTelemetry {
   state: ScreenCaptureStateValue;
   windowTitle?: string | null;
+  processName?: string | null;
   source: string;
   sourceWidth?: number | null;
   sourceHeight?: number | null;
@@ -104,6 +106,8 @@ export class MockScreenCaptureProvider {
 
   private state: ScreenCaptureState = {
     state: 'disabled',
+    windowTitle: null,
+    processName: null,
     width: 0,
     height: 0,
     captureSource: 'none',
@@ -138,6 +142,7 @@ export class MockScreenCaptureProvider {
     return {
       state: st.state,
       windowTitle: st.windowTitle,
+      processName: st.processName,
       source: st.captureSource,
       sourceWidth: st.width,
       sourceHeight: st.height,
@@ -160,6 +165,7 @@ export class MockScreenCaptureProvider {
       this.state = {
         state: 'disabled',
         windowTitle: undefined,
+        processName: undefined,
         width: 0,
         height: 0,
         captureSource: 'none',
@@ -178,9 +184,10 @@ export class MockScreenCaptureProvider {
       this.state = {
         state: 'error',
         windowTitle: undefined,
+        processName: undefined,
         width: 0,
         height: 0,
-        captureSource: 'mock-fixture',
+        captureSource: 'Windows TFT window',
         captureFps: 0,
         debugSaving: config.saveDebugFrames,
         errorMessage: this.failureError,
@@ -193,6 +200,7 @@ export class MockScreenCaptureProvider {
       this.state = {
         state: 'waiting-for-tft',
         windowTitle: undefined,
+        processName: undefined,
         width: 0,
         height: 0,
         captureSource: 'none',
@@ -226,10 +234,11 @@ export class MockScreenCaptureProvider {
 
     this.state = {
       state: 'capturing',
-      windowTitle: 'League of Legends (TM) Client [MOCK]',
+      windowTitle: 'TFT',
+      processName: 'TFTClient-Win64-Shipping',
       width: this.mockWidth,
       height: this.mockHeight,
-      captureSource: 'mock-fixture',
+      captureSource: 'Windows TFT window',
       captureFps: config.captureFps ?? 2,
       lastFrameTimestamp: timestamp,
       processingTimeMs: 1.4,
@@ -240,7 +249,7 @@ export class MockScreenCaptureProvider {
     return this.getState();
   }
 
-  public simulateTftAppeared(width = 1920, height = 1080, title?: string): void {
+  public simulateTftAppeared(width = 1920, height = 1080, title?: string, processName = 'TFTClient-Win64-Shipping'): void {
     this.tftPresent = true;
     this.failureError = null;
     this.mockWidth = width;
@@ -263,10 +272,11 @@ export class MockScreenCaptureProvider {
 
       this.state = {
         state: 'capturing',
-        windowTitle: title ?? 'League of Legends (TM) Client',
+        windowTitle: title ?? 'TFT',
+        processName,
         width,
         height,
-        captureSource: 'mock-fixture',
+        captureSource: 'Windows TFT window',
         captureFps: this.config.captureFps ?? 2,
         lastFrameTimestamp: timestamp,
         processingTimeMs: 1.5,
@@ -282,6 +292,7 @@ export class MockScreenCaptureProvider {
       this.state = {
         state: 'waiting-for-tft',
         windowTitle: undefined,
+        processName: undefined,
         width: 0,
         height: 0,
         captureSource: 'none',

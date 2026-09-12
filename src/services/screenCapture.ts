@@ -129,6 +129,7 @@ export function subscribeToCapturePreview(
       const state: ScreenCaptureState = {
         state: telemetry.state,
         windowTitle: telemetry.windowTitle,
+        processName: telemetry.processName,
         width: telemetry.sourceWidth,
         height: telemetry.sourceHeight,
         captureSource: telemetry.source,

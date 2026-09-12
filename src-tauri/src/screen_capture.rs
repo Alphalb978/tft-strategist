@@ -17,6 +17,7 @@ const MAX_SAVED_DEBUG_FRAMES: usize = 20;
 pub struct ScreenCaptureState {
     pub state: String, // "disabled" | "waiting-for-tft" | "capturing" | "capture-unavailable" | "error"
     pub window_title: Option<String>,
+    pub process_name: Option<String>,
     pub width: u32,
     pub height: u32,
     pub capture_source: String,
@@ -32,6 +33,7 @@ impl Default for ScreenCaptureState {
         Self {
             state: "disabled".to_string(),
             window_title: None,
+            process_name: None,
             width: 0,
             height: 0,
             capture_source: "none".to_string(),
@@ -49,6 +51,7 @@ impl Default for ScreenCaptureState {
 pub struct ScreenCaptureTelemetry {
     pub state: String,
     pub window_title: Option<String>,
+    pub process_name: Option<String>,
     pub source: String,
     pub source_width: u32,
     pub source_height: u32,
@@ -92,6 +95,96 @@ pub struct CapturedFramePreview {
     pub data_base64: String,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct WindowCandidateMeta {
+    pub pid: u32,
+    pub process_name: String,
+    pub title: String,
+    pub class_name: String,
+    pub is_visible: bool,
+    pub is_iconic: bool,
+    pub is_cloaked: bool,
+    pub width: u32,
+    pub height: u32,
+    pub is_own_process: bool,
+}
+
+pub fn is_explicitly_excluded_process(process_name: &str) -> bool {
+    let lower = process_name.to_ascii_lowercase();
+    let clean = lower.strip_suffix(".exe").unwrap_or(&lower);
+    clean == "leagueclientux"
+        || clean == "leagueclientuxrender"
+        || clean == "riot client"
+        || clean == "riotclient"
+        || clean == "riotclientservices"
+        || clean == "tft-strategist"
+        || clean == "tft_strategist"
+        || clean == "crashpad_handler"
+}
+
+pub fn score_window_candidate(candidate: &WindowCandidateMeta) -> Option<u32> {
+    if candidate.is_own_process {
+        return None;
+    }
+    if !candidate.is_visible || candidate.is_iconic || candidate.is_cloaked {
+        return None;
+    }
+    // Meaningful client dimensions: width >= 800 and height >= 600
+    if candidate.width < 800 || candidate.height < 600 {
+        return None;
+    }
+    if is_explicitly_excluded_process(&candidate.process_name) {
+        return None;
+    }
+
+    let proc_lower = candidate.process_name.to_ascii_lowercase();
+    let proc_clean = proc_lower.strip_suffix(".exe").unwrap_or(&proc_lower);
+    let title_lower = candidate.title.to_ascii_lowercase();
+    let class_lower = candidate.class_name.to_ascii_lowercase();
+
+    let mut score = 0u32;
+
+    // 1. Process identity is the strongest signal
+    if proc_clean == "tftclient-win64-shipping" || proc_clean.contains("tftclient") {
+        score += 1000;
+    } else if proc_clean == "league of legends" || proc_clean == "league of legends (tm) client" {
+        score += 500;
+    } else if class_lower == "riotwindowclass" {
+        score += 300;
+    } else if title_lower.contains("tft") || title_lower.contains("league of legends") {
+        score += 200;
+    } else {
+        return None;
+    }
+
+    // 2. Supporting evidence: title "TFT"
+    if candidate.title == "TFT" || title_lower.starts_with("tft") {
+        score += 200;
+    } else if title_lower.contains("tft") {
+        score += 100;
+    } else if title_lower.contains("league of legends") {
+        score += 50;
+    }
+
+    // 3. Meaningful size bonus
+    if candidate.width >= 1280 && candidate.height >= 720 {
+        score += 50;
+    }
+
+    Some(score)
+}
+
+#[allow(dead_code)]
+pub fn choose_best_candidate<'a>(
+    candidates: &'a [WindowCandidateMeta],
+) -> Option<&'a WindowCandidateMeta> {
+    candidates
+        .iter()
+        .filter_map(|c| score_window_candidate(c).map(|score| (score, c)))
+        .max_by_key(|&(score, _)| score)
+        .map(|(_, c)| c)
+}
+
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct DiscoveredWindow {
@@ -99,82 +192,161 @@ pub struct DiscoveredWindow {
     pub hwnd: windows_sys::Win32::Foundation::HWND,
     pub title: String,
     pub class_name: String,
+    pub process_name: String,
+    pub pid: u32,
     pub x: i32,
     pub y: i32,
     pub width: u32,
     pub height: u32,
 }
 
+unsafe impl Send for DiscoveredWindow {}
+unsafe impl Sync for DiscoveredWindow {}
+
 #[cfg(target_os = "windows")]
 mod platform {
     use super::*;
     use windows_sys::core::BOOL;
     use windows_sys::Win32::{
-        Foundation::{HWND, LPARAM, RECT},
+        Foundation::{CloseHandle, HANDLE, HWND, LPARAM, POINT, RECT},
         Graphics::{
             Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS},
             Gdi::{
-                BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
-                GetDC, GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER,
-                BI_RGB, DIB_RGB_COLORS, SRCCOPY,
+                BitBlt, ClientToScreen, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC,
+                DeleteObject, GetDC, GetDIBits, ReleaseDC, SelectObject, BITMAPINFO,
+                BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, SRCCOPY,
             },
         },
+        System::Threading::{
+            GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW,
+            PROCESS_QUERY_LIMITED_INFORMATION,
+        },
         UI::WindowsAndMessaging::{
-            EnumWindows, GetClassNameW, GetWindowRect, GetWindowTextW,
-            IsIconic, IsWindowVisible,
+            EnumWindows, GetClientRect, GetClassNameW, GetWindowRect,
+            GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
         },
     };
 
-    pub fn discover_tft_window() -> Option<DiscoveredWindow> {
-        struct SearchContext {
-            found: Option<DiscoveredWindow>,
+    const DWMWA_CLOAKED: u32 = 14;
+
+    fn get_process_name(pid: u32) -> Option<String> {
+        if pid == 0 {
+            return None;
+        }
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if handle.is_null() {
+                return None;
+            }
+
+            let mut buffer = [0u16; 1024];
+            let mut size = buffer.len() as u32;
+            let success = QueryFullProcessImageNameW(handle, 0, buffer.as_mut_ptr(), &mut size);
+            CloseHandle(handle);
+
+            if success != 0 && size > 0 {
+                let full_path = String::from_utf16_lossy(&buffer[..size as usize]);
+                let file_name = std::path::Path::new(&full_path)
+                    .file_name()
+                    .and_then(|f| f.to_str())
+                    .unwrap_or(&full_path);
+                let stem = file_name.strip_suffix(".exe").unwrap_or(file_name);
+                Some(stem.to_string())
+            } else {
+                None
+            }
+        }
+    }
+
+    struct CandidateEntry {
+        score: u32,
+        window: DiscoveredWindow,
+    }
+
+    struct SearchContext {
+        candidates: Vec<CandidateEntry>,
+        own_pid: u32,
+    }
+
+    unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let context = &mut *(lparam as *mut SearchContext);
+
+        if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
+            return 1; // continue enumeration
         }
 
-        unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
-            let context = &mut *(lparam as *mut SearchContext);
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if pid == 0 {
+            return 1;
+        }
 
-            if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
-                return 1; // continue enumeration
-            }
+        let is_own_process = pid == context.own_pid;
+        if is_own_process {
+            return 1;
+        }
 
-            let mut class_buffer = [0u16; 256];
-            let class_len = GetClassNameW(hwnd, class_buffer.as_mut_ptr(), 256);
-            if class_len <= 0 {
-                return 1;
-            }
-            let class_name = String::from_utf16_lossy(&class_buffer[..class_len as usize]);
+        let process_name = match get_process_name(pid) {
+            Some(name) => name,
+            None => return 1,
+        };
 
-            // TFT in-game client window uses class "RiotWindowClass"
-            // We ignore launcher processes like LeagueClientUx ("Chrome_WidgetWin_1" or "RCLIENT")
-            let is_riot_window = class_name.eq_ignore_ascii_case("RiotWindowClass");
-            if !is_riot_window {
-                return 1;
-            }
+        if is_explicitly_excluded_process(&process_name) {
+            return 1;
+        }
 
-            let mut title_buffer = [0u16; 512];
-            let title_len = GetWindowTextW(hwnd, title_buffer.as_mut_ptr(), 512);
-            let title = if title_len > 0 {
-                String::from_utf16_lossy(&title_buffer[..title_len as usize])
-            } else {
-                String::new()
+        let mut cloaked: u32 = 0;
+        let hr_cloak = DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED,
+            &mut cloaked as *mut _ as *mut _,
+            std::mem::size_of::<u32>() as u32,
+        );
+        let is_cloaked = hr_cloak == 0 && cloaked != 0;
+        if is_cloaked {
+            return 1;
+        }
+
+        let mut class_buffer = [0u16; 256];
+        let class_len = GetClassNameW(hwnd, class_buffer.as_mut_ptr(), 256);
+        let class_name = if class_len > 0 {
+            String::from_utf16_lossy(&class_buffer[..class_len as usize])
+        } else {
+            String::new()
+        };
+
+        let mut title_buffer = [0u16; 512];
+        let title_len = GetWindowTextW(hwnd, title_buffer.as_mut_ptr(), 512);
+        let title = if title_len > 0 {
+            String::from_utf16_lossy(&title_buffer[..title_len as usize])
+                .trim()
+                .to_string()
+        } else {
+            String::new()
+        };
+
+        // Prefer GetClientRect + ClientToScreen for exact drawing bounds
+        let mut client_rect: RECT = std::mem::zeroed();
+        let got_client = GetClientRect(hwnd, &mut client_rect) != 0;
+        let client_w = (client_rect.right - client_rect.left).max(0) as u32;
+        let client_h = (client_rect.bottom - client_rect.top).max(0) as u32;
+
+        let (x, y, width, height) = if got_client && client_w >= 640 && client_h >= 480 {
+            let mut pt = POINT {
+                x: client_rect.left,
+                y: client_rect.top,
             };
-
-            // League of Legends game client titles
-            let is_league_game = title.contains("League of Legends") || title.contains("TFT");
-            if !is_league_game {
-                return 1;
-            }
-
-            // Query extended frame bounds to properly handle DPI scaling and borderless modes
-            let mut rect: RECT = unsafe { std::mem::zeroed() };
+            ClientToScreen(hwnd, &mut pt);
+            (pt.x, pt.y, client_w, client_h)
+        } else {
+            let mut rect: RECT = std::mem::zeroed();
             let hr = DwmGetWindowAttribute(
                 hwnd,
                 DWMWA_EXTENDED_FRAME_BOUNDS as u32,
                 &mut rect as *mut _ as *mut _,
                 std::mem::size_of::<RECT>() as u32,
             );
-
-            let (x, y, width, height) = if hr == 0 && rect.right > rect.left && rect.bottom > rect.top {
+            if hr == 0 && rect.right > rect.left && rect.bottom > rect.top {
                 (
                     rect.left,
                     rect.top,
@@ -182,30 +354,54 @@ mod platform {
                     (rect.bottom - rect.top) as u32,
                 )
             } else {
-                let mut window_rect: RECT = unsafe { std::mem::zeroed() };
+                let mut window_rect: RECT = std::mem::zeroed();
                 GetWindowRect(hwnd, &mut window_rect);
                 let w = (window_rect.right - window_rect.left).max(0) as u32;
                 let h = (window_rect.bottom - window_rect.top).max(0) as u32;
                 (window_rect.left, window_rect.top, w, h)
-            };
+            }
+        };
 
-            if width >= 640 && height >= 480 {
-                context.found = Some(DiscoveredWindow {
+        let meta = WindowCandidateMeta {
+            pid,
+            process_name: process_name.clone(),
+            title: title.clone(),
+            class_name: class_name.clone(),
+            is_visible: true,
+            is_iconic: false,
+            is_cloaked,
+            width,
+            height,
+            is_own_process: false,
+        };
+
+        if let Some(score) = score_window_candidate(&meta) {
+            context.candidates.push(CandidateEntry {
+                score,
+                window: DiscoveredWindow {
                     hwnd,
                     title,
                     class_name,
+                    process_name,
+                    pid,
                     x,
                     y,
                     width,
                     height,
-                });
-                return 0; // Stop enumeration, window found!
-            }
-
-            1
+                },
+            });
         }
 
-        let mut context = SearchContext { found: None };
+        1 // continue enumeration
+    }
+
+    pub fn discover_tft_window() -> Option<DiscoveredWindow> {
+        let own_pid = unsafe { GetCurrentProcessId() };
+        let mut context = SearchContext {
+            candidates: Vec::new(),
+            own_pid,
+        };
+
         unsafe {
             EnumWindows(
                 Some(enum_windows_proc),
@@ -213,7 +409,35 @@ mod platform {
             );
         }
 
-        context.found
+        // If no candidate was found on current thread desktop, check OpenInputDesktop
+        if context.candidates.is_empty() {
+            unsafe {
+                extern "system" {
+                    fn OpenInputDesktop(dwFlags: u32, fInherit: BOOL, dwDesiredAccess: u32) -> HANDLE;
+                    fn CloseDesktop(hDesktop: HANDLE) -> BOOL;
+                    fn EnumDesktopWindows(
+                        hDesktop: HANDLE,
+                        lpfn: Option<unsafe extern "system" fn(HWND, LPARAM) -> BOOL>,
+                        lParam: LPARAM,
+                    ) -> BOOL;
+                }
+                let input_desktop = OpenInputDesktop(0, 0, 0x01FF);
+                if !input_desktop.is_null() {
+                    EnumDesktopWindows(
+                        input_desktop,
+                        Some(enum_windows_proc),
+                        &mut context as *mut _ as isize,
+                    );
+                    CloseDesktop(input_desktop);
+                }
+            }
+        }
+
+        context
+            .candidates
+            .into_iter()
+            .max_by_key(|c| c.score)
+            .map(|c| c.window)
     }
 
     pub fn capture_window_raw_bgra(
@@ -260,11 +484,12 @@ mod platform {
             ) != 0;
 
             if !blt_ok {
+                let err_code = windows_sys::Win32::Foundation::GetLastError();
                 SelectObject(mem_dc, old_obj);
                 DeleteObject(bitmap);
                 DeleteDC(mem_dc);
                 ReleaseDC(std::ptr::null_mut(), screen_dc);
-                return Err("BitBlt failed to copy window pixels".to_string());
+                return Err(format!("BitBlt failed to copy window pixels (error code: {})", err_code));
             }
 
             let mut bmi: BITMAPINFO = std::mem::zeroed();
@@ -511,6 +736,7 @@ impl ScreenCaptureManager {
         ScreenCaptureTelemetry {
             state: state.state.clone(),
             window_title: state.window_title.clone(),
+            process_name: state.process_name.clone(),
             source: state.capture_source.clone(),
             source_width: state.width,
             source_height: state.height,
@@ -538,6 +764,7 @@ impl ScreenCaptureManager {
             *state = ScreenCaptureState {
                 state: "disabled".to_string(),
                 window_title: None,
+                process_name: None,
                 width: 0,
                 height: 0,
                 capture_source: "none".to_string(),
@@ -558,6 +785,15 @@ impl ScreenCaptureManager {
         self.generation.fetch_add(1, Ordering::SeqCst);
         let mut state = self.state.write().unwrap();
         state.state = "waiting-for-tft".to_string();
+        state.window_title = None;
+        state.process_name = None;
+        state.width = 0;
+        state.height = 0;
+        state.capture_source = if cfg.mock_source.unwrap_or(false) {
+            "mock-fixture".to_string()
+        } else {
+            "none".to_string()
+        };
         state.debug_saving = cfg.save_debug_frames;
         state.capture_fps = fps as f32;
 
@@ -582,6 +818,20 @@ impl ScreenCaptureManager {
     }
 
     fn capture_worker_loop(self: Arc<Self>) {
+        #[cfg(target_os = "windows")]
+        unsafe {
+            extern "system" {
+                fn OpenInputDesktop(dwFlags: u32, fInherit: i32, dwDesiredAccess: u32) -> windows_sys::Win32::Foundation::HANDLE;
+                fn CloseDesktop(hDesktop: windows_sys::Win32::Foundation::HANDLE) -> i32;
+                fn SetThreadDesktop(hDesktop: windows_sys::Win32::Foundation::HANDLE) -> i32;
+            }
+            let input_desktop = OpenInputDesktop(0, 0, 0x01FF);
+            if !input_desktop.is_null() {
+                let _ = SetThreadDesktop(input_desktop);
+                CloseDesktop(input_desktop);
+            }
+        }
+
         let mut last_capture_time = Instant::now();
         let mut fps_tracker = 0.0f32;
 
@@ -657,7 +907,8 @@ impl ScreenCaptureManager {
 
                         let mut st = self.state.write().unwrap();
                         st.state = "capturing".to_string();
-                        st.window_title = Some("League of Legends (TM) Client [MOCK]".to_string());
+                        st.window_title = Some("TFT [MOCK]".to_string());
+                        st.process_name = Some("TFTClient-Win64-Shipping".to_string());
                         st.width = mock_width;
                         st.height = mock_height;
                         st.capture_source = "mock-fixture".to_string();
@@ -733,9 +984,10 @@ impl ScreenCaptureManager {
                                         let mut st = self.state.write().unwrap();
                                         st.state = "capturing".to_string();
                                         st.window_title = Some(window.title);
+                                        st.process_name = Some(window.process_name);
                                         st.width = width;
                                         st.height = height;
-                                        st.capture_source = "windows-graphics-capture".to_string();
+                                        st.capture_source = "Windows TFT window".to_string();
                                         st.capture_fps = (fps_tracker * 10.0).round() / 10.0;
                                         st.last_frame_timestamp = Some(timestamp_now);
                                         st.processing_time_ms = Some(process_elapsed);
@@ -762,6 +1014,7 @@ impl ScreenCaptureManager {
                             let mut st = self.state.write().unwrap();
                             st.state = "waiting-for-tft".to_string();
                             st.window_title = None;
+                            st.process_name = None;
                             st.width = 0;
                             st.height = 0;
                             st.capture_source = "none".to_string();
@@ -952,5 +1205,357 @@ mod tests {
         });
         assert_eq!(disabled_state.state, "disabled");
         assert!(manager.get_preview().is_none());
+    }
+
+    #[test]
+    fn test_case_1_tft_client_shipping_with_title_tft_detected() {
+        let candidate = WindowCandidateMeta {
+            pid: 28232,
+            process_name: "TFTClient-Win64-Shipping.exe".to_string(),
+            title: "TFT".to_string(),
+            class_name: "UnrealWindow".to_string(),
+            is_visible: true,
+            is_iconic: false,
+            is_cloaked: false,
+            width: 1920,
+            height: 1080,
+            is_own_process: false,
+        };
+
+        let score = score_window_candidate(&candidate);
+        assert!(score.is_some(), "TFTClient-Win64-Shipping should be scored positively");
+        assert!(score.unwrap() >= 1200);
+
+        let list = [candidate.clone()];
+        let best = choose_best_candidate(&list);
+        assert_eq!(best, Some(&candidate));
+    }
+
+    #[test]
+    fn test_case_2_league_client_ux_only_not_detected() {
+        let candidate = WindowCandidateMeta {
+            pid: 27848,
+            process_name: "LeagueClientUx.exe".to_string(),
+            title: "League of Legends".to_string(),
+            class_name: "RCLIENT".to_string(),
+            is_visible: true,
+            is_iconic: false,
+            is_cloaked: false,
+            width: 1440,
+            height: 759,
+            is_own_process: false,
+        };
+
+        assert!(is_explicitly_excluded_process(&candidate.process_name));
+        assert_eq!(score_window_candidate(&candidate), None);
+        assert_eq!(choose_best_candidate(&[candidate]), None);
+    }
+
+    #[test]
+    fn test_case_3_riot_client_only_not_detected() {
+        let candidates = vec![
+            WindowCandidateMeta {
+                pid: 17324,
+                process_name: "Riot Client.exe".to_string(),
+                title: "Riot Client".to_string(),
+                class_name: "Chrome_WidgetWin_1".to_string(),
+                is_visible: true,
+                is_iconic: false,
+                is_cloaked: false,
+                width: 1440,
+                height: 759,
+                is_own_process: false,
+            },
+            WindowCandidateMeta {
+                pid: 2872,
+                process_name: "RiotClientServices.exe".to_string(),
+                title: "".to_string(),
+                class_name: "HiddenWndClass".to_string(),
+                is_visible: true,
+                is_iconic: false,
+                is_cloaked: false,
+                width: 1000,
+                height: 800,
+                is_own_process: false,
+            },
+        ];
+
+        for c in &candidates {
+            assert!(is_explicitly_excluded_process(&c.process_name));
+            assert_eq!(score_window_candidate(c), None);
+        }
+        assert_eq!(choose_best_candidate(&candidates), None);
+    }
+
+    #[test]
+    fn test_case_4_tft_plus_league_client_together_chooses_tft() {
+        let league = WindowCandidateMeta {
+            pid: 27848,
+            process_name: "LeagueClientUx.exe".to_string(),
+            title: "League of Legends".to_string(),
+            class_name: "RCLIENT".to_string(),
+            is_visible: true,
+            is_iconic: false,
+            is_cloaked: false,
+            width: 1440,
+            height: 759,
+            is_own_process: false,
+        };
+        let tft = WindowCandidateMeta {
+            pid: 28232,
+            process_name: "TFTClient-Win64-Shipping".to_string(),
+            title: "TFT".to_string(),
+            class_name: "UnrealWindow".to_string(),
+            is_visible: true,
+            is_iconic: false,
+            is_cloaked: false,
+            width: 1920,
+            height: 1080,
+            is_own_process: false,
+        };
+
+        let candidates = [league, tft.clone()];
+        let chosen = choose_best_candidate(&candidates);
+        assert_eq!(chosen, Some(&tft));
+    }
+
+    #[test]
+    fn test_case_5_strategist_window_never_selected() {
+        let own_proc_candidate = WindowCandidateMeta {
+            pid: 9984,
+            process_name: "tft-strategist.exe".to_string(),
+            title: "TFT Strategist".to_string(),
+            class_name: "Tauri Window".to_string(),
+            is_visible: true,
+            is_iconic: false,
+            is_cloaked: false,
+            width: 1456,
+            height: 979,
+            is_own_process: true,
+        };
+        assert_eq!(score_window_candidate(&own_proc_candidate), None);
+        assert_eq!(choose_best_candidate(&[own_proc_candidate]), None);
+
+        // Also if is_own_process is false but process_name is tft-strategist
+        let named_candidate = WindowCandidateMeta {
+            pid: 9984,
+            process_name: "tft-strategist".to_string(),
+            title: "TFT Strategist".to_string(),
+            class_name: "Tauri Window".to_string(),
+            is_visible: true,
+            is_iconic: false,
+            is_cloaked: false,
+            width: 1456,
+            height: 979,
+            is_own_process: false,
+        };
+        assert!(is_explicitly_excluded_process(&named_candidate.process_name));
+        assert_eq!(score_window_candidate(&named_candidate), None);
+    }
+
+    #[test]
+    fn test_case_6_hidden_or_cloaked_candidate_ignored() {
+        let hidden = WindowCandidateMeta {
+            pid: 28232,
+            process_name: "TFTClient-Win64-Shipping".to_string(),
+            title: "TFT".to_string(),
+            class_name: "UnrealWindow".to_string(),
+            is_visible: false,
+            is_iconic: false,
+            is_cloaked: false,
+            width: 1920,
+            height: 1080,
+            is_own_process: false,
+        };
+        let cloaked = WindowCandidateMeta {
+            pid: 28232,
+            process_name: "TFTClient-Win64-Shipping".to_string(),
+            title: "TFT".to_string(),
+            class_name: "UnrealWindow".to_string(),
+            is_visible: true,
+            is_iconic: false,
+            is_cloaked: true,
+            width: 1920,
+            height: 1080,
+            is_own_process: false,
+        };
+        let iconic = WindowCandidateMeta {
+            pid: 28232,
+            process_name: "TFTClient-Win64-Shipping".to_string(),
+            title: "TFT".to_string(),
+            class_name: "UnrealWindow".to_string(),
+            is_visible: true,
+            is_iconic: true,
+            is_cloaked: false,
+            width: 1920,
+            height: 1080,
+            is_own_process: false,
+        };
+
+        assert_eq!(score_window_candidate(&hidden), None);
+        assert_eq!(score_window_candidate(&cloaked), None);
+        assert_eq!(score_window_candidate(&iconic), None);
+        assert_eq!(choose_best_candidate(&[hidden, cloaked, iconic]), None);
+    }
+
+    #[test]
+    fn test_case_7_undersized_invalid_window_ignored() {
+        // Watchdog window 10x10
+        let watchdog = WindowCandidateMeta {
+            pid: 28232,
+            process_name: "TFTClient-Win64-Shipping".to_string(),
+            title: "DXGIWatchdogThreadWindow".to_string(),
+            class_name: "DXGIWatchdogThreadWindow".to_string(),
+            is_visible: true,
+            is_iconic: false,
+            is_cloaked: false,
+            width: 10,
+            height: 10,
+            is_own_process: false,
+        };
+        // Below minimum meaningful dimensions (800x600)
+        let small = WindowCandidateMeta {
+            pid: 28232,
+            process_name: "TFTClient-Win64-Shipping".to_string(),
+            title: "TFT".to_string(),
+            class_name: "UnrealWindow".to_string(),
+            is_visible: true,
+            is_iconic: false,
+            is_cloaked: false,
+            width: 799,
+            height: 599,
+            is_own_process: false,
+        };
+
+        assert_eq!(score_window_candidate(&watchdog), None);
+        assert_eq!(score_window_candidate(&small), None);
+        assert_eq!(choose_best_candidate(&[watchdog, small]), None);
+    }
+
+    #[test]
+    fn test_case_8_tft_window_closes_transitions_to_waiting() {
+        // When active candidates exist, best candidate is selected
+        let active_candidate = WindowCandidateMeta {
+            pid: 28232,
+            process_name: "TFTClient-Win64-Shipping".to_string(),
+            title: "TFT".to_string(),
+            class_name: "UnrealWindow".to_string(),
+            is_visible: true,
+            is_iconic: false,
+            is_cloaked: false,
+            width: 1920,
+            height: 1080,
+            is_own_process: false,
+        };
+        assert!(choose_best_candidate(&[active_candidate]).is_some());
+
+        // When window closes, candidate list is empty
+        let closed_candidates: [WindowCandidateMeta; 0] = [];
+        assert_eq!(choose_best_candidate(&closed_candidates), None);
+    }
+
+    #[test]
+    fn test_case_9_tft_relaunches_reacquired() {
+        let mut candidates = Vec::new();
+        assert_eq!(choose_best_candidate(&candidates), None);
+
+        // Process relaunches
+        candidates.push(WindowCandidateMeta {
+            pid: 99999,
+            process_name: "TFTClient-Win64-Shipping.exe".to_string(),
+            title: "TFT".to_string(),
+            class_name: "UnrealWindow".to_string(),
+            is_visible: true,
+            is_iconic: false,
+            is_cloaked: false,
+            width: 2560,
+            height: 1440,
+            is_own_process: false,
+        });
+
+        let reacquired = choose_best_candidate(&candidates);
+        assert!(reacquired.is_some());
+        assert_eq!(reacquired.unwrap().pid, 99999);
+        assert_eq!(reacquired.unwrap().width, 2560);
+    }
+
+    #[test]
+    fn test_case_10_detection_independent_of_lcu_scouting_mode() {
+        // Mode could be Tocker's Trials, Normal, Double Up, or Ranked — discovery is pure window & process based
+        let tockers_trials_window = WindowCandidateMeta {
+            pid: 28232,
+            process_name: "TFTClient-Win64-Shipping".to_string(),
+            title: "TFT".to_string(),
+            class_name: "UnrealWindow".to_string(),
+            is_visible: true,
+            is_iconic: false,
+            is_cloaked: false,
+            width: 1920,
+            height: 1080,
+            is_own_process: false,
+        };
+
+        // Window discovery does not know or depend on any LCU scouting flag or queue ID
+        let match_result = score_window_candidate(&tockers_trials_window);
+        assert!(match_result.is_some());
+        assert!(match_result.unwrap() >= 1200);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_live_window_discovery_if_game_running() {
+        if let Some(window) = platform::discover_tft_window() {
+            println!(
+                "Live window discovered: title='{}', process='{}', size={}x{}",
+                window.title, window.process_name, window.width, window.height
+            );
+            assert!(window.width >= 800);
+            assert!(window.height >= 600);
+            assert!(window.process_name.contains("TFTClient"));
+            assert_eq!(window.title, "TFT");
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_live_window_capture_if_game_running() {
+        if let Some(window) = platform::discover_tft_window() {
+            let handle = std::thread::spawn(move || {
+                unsafe {
+                    extern "system" {
+                        fn OpenInputDesktop(dwFlags: u32, fInherit: i32, dwDesiredAccess: u32) -> windows_sys::Win32::Foundation::HANDLE;
+                        fn CloseDesktop(hDesktop: windows_sys::Win32::Foundation::HANDLE) -> i32;
+                        fn SetThreadDesktop(hDesktop: windows_sys::Win32::Foundation::HANDLE) -> i32;
+                    }
+                    let input_desktop = OpenInputDesktop(0, 0, 0x01FF);
+                    if !input_desktop.is_null() {
+                        let _ = SetThreadDesktop(input_desktop);
+                        CloseDesktop(input_desktop);
+                    }
+                }
+
+                match platform::capture_window_raw_bgra(&window) {
+                    Ok((bgra, width, height)) => {
+                        println!("Captured {}x{} frame successfully! (bytes: {})", width, height, bgra.len());
+                        assert_eq!(width, window.width);
+                        assert_eq!(height, window.height);
+                        assert_eq!(bgra.len(), (width * height * 4) as usize);
+
+                        let preview_jpeg = create_preview_jpeg(&bgra, width, height, 640, 360, 70);
+                        assert!(preview_jpeg.is_ok(), "JPEG encoding should succeed");
+                        let jpeg = preview_jpeg.unwrap();
+                        assert!(!jpeg.is_empty());
+                        assert_eq!(jpeg[0], 0xFF);
+                        assert_eq!(jpeg[1], 0xD8);
+                    }
+                    Err(err) => {
+                        eprintln!("Capture failed with error: {}", err);
+                        panic!("Capture error: {}", err);
+                    }
+                }
+            });
+
+            handle.join().unwrap();
+        }
     }
 }
