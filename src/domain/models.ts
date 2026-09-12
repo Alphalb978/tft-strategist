@@ -772,6 +772,7 @@ export interface HomeScoreBreakdown {
   lobbyAdjustment: number;
   liveOwnedAffinity?: number;
   liveShopOpportunity?: number;
+  liveDirection?: number;
   liveSummary?: string;
   finalSafety: number;
   reliability: number;

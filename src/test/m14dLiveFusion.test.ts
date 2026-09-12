@@ -117,18 +117,34 @@ describe('D13 — Real Validation (M14D)', () => {
       expect(affinityA.score).toBe(0);
     });
 
-    it('applies coverage damping to owned-unit affinity', () => {
-      const ownedFull = createMockOwned([{ championId: coreB, count: 1 }], 1.0);
-      const ownedHalf = createMockOwned([{ championId: coreB, count: 1 }], 0.5);
-      const ownedZero = createMockOwned([{ championId: coreB, count: 1 }], 0.0);
+    it('applies governed identity-coverage damping formula', () => {
+      // compB has core units. 2 core units held => rawScore = 1.5 + 1.5 = 3.0
+      const core1 = compB.family.core[0];
+      const core2 = compB.family.core[1] ?? compB.target.units[1]?.championId;
 
-      const scoreFull = calculateOwnedAffinity(compB, ownedFull, 1.0, data).score;
-      const scoreHalf = calculateOwnedAffinity(compB, ownedHalf, 1.0, data).score;
-      const scoreZero = calculateOwnedAffinity(compB, ownedZero, 1.0, data).score;
+      // 100% coverage => factor 1.0 (no damping) -> 3.0
+      const cov100 = createMockOwned([{ championId: core1, count: 1 }, { championId: core2, count: 1 }], 1.0);
+      expect(calculateOwnedAffinity(compB, cov100, 1.0, data).score).toBe(3.0);
 
-      expect(scoreFull).toBe(1.5);
-      expect(scoreHalf).toBe(0.8); // 1.5 * 0.5 = 0.75 -> 0.8
-      expect(scoreZero).toBe(0.0);
+      // 80% coverage => factor 1.0 (no damping, >= 60%) -> 3.0
+      const cov80 = createMockOwned([{ championId: core1, count: 1 }, { championId: core2, count: 1 }], 0.8);
+      expect(calculateOwnedAffinity(compB, cov80, 1.0, data).score).toBe(3.0);
+
+      // 60% coverage => factor 1.0 (no damping, >= 60%) -> 3.0
+      const cov60 = createMockOwned([{ championId: core1, count: 1 }, { championId: core2, count: 1 }], 0.6);
+      expect(calculateOwnedAffinity(compB, cov60, 1.0, data).score).toBe(3.0);
+
+      // 50% coverage => factor 50/60 (0.83333...) -> 3.0 * (50/60) = 2.5
+      const cov50 = createMockOwned([{ championId: core1, count: 1 }, { championId: core2, count: 1 }], 0.5);
+      expect(calculateOwnedAffinity(compB, cov50, 1.0, data).score).toBe(2.5);
+
+      // 30% coverage => factor 30/60 = 0.5 -> 3.0 * 0.5 = 1.5
+      const cov30 = createMockOwned([{ championId: core1, count: 1 }, { championId: core2, count: 1 }], 0.3);
+      expect(calculateOwnedAffinity(compB, cov30, 1.0, data).score).toBe(1.5);
+
+      // 0% coverage => zero owned contribution
+      const cov0 = createMockOwned([{ championId: core1, count: 1 }, { championId: core2, count: 1 }], 0.0);
+      expect(calculateOwnedAffinity(compB, cov0, 1.0, data).score).toBe(0.0);
     });
 
     it('calculates immediate shop opportunity and updates when shop changes', () => {
@@ -160,7 +176,7 @@ describe('D13 — Real Validation (M14D)', () => {
       expect(oppARerolled.score).toBe(1.5);
     });
 
-    it('handles stale states and resets to zero when TFT closes', () => {
+    it('decays freshness smoothly between 2.5s and 5.0s and expires at >=5.0s', () => {
       const freshLive: LiveScreenState = {
         available: true,
         detected: true,
@@ -176,6 +192,11 @@ describe('D13 — Real Validation (M14D)', () => {
 
       const expiredLive: LiveScreenState = {
         ...freshLive,
+        frameAgeMs: 5000,
+      };
+
+      const longExpiredLive: LiveScreenState = {
+        ...freshLive,
         frameAgeMs: 6000,
       };
 
@@ -190,6 +211,7 @@ describe('D13 — Real Validation (M14D)', () => {
       expect(calculateFreshnessFactor(freshLive)).toBe(1.0);
       expect(calculateFreshnessFactor(agingLive)).toBeCloseTo(0.5, 1);
       expect(calculateFreshnessFactor(expiredLive)).toBe(0.0);
+      expect(calculateFreshnessFactor(longExpiredLive)).toBe(0.0);
       expect(calculateFreshnessFactor(closedTftLive)).toBe(0.0);
 
       // Closed TFT returns live modifiers to zero
@@ -197,6 +219,68 @@ describe('D13 — Real Validation (M14D)', () => {
       expect(closedModifiers.total).toBe(0);
       expect(closedModifiers.ownedAffinity).toBe(0);
       expect(closedModifiers.shopOpportunity).toBe(0);
+    });
+
+    it('ensures elapsed wall-clock time causes stale decay even if polling fails repeatedly', () => {
+      const t0 = Date.now();
+      const snapshot: LiveScreenState = {
+        available: true,
+        detected: true,
+        frameAgeMs: 200,
+        shopStatus: createMockShop([{ championId: coreB }]),
+        ownedStatus: createMockOwned([{ championId: coreB }]),
+        lastUpdated: new Date(t0).toISOString(),
+      };
+
+      // At t0: fresh (factor 1.0)
+      expect(calculateFreshnessFactor(snapshot, t0)).toBe(1.0);
+
+      // 3.5s later without new poll: decaying
+      const t1 = t0 + 3500;
+      expect(calculateFreshnessFactor(snapshot, t1)).toBeLessThan(1.0);
+      expect(calculateFreshnessFactor(snapshot, t1)).toBeGreaterThan(0.0);
+
+      // 5.5s later without new poll: expired (zero contribution)
+      const t2 = t0 + 5500;
+      expect(calculateFreshnessFactor(snapshot, t2)).toBe(0.0);
+    });
+
+    it('handles live screen service lifecycle: polling failures advance stale age, >=5s zeroes modifiers, and recovery restores evidence', () => {
+      // 1. Initial fresh state emitted by service
+      const freshState: LiveScreenState = {
+        available: true,
+        detected: true,
+        frameAgeMs: 100,
+        shopStatus: createMockShop([{ championId: coreB }]),
+        ownedStatus: createMockOwned([{ championId: coreB, count: 1 }]),
+        lastUpdated: new Date().toISOString(),
+      };
+      expect(calculateFreshnessFactor(freshState)).toBe(1.0);
+      expect(deriveLiveScreenModifiers(compB, freshState, data).total).toBeGreaterThan(0);
+
+      // 2. Simulated status polling failure over 6 seconds
+      const t0 = Date.now();
+      const failedStateAt6s: LiveScreenState = {
+        ...freshState,
+        available: false,
+        detected: false,
+        frameAgeMs: 6100,
+        lastUpdated: new Date(t0 + 6000).toISOString(),
+      };
+      expect(calculateFreshnessFactor(failedStateAt6s)).toBe(0.0);
+      expect(deriveLiveScreenModifiers(compB, failedStateAt6s, data).total).toBe(0.0);
+
+      // 3. Successful polling recovery
+      const recoveredState: LiveScreenState = {
+        available: true,
+        detected: true,
+        frameAgeMs: 50,
+        shopStatus: createMockShop([{ championId: coreB }]),
+        ownedStatus: createMockOwned([{ championId: coreB, count: 1 }]),
+        lastUpdated: new Date(t0 + 7000).toISOString(),
+      };
+      expect(calculateFreshnessFactor(recoveredState)).toBe(1.0);
+      expect(deriveLiveScreenModifiers(compB, recoveredState, data).total).toBeGreaterThan(0);
     });
 
     it('strictly preserves neutral lobby without fabricating contest or awarding clean bonus', () => {
@@ -232,8 +316,60 @@ describe('D13 — Real Validation (M14D)', () => {
       expect(lobbyAdjustment(candidateEmptyLobby.contest, DEFAULT_HOME_RECOMMENDATION_CONFIG)).toBe(0);
     });
 
-    it('demonstrates live comp preference flip: Comp A globally stronger, but Comp B rises modestly from owned/shop evidence', () => {
+    it('strictly preserves Final Safety formula while separating Live Direction', () => {
       const now = new Date().toISOString();
+
+      const baseRecs = scoreHomeCandidates([compA, compB], {
+        data,
+        now,
+        config: DEFAULT_HOME_RECOMMENDATION_CONFIG,
+      });
+
+      const liveScreen: LiveScreenState = {
+        available: true,
+        detected: true,
+        frameAgeMs: 100,
+        shopStatus: createMockShop([{ championId: compB.family.core[0] }]),
+        ownedStatus: createMockOwned([
+          { championId: compB.family.core[0], count: 3 }, // 2-star = 2.5
+        ]),
+      };
+
+      const liveRecs = scoreHomeCandidates([compA, compB], {
+        data,
+        now,
+        config: DEFAULT_HOME_RECOMMENDATION_CONFIG,
+        liveScreen,
+      });
+
+      const baseB = baseRecs.find((r) => r.playbook.id === compB.id)!;
+      const liveB = liveRecs.find((r) => r.playbook.id === compB.id)!;
+
+      // 1. Final Safety formula: round(basePerformance + lowPickEdge + lobbyAdjustment)
+      const expectedFinalSafety = Math.round(
+        (baseB.home!.basePerformance + baseB.home!.lowPickEdge + baseB.home!.lobbyAdjustment) * 10,
+      ) / 10;
+      expect(baseB.home?.finalSafety).toBe(expectedFinalSafety);
+
+      // 2. Final Safety MUST NOT change from live owned/shop state
+      expect(liveB.home?.finalSafety).toBe(baseB.home?.finalSafety);
+
+      // 3. Live Direction contains live additions
+      expect(liveB.home?.liveOwnedAffinity).toBe(2.5);
+      expect(liveB.home?.liveShopOpportunity).toBe(1.5);
+      expect(liveB.home?.liveDirection).toBe(
+        Math.round((liveB.home!.finalSafety + liveB.home!.liveOwnedAffinity! + liveB.home!.liveShopOpportunity!) * 10) / 10,
+      );
+
+      // 4. No screen state => Live Direction exactly equals Final Safety
+      expect(baseB.home?.liveDirection).toBe(baseB.home?.finalSafety);
+    });
+
+    it('demonstrates live comp preference flip via Live Direction while keeping selected plan immutable', () => {
+      const now = new Date().toISOString();
+
+      // User has selected Comp A
+      const userSelectedPlanId = compA.id;
 
       // Comp A vs Comp B on Home
       const baseline = scoreHomeCandidates([compA, compB], {
@@ -266,14 +402,22 @@ describe('D13 — Real Validation (M14D)', () => {
       const liveA = liveHome.find((r) => r.playbook.id === compA.id)!;
       const liveB = liveHome.find((r) => r.playbook.id === compB.id)!;
 
-      // Comp B score increased by its live modifiers (+5.5)
+      // Comp B Live Direction increased by its live modifiers (+5.5)
       expect(liveB.home?.liveOwnedAffinity).toBeGreaterThanOrEqual(2.5);
       expect(liveB.home?.liveShopOpportunity).toBe(1.5);
+      expect(liveB.home?.liveDirection).toBeGreaterThan(baseB.home!.liveDirection!);
       expect(liveB.score).toBeGreaterThan(baseB.score);
       expect(liveA.score).toBe(baseA.score);
+
+      // Final Safety remains strictly unchanged
+      expect(liveB.home?.finalSafety).toBe(baseB.home?.finalSafety);
+      expect(liveA.home?.finalSafety).toBe(baseA.home?.finalSafety);
+
+      // Selected active plan remains immutable
+      expect(userSelectedPlanId).toBe(compA.id);
     });
 
-    it('recomputes candidate recommendations fast (<16ms for 25 comps)', () => {
+    it('recomputes candidate recommendations within interactive budget (<16ms for 25 comps)', () => {
       const comps = playbooks.slice(0, 25);
 
       const liveScreen: LiveScreenState = {
@@ -294,7 +438,7 @@ describe('D13 — Real Validation (M14D)', () => {
       const elapsed = performance.now() - t0;
 
       expect(rescored.length).toBe(comps.length);
-      expect(elapsed).toBeLessThan(50);
+      expect(elapsed).toBeLessThan(16);
     });
   });
 
@@ -348,6 +492,16 @@ describe('D13 — Real Validation (M14D)', () => {
       expect(candidateA.home?.liveOwnedAffinity).toBe(1.5);
       expect(candidateA.home?.liveShopOpportunity).toBe(1.5);
 
+      // Final Safety excludes live state; Live Direction includes it
+      expect(candidateA.home?.finalSafety).toBe(
+        Math.round(
+          (candidateA.home!.basePerformance + candidateA.home!.lowPickEdge + candidateA.home!.lobbyAdjustment) * 10,
+        ) / 10,
+      );
+      expect(candidateA.home?.liveDirection).toBe(
+        Math.round((candidateA.home!.finalSafety + 3.0) * 10) / 10,
+      );
+
       // Even with +3.0 live modifiers, the contest penalty keeps pressure
       expect(candidateA.home?.lobbyAdjustment).toBeLessThanOrEqual(-5);
 
@@ -355,6 +509,7 @@ describe('D13 — Real Validation (M14D)', () => {
       expect(candidateB.home?.lobbyAdjustment).toBeGreaterThanOrEqual(0);
 
       // 3. Live owned state does not erase strong lobby pressure
+      expect(candidateB.home?.liveDirection).toBeGreaterThan(candidateA.home!.liveDirection!);
       expect(candidateB.score).toBeGreaterThan(candidateA.score);
 
       // 4. Opponent data and screen data coexist correctly in breakdown

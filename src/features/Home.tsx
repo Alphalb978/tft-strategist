@@ -103,15 +103,20 @@ export function humanizeExclusionReason(
 
 export function ScoreDecomposition({
   candidate,
-  isProvisional,
+  isProvisional = false,
 }: {
   candidate: RecommendationCandidate;
   isProvisional?: boolean;
 }) {
   const score = candidate.home;
   if (!score) return null;
+  const hasLive =
+    typeof score.liveDirection === 'number' &&
+    ((typeof score.liveOwnedAffinity === 'number' && score.liveOwnedAffinity > 0) ||
+      (typeof score.liveShopOpportunity === 'number' && score.liveShopOpportunity > 0));
+
   return (
-    <div className="score-decomposition" aria-label="Final Safety calculation">
+    <div className="score-decomposition" aria-label="Score calculation">
       <div className="score-row">
         <span className="term-label">Base</span>
         <strong className="term-val">{score.basePerformance.toFixed(1)}</strong>
@@ -124,22 +129,30 @@ export function ScoreDecomposition({
         <span className="term-label">+ Lobby{isProvisional ? ' (prov.)' : ''}</span>
         <strong className="term-val">{signed(score.lobbyAdjustment)}</strong>
       </div>
-      {typeof score.liveOwnedAffinity === 'number' && score.liveOwnedAffinity > 0 && (
+      <div className={`score-row final-row ${hasLive ? 'has-live' : ''}`}>
+        <span className="term-label">{isProvisional ? 'Provisional' : 'Final Safety'}</span>
+        <strong className={`term-val ${hasLive ? 'intermediate-val' : 'final-val'}`}>
+          {score.finalSafety.toFixed(1)}
+        </strong>
+      </div>
+      {hasLive && typeof score.liveOwnedAffinity === 'number' && score.liveOwnedAffinity > 0 && (
         <div className="score-row live-row">
           <span className="term-label">+ Live owned</span>
           <strong className="term-val live-val">+{score.liveOwnedAffinity.toFixed(1)}</strong>
         </div>
       )}
-      {typeof score.liveShopOpportunity === 'number' && score.liveShopOpportunity > 0 && (
+      {hasLive && typeof score.liveShopOpportunity === 'number' && score.liveShopOpportunity > 0 && (
         <div className="score-row live-row">
           <span className="term-label">+ Live shop</span>
           <strong className="term-val live-val">+{score.liveShopOpportunity.toFixed(1)}</strong>
         </div>
       )}
-      <div className="score-row final-row">
-        <span className="term-label">{isProvisional ? 'Provisional' : 'Final Safety'}</span>
-        <strong className="term-val final-val">{score.finalSafety.toFixed(1)}</strong>
-      </div>
+      {hasLive && typeof score.liveDirection === 'number' && (
+        <div className="score-row live-direction-row">
+          <span className="term-label">Live Direction</span>
+          <strong className="term-val live-direction-val">{score.liveDirection.toFixed(1)}</strong>
+        </div>
+      )}
     </div>
   );
 }
@@ -405,13 +418,20 @@ export function Home({
               </div>
               <div className="plan-stat">
                 <strong>
-                  {c.home?.finalSafety.toFixed(1) ?? c.score}
+                  {(
+                    (c.home?.liveOwnedAffinity || c.home?.liveShopOpportunity)
+                      ? (c.home?.liveDirection ?? c.home?.finalSafety ?? c.score)
+                      : (c.home?.finalSafety ?? c.score)
+                  ).toFixed(1)}
                   <small>/100</small>
                 </strong>
                 <span>
-                  {activeScan.stage === 'scanning' || activeScan.isProvisional
-                    ? 'Provisional Safety'
-                    : 'Final Safety'}
+                  {c.home?.liveDirection !== undefined &&
+                  ((c.home.liveOwnedAffinity ?? 0) > 0 || (c.home.liveShopOpportunity ?? 0) > 0)
+                    ? 'Live Direction'
+                    : activeScan.stage === 'scanning' || activeScan.isProvisional
+                      ? 'Provisional Safety'
+                      : 'Final Safety'}
                 </span>
                 <b>Score confidence: {c.confidence.level}</b>
                 {activeScan.lobby && prior && (
@@ -545,8 +565,18 @@ export function Home({
 
                   <div className="alt-card-aside">
                     <strong className="alternative-safety">
-                      {candidate.home?.finalSafety.toFixed(1) ?? candidate.score}
-                      <small> SAFETY</small>
+                      {(
+                        (candidate.home?.liveOwnedAffinity || candidate.home?.liveShopOpportunity)
+                          ? (candidate.home?.liveDirection ?? candidate.home?.finalSafety ?? candidate.score)
+                          : (candidate.home?.finalSafety ?? candidate.score)
+                      ).toFixed(1)}
+                      <small>
+                        {candidate.home?.liveDirection !== undefined &&
+                        ((candidate.home.liveOwnedAffinity ?? 0) > 0 ||
+                          (candidate.home.liveShopOpportunity ?? 0) > 0)
+                          ? ' LIVE'
+                          : ' SAFETY'}
+                      </small>
                     </strong>
 
                     <span
@@ -719,8 +749,12 @@ export function Home({
               ))}
             </div>
             <p className="fine-print">
-              #1 is the highest Final Safety. #2 and #3 use only bounded shared-core,
-              pressured-unit, and supported-style anti-redundancy.
+              {portfolio.plans[0]?.candidate.home?.liveDirection !== undefined &&
+              ((portfolio.plans[0]?.candidate.home?.liveOwnedAffinity ?? 0) > 0 ||
+                (portfolio.plans[0]?.candidate.home?.liveShopOpportunity ?? 0) > 0)
+                ? '#1 is the highest Live Direction (incorporating live board & shop intelligence).'
+                : '#1 is the highest Final Safety.'}{' '}
+              #2 and #3 use only bounded shared-core, pressured-unit, and supported-style anti-redundancy.
             </p>
           </details>
         </section>

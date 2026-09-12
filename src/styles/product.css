@@ -2537,6 +2537,27 @@ footer button {
   font-size: 14px;
   font-weight: 800;
 }
+.score-row.final-row.has-live .term-val.intermediate-val {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.score-row.live-direction-row {
+  border-top: 1px dashed var(--accent);
+  padding-top: 5px;
+  margin-top: 2px;
+}
+.score-row.live-direction-row .term-label {
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+.score-row.live-direction-row .term-val.live-direction-val {
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 800;
+}
 
 /* Contest Pills */
 .contest-pill {

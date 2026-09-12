@@ -26,9 +26,21 @@ const MAX_SHOP_OPPORTUNITY = 3.0;
 const FRESH_THRESHOLD_MS = 2500;
 const STALE_EXPIRATION_MS = 5000;
 
-export function calculateFreshnessFactor(live?: LiveScreenState | null): number {
+export function calculateFreshnessFactor(
+  live?: LiveScreenState | null,
+  nowMs: number = Date.now(),
+): number {
   if (!live || !live.available || !live.detected) return 0;
-  const age = Math.max(0, live.frameAgeMs ?? 0);
+  let age = Math.max(0, live.frameAgeMs ?? 0);
+  if (live.lastUpdated) {
+    const parsed = new Date(live.lastUpdated).getTime();
+    if (!isNaN(parsed)) {
+      const elapsedSinceUpdate = Math.max(0, nowMs - parsed);
+      if (elapsedSinceUpdate > age) {
+        age = elapsedSinceUpdate;
+      }
+    }
+  }
   if (age <= FRESH_THRESHOLD_MS) return 1.0;
   if (age >= STALE_EXPIRATION_MS) return 0.0;
   return clamp((STALE_EXPIRATION_MS - age) / (STALE_EXPIRATION_MS - FRESH_THRESHOLD_MS));
@@ -94,19 +106,22 @@ export function calculateOwnedAffinity(
     const champName = data?.champions.find((c) => c.id === id)?.name ?? id;
 
     if (isCore) {
-      // Core pieces: base 1.5 per unique unit, +1.0 for 2-star (or >=3 copies)
+      // Core pieces: base +1.5 per unique known core champion, with +1.0 additional 2★ commitment bonus (or >=3 copies)
       const starBonus = entry.stars >= 2 ? 1.0 : 0;
       rawScore += 1.5 + starBonus;
       matchedCore.push(`${champName}${entry.stars >= 2 ? ' 2★' : ''}`);
     } else if (isTarget) {
-      // Flex/target pieces: 0.75 per unique unit
+      // Flex/target pieces: +0.75 per unique known target champion
       rawScore += 0.75;
       matchedTarget.push(champName);
     }
   }
 
-  // Apply coverage damping and staleness attenuation
-  const dampedScore = Math.min(MAX_OWNED_AFFINITY, rawScore * coverage * freshnessFactor);
+  // Apply governed coverage damping:
+  // coverage >= 60% => no damping (multiplier 1.0)
+  // coverage < 60% => multiplier = coverage / 0.60
+  const coverageDamping = coverage >= 0.60 ? 1.0 : coverage / 0.60;
+  const dampedScore = Math.min(MAX_OWNED_AFFINITY, rawScore * coverageDamping * freshnessFactor);
   const rounded = Math.round(dampedScore * 10) / 10;
 
   if (rounded <= 0) {

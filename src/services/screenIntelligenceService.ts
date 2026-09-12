@@ -59,13 +59,17 @@ export function subscribeToLiveScreen(
   let active = true;
   let inFlight = false;
   let lastCaptureState: ScreenCaptureState | null = null;
+  let lastSuccessfulPollTime: number | null = null;
+  let lastObservationFrameAge: number = 0;
 
   // Subscribe to preview to track window detection and capture state
   const unsubscribeCapture = subscribeToCapturePreview(
     (_preview, captureState) => {
       lastCaptureState = captureState;
       if (captureState.state !== 'capturing') {
-        // TFT window is not open or not capturing -> return modifiers to neutral 0
+        // TFT window is not open or not capturing -> return modifiers to neutral 0 immediately
+        lastSuccessfulPollTime = null;
+        lastObservationFrameAge = 0;
         currentLiveScreenState = {
           available: false,
           detected: false,
@@ -96,6 +100,10 @@ export function subscribeToLiveScreen(
       const isAvailable = Boolean(shop.available || owned.available);
       const isDetected = Boolean(shop.detected || owned.detected);
       const frameAge = Math.max(shop.frameAgeMs ?? 0, owned.frameAgeMs ?? 0);
+      const now = Date.now();
+
+      lastSuccessfulPollTime = now;
+      lastObservationFrameAge = frameAge;
 
       currentLiveScreenState = {
         available: isAvailable,
@@ -103,12 +111,35 @@ export function subscribeToLiveScreen(
         frameAgeMs: frameAge,
         shopStatus: isAvailable && shop.available ? shop : null,
         ownedStatus: isAvailable && owned.available ? owned : null,
-        lastUpdated: new Date().toISOString(),
+        lastUpdated: new Date(now).toISOString(),
       };
 
       onUpdate(currentLiveScreenState);
     } catch {
-      // Keep previous or fallback safely
+      // Conservative degradation: polling error must never preserve fresh state forever
+      if (lastSuccessfulPollTime !== null) {
+        const elapsedSinceSuccess = Date.now() - lastSuccessfulPollTime;
+        const effectiveFrameAge = lastObservationFrameAge + elapsedSinceSuccess;
+        if (effectiveFrameAge >= 5000) {
+          // Beyond 5 seconds without trusted fresh evidence: zero out live contribution
+          currentLiveScreenState = {
+            available: false,
+            detected: false,
+            frameAgeMs: effectiveFrameAge,
+            shopStatus: null,
+            ownedStatus: null,
+            lastUpdated: new Date().toISOString(),
+          };
+        } else {
+          // Still in decay window: advance frame age by wall-clock time
+          currentLiveScreenState = {
+            ...currentLiveScreenState,
+            frameAgeMs: effectiveFrameAge,
+            lastUpdated: new Date().toISOString(),
+          };
+        }
+        onUpdate(currentLiveScreenState);
+      }
     } finally {
       inFlight = false;
     }

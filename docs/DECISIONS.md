@@ -178,22 +178,29 @@ Not needed for V1. Later evaluate only for explanation quality; it may receive s
 - Critical tests pass.
 - No protected-process functionality exists.
 
-## Live Screen Intelligence & Recommendation Fusion (M14D)
+## Live Screen Intelligence & Recommendation Fusion (M14D / M14D.1)
 
-### Bounded live modifiers
+### Invariance of Final Safety & Separation of Live Direction
+- `Final Safety` remains strictly the strategic baseline score: `Final Safety = Base Performance + Low-Pick Edge + Lobby Adjustment`. Live screen evidence must never modify `Final Safety`.
+- The screen-aware recommendation score is represented separately as `Live Direction`: `Live Direction = Final Safety + Live Owned Affinity + Live Shop Opportunity` (bounded to [0, 100]).
+- When live screen intelligence is unavailable, neutral, or stale, `Live Direction` equals `Final Safety` exactly.
+- The user's active selected plan / session remains immutable and is never auto-switched by live screen updates.
+
+### Bounded live modifiers & ownership semantics
 Live computer vision recognition provides bounded nudges to in-game recommendations:
-- Owned live adjustment: `+1.5` per core piece, `+1.0` 2-star bonus ($\ge 3$ copies), `+0.75` per target flex piece, hard cap `+8.0`.
-- Shop opportunity: `+1.5` for stable/confident core piece in current shop, `+0.5` for target flex piece, hard cap `+3.0`.
+- Owned live adjustment: `+1.5` per unique known core champion owned, with `+1.0` additional 2★ commitment bonus ($\ge 3$ copy-equivalents), `+0.75` per unique known target/flex champion owned; hard cap `+8.0`.
+- Shop opportunity: `+1.5` per unique core champion in current trusted shop, `+0.5` per target/flex champion in shop; hard cap `+3.0`.
 
 ### Neutral lobby preservation (PvE / Tocker's Trials)
 When zero opponents exist in the lobby (such as in Tocker's Trials or before live lobby resolution), `lobbyAdjustment` strictly evaluates to `0.0`. Opponent contest must never be fabricated, and missing opponents must never be rewarded as a clean-lobby bonus (`+4.0`) without verified opponent evidence coverage.
 
 ### Coverage damping & smooth temporal decay
-- Low-confidence computer vision detection is dampened: when unit identification coverage falls below $60\%$, owned affinity is scaled by `(coverage / 0.60)`.
+- Low-confidence computer vision detection is dampened: when unit identification coverage is $\ge 60\%$, factor is $1.0$ (no damping); when coverage falls below $60\%$, owned affinity is scaled by `(coverage / 0.60)`; at $0\%$ coverage, owned affinity is strictly $0$.
 - Temporal freshness is strictly bounded: full weight for $\le 2.5\text{s}$, smooth linear decay from $2.5\text{s}$ to $5.0\text{s}$, and cleanly zeroed out at $\ge 5.0\text{s}$ or whenever the TFT window is closed or obscured.
+- State age is tied to wall-clock elapsed time: polling errors or exceptions cannot preserve snapshot frame age indefinitely. Any gap of $\ge 5.0\text{s}$ without fresh successful polling drives live contributions to zero. Subsequent successful polling safely recovers live contributions.
 
 ### Pressure preservation & plan invariance
-- Live owned state cannot erase strong opponent contest pressure: heavy lobby penalties remain dominant against modest owned gains.
+- Live owned state cannot erase strong opponent contest pressure: heavy lobby penalties (e.g. $-18.0$) remain dominant against modest owned gains (e.g. $+3.0$).
 - The user's selected active plan is never silently switched by live screen updates; live rescoring provides visual guidance and alternative rankings without mutating locked decisions.
 
 ### Authoritative terminology

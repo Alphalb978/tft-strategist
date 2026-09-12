@@ -386,7 +386,15 @@ export function scoreHomeCandidates(playbooks: Playbook[], context: HomeScoringC
       const live = deriveLiveScreenModifiers(entry.playbook, context.liveScreen, context.data);
       const finalSafety = round(
         clamp(
-          entry.basePerformance + rarity + lobby + live.ownedAffinity + live.shopOpportunity,
+          entry.basePerformance + rarity + lobby,
+          0,
+          100,
+        ),
+      );
+      const liveBonus = round((live.ownedAffinity + live.shopOpportunity) * 10) / 10;
+      const liveDirection = round(
+        clamp(
+          finalSafety + liveBonus,
           0,
           100,
         ),
@@ -400,6 +408,7 @@ export function scoreHomeCandidates(playbooks: Playbook[], context: HomeScoringC
         lobbyAdjustment: lobby,
         liveOwnedAffinity: live.ownedAffinity,
         liveShopOpportunity: live.shopOpportunity,
+        liveDirection,
         liveSummary: live.summary,
         finalSafety,
         reliability: round(entry.evidence.reliability),
@@ -419,7 +428,7 @@ export function scoreHomeCandidates(playbooks: Playbook[], context: HomeScoringC
       const liveSuffix = liveReasons.length ? ` · live ${liveReasons.join(', ')}` : '';
       return {
         ...generic,
-        score: finalSafety,
+        score: liveDirection,
         home,
         reasons: [
           `Base ${home.basePerformance.toFixed(1)} · low-pick ${home.lowPickEdge >= 0 ? '+' : ''}${home.lowPickEdge.toFixed(1)} · lobby ${home.lobbyAdjustment >= 0 ? '+' : ''}${home.lobbyAdjustment.toFixed(1)}${liveSuffix}.`,
@@ -494,7 +503,9 @@ export function optimizeHomePortfolio(
   );
   const interactions = [
     {
-      label: 'Individual Final Safety',
+      label: chosen.some((e) => e.home?.liveDirection !== undefined && e.home.liveDirection !== e.home.finalSafety)
+        ? 'Individual Live Direction'
+        : 'Individual Final Safety',
       value: chosen.reduce((sum, entry) => sum + entry.score, 0),
     },
     {
