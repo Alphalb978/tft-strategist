@@ -4290,6 +4290,7 @@ dependencies = [
  "base64 0.22.1",
  "fastrand",
  "jpeg-encoder",
+ "png 0.17.16",
  "rcgen",
  "reqwest 0.12.28",
  "secrecy",

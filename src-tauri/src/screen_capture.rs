@@ -723,10 +723,37 @@ pub struct ScreenCaptureManager {
     generation: AtomicU64,
     stop_notify: (Mutex<()>, Condvar),
     sequence_counter: Mutex<u64>,
+    vision_engine: Option<Arc<crate::shop_vision::ShopVisionEngine>>,
+    board_engine: Option<Arc<crate::board_vision::BoardVisionEngine>>,
+}
+
+fn crop_and_save_shop_debug(
+    _bgra: &[u8],
+    _width: u32,
+    _height: u32,
+    status: &crate::shop_vision::ScreenShopStatus,
+    timestamp: &str,
+) {
+    let debug_dir = std::path::PathBuf::from("artifacts/debug_frames");
+    let _ = std::fs::create_dir_all(&debug_dir);
+    let clean_timestamp = timestamp.replace([':', '-', '.'], "_");
+
+    let json_path = debug_dir.join(format!("shop_meta_{}.json", clean_timestamp));
+    if let Ok(json_str) = serde_json::to_string_pretty(status) {
+        let _ = std::fs::write(&json_path, json_str);
+    }
 }
 
 impl ScreenCaptureManager {
+    #[allow(dead_code)]
     pub fn new() -> Arc<Self> {
+        Self::new_with_vision(None, None)
+    }
+
+    pub fn new_with_vision(
+        vision: Option<Arc<crate::shop_vision::ShopVisionEngine>>,
+        board: Option<Arc<crate::board_vision::BoardVisionEngine>>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             config: RwLock::new(ScreenCaptureConfig::default()),
             state: RwLock::new(ScreenCaptureState::default()),
@@ -737,6 +764,8 @@ impl ScreenCaptureManager {
             generation: AtomicU64::new(0),
             stop_notify: (Mutex::new(()), Condvar::new()),
             sequence_counter: Mutex::new(0),
+            vision_engine: vision,
+            board_engine: board,
         })
     }
 
@@ -849,6 +878,12 @@ impl ScreenCaptureManager {
             };
             *self.latest_raw_frame.write().unwrap() = None;
             *self.latest_preview.write().unwrap() = None;
+            if let Some(ref vision) = self.vision_engine {
+                vision.reset();
+            }
+            if let Some(ref board) = self.board_engine {
+                board.reset();
+            }
             // Interrupt sleeping worker thread immediately (<10ms perceived stop)
             self.stop_notify.1.notify_all();
             return state.clone();
@@ -969,6 +1004,17 @@ impl ScreenCaptureManager {
                 if self.is_running.load(Ordering::SeqCst)
                     && self.generation.load(Ordering::SeqCst) == thread_gen
                 {
+                    let shop_status = self.vision_engine.as_ref().map(|vision| {
+                        let status = vision.process_frame(&raw_buffer.bgra, raw_buffer.width, raw_buffer.height);
+                        if save_debug && status.detected {
+                            crop_and_save_shop_debug(&raw_buffer.bgra, raw_buffer.width, raw_buffer.height, &status, &timestamp_now);
+                        }
+                        status
+                    });
+                    if let Some(ref board) = self.board_engine {
+                        board.process_frame_with_shop(&raw_buffer.bgra, raw_buffer.width, raw_buffer.height, shop_status.as_ref());
+                    }
+
                     *self.latest_raw_frame.write().unwrap() = Some(raw_buffer);
 
                     let mut st = self.state.write().unwrap();
@@ -1022,6 +1068,17 @@ impl ScreenCaptureManager {
                                 if self.is_running.load(Ordering::SeqCst)
                                     && self.generation.load(Ordering::SeqCst) == thread_gen
                                 {
+                                    let shop_status = self.vision_engine.as_ref().map(|vision| {
+                                        let status = vision.process_frame(&raw_buffer.bgra, raw_buffer.width, raw_buffer.height);
+                                        if save_debug && status.detected {
+                                            crop_and_save_shop_debug(&raw_buffer.bgra, raw_buffer.width, raw_buffer.height, &status, &timestamp_now);
+                                        }
+                                        status
+                                    });
+                                    if let Some(ref board) = self.board_engine {
+                                        board.process_frame_with_shop(&raw_buffer.bgra, raw_buffer.width, raw_buffer.height, shop_status.as_ref());
+                                    }
+
                                     *self.latest_raw_frame.write().unwrap() = Some(raw_buffer);
 
                                     let elapsed_since_last = last_capture_time.elapsed().as_secs_f32();
@@ -1053,6 +1110,12 @@ impl ScreenCaptureManager {
                                 if self.is_running.load(Ordering::SeqCst)
                                     && self.generation.load(Ordering::SeqCst) == thread_gen
                                 {
+                                    if let Some(ref vision) = self.vision_engine {
+                                        vision.reset();
+                                    }
+                                    if let Some(ref board) = self.board_engine {
+                                        board.reset();
+                                    }
                                     let mut st = self.state.write().unwrap();
                                     st.state = "error".to_string();
                                     st.error_message = Some(err);
@@ -1064,6 +1127,12 @@ impl ScreenCaptureManager {
                         if self.is_running.load(Ordering::SeqCst)
                             && self.generation.load(Ordering::SeqCst) == thread_gen
                         {
+                            if let Some(ref vision) = self.vision_engine {
+                                vision.reset();
+                            }
+                            if let Some(ref board) = self.board_engine {
+                                board.reset();
+                            }
                             let mut st = self.state.write().unwrap();
                             st.state = "waiting-for-tft".to_string();
                             st.window_title = None;

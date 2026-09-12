@@ -5,9 +5,19 @@ mod external_meta;
 mod lcu;
 mod riot;
 mod screen_capture;
+pub mod shop_vision;
+pub mod board_vision;
+pub mod owned_unit_audit;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let vision_engine = shop_vision::ShopVisionEngine::new();
+    let board_engine = board_vision::BoardVisionEngine::new();
+    let capture_manager = screen_capture::ScreenCaptureManager::new_with_vision(
+        Some(vision_engine.clone()),
+        Some(board_engine.clone()),
+    );
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -61,8 +71,14 @@ pub fn run() {
                 .build(),
         )
         .manage(riot::RiotState::from_environment())
+        .manage(shop_vision::ShopVisionStateHandle {
+            inner: vision_engine,
+        })
+        .manage(board_vision::BoardVisionStateHandle {
+            inner: board_engine,
+        })
         .manage(screen_capture::ScreenCaptureStateHandle {
-            inner: screen_capture::ScreenCaptureManager::new(),
+            inner: capture_manager,
         })
         .invoke_handler(tauri::generate_handler![
             external_meta::external_meta_snapshot,
@@ -89,6 +105,15 @@ pub fn run() {
             screen_capture::screen_capture_get_preview,
             screen_capture::screen_capture_preview,
             screen_capture::screen_capture_poll,
+            shop_vision::screen_shop_status,
+            board_vision::screen_owned_units_status,
+            board_vision::start_owned_unit_audit,
+            board_vision::stop_owned_unit_audit,
+            board_vision::get_owned_unit_audit_status,
+            board_vision::clear_owned_unit_audit,
+            board_vision::export_owned_unit_audit,
+            board_vision::add_manual_audit_label,
+            board_vision::add_missed_audit_event,
         ])
         .run(tauri::generate_context!())
         .expect("Unable to start TFT Strategist");

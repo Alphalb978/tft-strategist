@@ -24,6 +24,7 @@ urlencoding = "2"
 fastrand = "2"
 jpeg-encoder = "0.7"
 base64 = "0.22"
+png = "0.17"
 
 [dev-dependencies]
 rcgen = "0.13"
