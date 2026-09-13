@@ -43,6 +43,7 @@ describe('application persistence and refresh', () => {
     const result = await loadApplication(repo);
     expect(result.source).toBe('Local cache');
     expect(result.settings).toEqual({
+      difficultyPreference: 'anything',
       personalWeight: 0.1,
       historyWindow: 10,
       riotId: '',

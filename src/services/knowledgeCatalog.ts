@@ -377,14 +377,10 @@ export function materializeStaticData(
 
   const rawParity = effectiveSourceSnap?.parityStatus;
   const parity: 'current' | 'known-stale' | 'unverified' =
-    rawPatch && (rawParity === 'current' || rawParity === 'known-stale')
-      ? rawParity
-      : 'unverified';
+    rawPatch && (rawParity === 'current' || rawParity === 'known-stale') ? rawParity : 'unverified';
 
   const patchVerified = Boolean(
-    rawPatch &&
-      provenanceStatus === 'verified' &&
-      parity === 'current',
+    rawPatch && provenanceStatus === 'verified' && parity === 'current',
   );
 
   return {
@@ -463,6 +459,11 @@ export function projectExternalSnapshot(
       name: compKnowledge?.title ?? obs.providerCompId,
       tier: (payload.tier as string) ?? null,
       style: compKnowledge?.style ?? 'Standard',
+      providerTier: (payload.providerTier as ExternalComp['providerTier']) ?? null,
+      difficulty: (payload.difficulty as ExternalComp['difficulty']) ?? 'unknown',
+      levelingStyle:
+        (payload.levelingStyle as ExternalComp['levelingStyle']) ?? compKnowledge?.style ?? null,
+      metadataProvenance: (payload.metadataProvenance as ExternalComp['metadataProvenance']) ?? {},
       units: units.length ? units : obs.positions.map((p) => p.championId),
       core,
       stats,
@@ -506,9 +507,7 @@ export function projectExternalSnapshot(
       queue: metaSnapshotRecord?.queue ?? null,
     },
     retrievedAt:
-      metaSnapshotRecord?.retrievedAt ??
-      metaSnapshot?.retrievedAt ??
-      activeMeta.activatedAt,
+      metaSnapshotRecord?.retrievedAt ?? metaSnapshot?.retrievedAt ?? activeMeta.activatedAt,
     providerUpdated: metaSnapshot?.publishedAt ?? null,
     collectorVersion: activeMeta.sourceVersion,
     normalizerVersion: activeMeta.sourceVersion,

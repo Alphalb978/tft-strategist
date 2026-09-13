@@ -8,11 +8,14 @@ import type {
 } from '../domain/models';
 import type { ApplicationState } from '../services/application';
 import { Art, Portrait } from '../components/Art';
+import { CompMetaBadges, ExternalCompLineup } from '../components/CompEnrichment';
+import type { DifficultyPreference } from '../storage/repository';
 import { LobbyPressureSummary } from '../components/LobbyPressureSummary';
 import { selectAlternativeCandidates } from '../strategy/homeScoring';
 
 export const signed = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}`;
-export const percent = (value: number | null) => (value === null ? '—' : `${Math.round(value * 100)}%`);
+export const percent = (value: number | null) =>
+  value === null ? '—' : `${Math.round(value * 100)}%`;
 
 export function formatLobbyDelta(delta: number): string {
   const rounded = Math.round(delta * 10) / 10;
@@ -141,17 +144,33 @@ export function ScoreDecomposition({
           <strong className="term-val live-val">+{score.liveOwnedAffinity.toFixed(1)}</strong>
         </div>
       )}
-      {hasLive && typeof score.liveShopOpportunity === 'number' && score.liveShopOpportunity > 0 && (
-        <div className="score-row live-row">
-          <span className="term-label">+ Live shop</span>
-          <strong className="term-val live-val">+{score.liveShopOpportunity.toFixed(1)}</strong>
-        </div>
-      )}
+      {hasLive &&
+        typeof score.liveShopOpportunity === 'number' &&
+        score.liveShopOpportunity > 0 && (
+          <div className="score-row live-row">
+            <span className="term-label">+ Live shop</span>
+            <strong className="term-val live-val">+{score.liveShopOpportunity.toFixed(1)}</strong>
+          </div>
+        )}
       {hasLive && typeof score.liveDirection === 'number' && (
         <div className="score-row live-direction-row">
           <span className="term-label">Live Direction</span>
           <strong className="term-val live-direction-val">{score.liveDirection.toFixed(1)}</strong>
         </div>
+      )}
+      {score.difficultyPreferenceAdjustment > 0 && (
+        <>
+          <div className="score-row preference-row">
+            <span className="term-label">+ Difficulty preference</span>
+            <strong className="term-val preference-val">
+              +{score.difficultyPreferenceAdjustment.toFixed(1)}
+            </strong>
+          </div>
+          <div className="score-row ranking-row">
+            <span className="term-label">Ranking score</span>
+            <strong className="term-val final-val">{candidate.score.toFixed(1)}</strong>
+          </div>
+        </>
       )}
     </div>
   );
@@ -201,6 +220,9 @@ export function Home({
   lobby,
   scanState,
   onClearLobby = () => {},
+  difficultyPreference = state.settings.difficultyPreference ?? 'anything',
+  onDifficultyPreference = () => {},
+  onSaveDifficultyDefault = () => {},
 }: {
   state: ApplicationState;
   portfolio: RecommendationPortfolio;
@@ -212,6 +234,9 @@ export function Home({
   lobby: LobbyPressure | null;
   scanState?: LobbyScanState;
   onClearLobby?: () => void;
+  difficultyPreference?: DifficultyPreference;
+  onDifficultyPreference?: (preference: DifficultyPreference) => void;
+  onSaveDifficultyDefault?: () => void;
 }) {
   const { data, assets } = state;
   const activeScan: LobbyScanState = useMemo(() => {
@@ -291,7 +316,8 @@ export function Home({
         <div>
           <Radio size={15} />
           <strong>
-            {activeScan.stage === 'detected' || (activeScan.tftDetected && activeScan.stage === 'failed')
+            {activeScan.stage === 'detected' ||
+            (activeScan.tftDetected && activeScan.stage === 'failed')
               ? 'TFT GAME DETECTED'
               : activeScan.stage === 'scanning'
                 ? `ANALYZING — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
@@ -309,7 +335,9 @@ export function Home({
             {activeScan.stage === 'detected'
               ? (activeScan.reason ?? 'Preparing lobby scan…')
               : activeScan.tftDetected && activeScan.stage === 'failed'
-                ? (activeScan.error ? `Lobby scan unavailable — ${activeScan.error}` : 'Lobby scan unavailable')
+                ? activeScan.error
+                  ? `Lobby scan unavailable — ${activeScan.error}`
+                  : 'Lobby scan unavailable'
                 : activeScan.stage === 'scanning'
                   ? `${activeScan.opponentsAnalyzed} / ${activeScan.opponentsTotal} opponents · ${activeScan.matchesProcessed} historical matches processed`
                   : activeScan.stage === 'complete'
@@ -380,6 +408,29 @@ export function Home({
           {' · '}portfolio optimized together
         </span>
       </div>
+      <div className="difficulty-preference-control" aria-label="Difficulty preference">
+        <div>
+          <strong>I feel like playing</strong>
+          <span>Small +3 ranking nudge · never changes strategic safety</span>
+        </div>
+        <div className="difficulty-options" role="group" aria-label="I feel like playing">
+          {(['easy', 'medium', 'hard', 'anything'] as const).map((value) => (
+            <button
+              key={value}
+              className={difficultyPreference === value ? 'active' : ''}
+              aria-pressed={difficultyPreference === value}
+              onClick={() => onDifficultyPreference(value)}
+            >
+              {value[0].toUpperCase() + value.slice(1)}
+            </button>
+          ))}
+        </div>
+        {difficultyPreference !== state.settings.difficultyPreference && (
+          <button className="save-preference-default" onClick={onSaveDifficultyDefault}>
+            Use as default
+          </button>
+        )}
+      </div>
       <div className="plan-grid home-plan-grid">
         {portfolio.plans.map(({ candidate: c }, index) => {
           const p = c.playbook;
@@ -401,37 +452,39 @@ export function Home({
                   <span>{p.features.style}</span>
                 </div>
                 <h2>{p.title}</h2>
+                <CompMetaBadges plan={p} external={state.external} />
                 <span className="plan-evidence">
                   {p.discovery ? 'Discovered' : 'Curated'} · {p.evidence} · {c.home?.modelVersion}
                 </span>
               </div>
               <div className="plan-lineup">
-                {p.target.units.map((unit) => {
-                  const champion = data.champions.find((entry) => entry.id === unit.championId);
-                  return champion ? (
-                    <div key={unit.championId} className={unit.slot === 'core' ? 'is-core' : ''}>
-                      <Portrait champion={champion} assets={assets} compact />
-                      <span>{champion.name}</span>
-                    </div>
-                  ) : null;
-                })}
+                <ExternalCompLineup
+                  plan={p}
+                  external={state.external}
+                  data={data}
+                  assets={assets}
+                />
               </div>
               <div className="plan-stat">
                 <strong>
-                  {(
-                    (c.home?.liveOwnedAffinity || c.home?.liveShopOpportunity)
+                  {(c.home?.difficultyPreferenceAdjustment
+                    ? c.score
+                    : c.home?.liveOwnedAffinity || c.home?.liveShopOpportunity
                       ? (c.home?.liveDirection ?? c.home?.finalSafety ?? c.score)
                       : (c.home?.finalSafety ?? c.score)
                   ).toFixed(1)}
                   <small>/100</small>
                 </strong>
                 <span>
-                  {c.home?.liveDirection !== undefined &&
-                  ((c.home.liveOwnedAffinity ?? 0) > 0 || (c.home.liveShopOpportunity ?? 0) > 0)
-                    ? 'Live Direction'
-                    : activeScan.stage === 'scanning' || activeScan.isProvisional
-                      ? 'Provisional Safety'
-                      : 'Final Safety'}
+                  {c.home?.difficultyPreferenceAdjustment
+                    ? 'Preferred Fit'
+                    : c.home?.liveDirection !== undefined &&
+                        ((c.home.liveOwnedAffinity ?? 0) > 0 ||
+                          (c.home.liveShopOpportunity ?? 0) > 0)
+                      ? 'Live Direction'
+                      : activeScan.stage === 'scanning' || activeScan.isProvisional
+                        ? 'Provisional Safety'
+                        : 'Final Safety'}
                 </span>
                 <b>Score confidence: {c.confidence.level}</b>
                 {activeScan.lobby && prior && (
@@ -459,15 +512,21 @@ export function Home({
                 <p className="card-reason">{c.reasons[1]}</p>
                 {c.contest.routeEvidence && c.contest.routeEvidence.opponentsWithRouteMatch > 0 && (
                   <div className="card-route-evidence" aria-label="Route overlap evidence">
-                    <span className={`route-badge route-badge-${(c.contest.routeEvidence.pressureLevel ?? c.contest.state).toLowerCase()}`}>
-                      {(c.contest.routeEvidence.pressureLevel ?? c.contest.state).toUpperCase()} ROUTE PRESSURE
+                    <span
+                      className={`route-badge route-badge-${(c.contest.routeEvidence.pressureLevel ?? c.contest.state).toLowerCase()}`}
+                    >
+                      {(c.contest.routeEvidence.pressureLevel ?? c.contest.state).toUpperCase()}{' '}
+                      ROUTE PRESSURE
                     </span>
                     <span>
-                      {c.contest.routeEvidence.opponentsWithRouteMatch} matching opponent{c.contest.routeEvidence.opponentsWithRouteMatch === 1 ? '' : 's'}
+                      {c.contest.routeEvidence.opponentsWithRouteMatch} matching opponent
+                      {c.contest.routeEvidence.opponentsWithRouteMatch === 1 ? '' : 's'}
                     </span>
                     {c.contest.routeEvidence.matchingOpponents.slice(0, 2).map((opp) => (
                       <small key={opp.puuid} className="route-opp-detail">
-                        {opp.riotId ?? 'Opponent'}: {opp.matchSummary ?? `${opp.stronglyMatchingBoards}/${opp.totalBoards} strong matches`}
+                        {opp.riotId ?? 'Opponent'}:{' '}
+                        {opp.matchSummary ??
+                          `${opp.stronglyMatchingBoards}/${opp.totalBoards} strong matches`}
                       </small>
                     ))}
                   </div>
@@ -488,10 +547,13 @@ export function Home({
                     </div>
                     <div className="shared-pressure-units">
                       {c.contest.pressuredUnits.slice(0, 3).map((unit, uIndex) => {
-                        const champ = data.champions.find((champion) => champion.id === unit.championId);
+                        const champ = data.champions.find(
+                          (champion) => champion.id === unit.championId,
+                        );
                         return (
                           <span key={unit.championId}>
-                            {champ?.name ?? unit.championId} {unit.equivalentHistoricalUsers.toFixed(1)}
+                            {champ?.name ?? unit.championId}{' '}
+                            {unit.equivalentHistoricalUsers.toFixed(1)}
                             {uIndex < Math.min(c.contest.pressuredUnits.length, 3) - 1 ? ' · ' : ''}
                           </span>
                         );
@@ -528,8 +590,7 @@ export function Home({
               const overallRank =
                 candidates.findIndex((entry) => entry.playbook.id === candidate.playbook.id) + 1;
               const p = candidate.playbook;
-              const hasCandidateLobby =
-                hasActiveLobby && candidate.contest.state !== 'Unavailable';
+              const hasCandidateLobby = hasActiveLobby && candidate.contest.state !== 'Unavailable';
               const lobbyAdj = candidate.home?.lobbyAdjustment;
 
               return (
@@ -546,7 +607,9 @@ export function Home({
                     {/* Compact unit portraits strip */}
                     <div className="alternative-lineup" aria-label={`${p.title} units`}>
                       {p.target.units.map((unit) => {
-                        const champion = data.champions.find((entry) => entry.id === unit.championId);
+                        const champion = data.champions.find(
+                          (entry) => entry.id === unit.championId,
+                        );
                         return champion ? (
                           <div
                             key={unit.championId}
@@ -560,15 +623,18 @@ export function Home({
                     </div>
 
                     <OutcomeLine candidate={candidate} />
-                    <p className="alternative-reason">{humanizeExclusionReason(candidate, portfolio)}</p>
+                    <p className="alternative-reason">
+                      {humanizeExclusionReason(candidate, portfolio)}
+                    </p>
                   </div>
 
                   <div className="alt-card-aside">
                     <strong className="alternative-safety">
-                      {(
-                        (candidate.home?.liveOwnedAffinity || candidate.home?.liveShopOpportunity)
-                          ? (candidate.home?.liveDirection ?? candidate.home?.finalSafety ?? candidate.score)
-                          : (candidate.home?.finalSafety ?? candidate.score)
+                      {(candidate.home?.liveOwnedAffinity || candidate.home?.liveShopOpportunity
+                        ? (candidate.home?.liveDirection ??
+                          candidate.home?.finalSafety ??
+                          candidate.score)
+                        : (candidate.home?.finalSafety ?? candidate.score)
                       ).toFixed(1)}
                       <small>
                         {candidate.home?.liveDirection !== undefined &&
@@ -680,14 +746,17 @@ export function Home({
                   Avg {candidate.home?.averagePlacement.raw?.toFixed(2) ?? '—'} · Win{' '}
                   {percent(candidate.home?.winRate.raw ?? null)} · Pick Rate {pickRate(candidate)}
                 </small>
-                {candidate.contest.routeEvidence && candidate.contest.routeEvidence.opponentsWithRouteMatch > 0 && (
-                  <small>
-                    Route history: {candidate.contest.routeEvidence.opponentsWithRouteMatch} matching opponent{candidate.contest.routeEvidence.opponentsWithRouteMatch === 1 ? '' : 's'}
-                    {candidate.contest.routeEvidence.matchingOpponents[0]
-                      ? ` · ${candidate.contest.routeEvidence.matchingOpponents[0].riotId ?? 'Top'}: ${candidate.contest.routeEvidence.matchingOpponents[0].matchSummary ?? `${candidate.contest.routeEvidence.matchingOpponents[0].stronglyMatchingBoards} matches`}`
-                      : ''}
-                  </small>
-                )}
+                {candidate.contest.routeEvidence &&
+                  candidate.contest.routeEvidence.opponentsWithRouteMatch > 0 && (
+                    <small>
+                      Route history: {candidate.contest.routeEvidence.opponentsWithRouteMatch}{' '}
+                      matching opponent
+                      {candidate.contest.routeEvidence.opponentsWithRouteMatch === 1 ? '' : 's'}
+                      {candidate.contest.routeEvidence.matchingOpponents[0]
+                        ? ` · ${candidate.contest.routeEvidence.matchingOpponents[0].riotId ?? 'Top'}: ${candidate.contest.routeEvidence.matchingOpponents[0].matchSummary ?? `${candidate.contest.routeEvidence.matchingOpponents[0].stronglyMatchingBoards} matches`}`
+                        : ''}
+                    </small>
+                  )}
                 {candidate.contest.pressuredUnits.length > 0 && (
                   <small>
                     Main pressure:{' '}
@@ -754,7 +823,8 @@ export function Home({
                 (portfolio.plans[0]?.candidate.home?.liveShopOpportunity ?? 0) > 0)
                 ? '#1 is the highest Live Direction (incorporating live board & shop intelligence).'
                 : '#1 is the highest Final Safety.'}{' '}
-              #2 and #3 use only bounded shared-core, pressured-unit, and supported-style anti-redundancy.
+              #2 and #3 use only bounded shared-core, pressured-unit, and supported-style
+              anti-redundancy.
             </p>
           </details>
         </section>

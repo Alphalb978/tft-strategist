@@ -35,9 +35,10 @@ describe('M14A.4 — SQLite Concurrency & Shared Connection Ownership', () => {
     adapter = createNodeSqliteAdapter(nativeDb);
 
     // Mock Tauri desktop runtime environment on globalThis
-    (globalThis as unknown as { window: { __TAURI_INTERNALS__: Record<string, unknown> } }).window = {
-      __TAURI_INTERNALS__: {},
-    };
+    (globalThis as unknown as { window: { __TAURI_INTERNALS__: Record<string, unknown> } }).window =
+      {
+        __TAURI_INTERNALS__: {},
+      };
 
     // Configure the shared database singleton with our test adapter
     setSharedSqlDatabaseForTesting(adapter as unknown as Database);
@@ -69,11 +70,9 @@ describe('M14A.4 — SQLite Concurrency & Shared Connection Ownership', () => {
       new Date().toISOString(),
     );
 
-    const accounts = await (repo as SqlRepository)
-      .getSqlDatabase()
-      .select<{ puuid: string }>('SELECT puuid FROM riot_accounts WHERE puuid = $1', [
-        'puuid-shared-handle-test',
-      ]);
+    const accounts = await (repo as SqlRepository).getSqlDatabase().select<{
+      puuid: string;
+    }>('SELECT puuid FROM riot_accounts WHERE puuid = $1', ['puuid-shared-handle-test']);
     expect(accounts.length).toBe(1);
     expect(accounts[0].puuid).toBe('puuid-shared-handle-test');
   });
@@ -188,16 +187,18 @@ describe('M14A.4 — SQLite Concurrency & Shared Connection Ownership', () => {
   it('7. old strategist.db upgrades/opens normally', () => {
     // Simulate an older database that only has migration 1 (schema.sql)
     const oldDb = new DatabaseSync(':memory:');
-    const schema1 = nativeDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='settings'").all();
+    const schema1 = nativeDb
+      .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='settings'")
+      .all();
     expect(schema1.length).toBeGreaterThan(0);
 
     // Apply all migrations sequentially
     applyAllMigrations(oldDb);
 
     // Verify all versioned tables exist
-    const tables = oldDb
-      .prepare("SELECT name FROM sqlite_master WHERE type='table'")
-      .all() as { name: string }[];
+    const tables = oldDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+      name: string;
+    }[];
     const tableNames = tables.map((t) => t.name);
 
     expect(tableNames).toContain('settings');
@@ -215,6 +216,7 @@ describe('M14A.4 — SQLite Concurrency & Shared Connection Ownership', () => {
   it('8. settings roundtrip works', async () => {
     const repo = await openRepository();
     const settings: Settings = {
+      difficultyPreference: 'anything',
       personalWeight: 0.08,
       historyWindow: 15,
       riotId: 'Roundtrip#EUW',
@@ -420,10 +422,7 @@ describe('M14A.4 — SQLite Concurrency & Shared Connection Ownership', () => {
       } else if (opIndex === 1) {
         // History write
         operations.push(
-          history.putCompletedMatch(
-            match(`EUW1_stress_match_${i}`),
-            new Date().toISOString(),
-          ),
+          history.putCompletedMatch(match(`EUW1_stress_match_${i}`), new Date().toISOString()),
         );
       } else if (opIndex === 2) {
         // History read

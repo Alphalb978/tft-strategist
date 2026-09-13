@@ -400,6 +400,27 @@ export function DataSettings({
           <p className="fine-print">
             Default 5%. Small samples stay neutral; established evidence has a modest influence.
           </p>
+          <label className="setting-label" htmlFor="difficulty-preference">
+            Default difficulty preference
+          </label>
+          <select
+            id="difficulty-preference"
+            value={state.settings.difficultyPreference ?? 'anything'}
+            onChange={(event) =>
+              onSave({
+                ...state.settings,
+                difficultyPreference: event.target.value as Settings['difficultyPreference'],
+              })
+            }
+          >
+            <option value="anything">Anything</option>
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+          <p className="fine-print">
+            Adds at most +3 to display ranking. Final Safety and Live Direction stay unchanged.
+          </p>
           <label className="setting-label" htmlFor="window">
             Opponent history target
           </label>

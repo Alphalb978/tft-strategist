@@ -29,6 +29,11 @@ import type {
 } from '../domain/models';
 import type { ApplicationState } from '../services/application';
 import { Art, Portrait } from '../components/Art';
+import {
+  CompMetaBadges,
+  ExternalItemPackages,
+  enrichmentForPlan,
+} from '../components/CompEnrichment';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { candidatePlannerCode, teamPlanner } from '../rules/teamPlanner';
 import { boardTraitCounts, validatePlaybook } from '../rules/validation';
@@ -259,6 +264,7 @@ export function Playbook({
     isActivePlan ? session.manualState.decisionPathEdgeIds : [],
   );
   const { data, assets } = state;
+  const trustedExternalPackages = enrichmentForPlan(plan, state.external).trustedPackages;
   const plannerCandidate = candidatePlannerCode(plan.target, data);
   const [augmentSearch, setAugmentSearch] = useState('');
   const plannerSupport = teamPlanner.supportStatus(data.version);
@@ -353,6 +359,7 @@ export function Playbook({
                 : 'SOURCE PLAYBOOK'}
           </div>
           <h1>{plan.title}</h1>
+          <CompMetaBadges plan={plan} external={state.external} />
           <p>
             {plan.subtitle}{' '}
             <span className="inline-badge">
@@ -614,9 +621,19 @@ export function Playbook({
               <div className="panel-heading">
                 <Swords size={18} />
                 <h2>Items & holders</h2>
-                <FactBadge status={plan.strategy.coverage.fields.items} />
+                <FactBadge
+                  status={
+                    trustedExternalPackages.length ? 'sourced' : plan.strategy.coverage.fields.items
+                  }
+                />
               </div>
               <div className="item-plans">
+                <ExternalItemPackages
+                  plan={plan}
+                  external={state.external}
+                  data={data}
+                  assets={assets}
+                />
                 {plan.strategy.itemHolders.map((holder) => {
                   const champion = data.champions.find((unit) => unit.id === holder.holderId);
                   if (!champion) return null;
@@ -652,7 +669,7 @@ export function Playbook({
                     </div>
                   );
                 })}
-                {!plan.strategy.itemHolders.length && (
+                {!plan.strategy.itemHolders.length && !trustedExternalPackages.length && (
                   <Unavailable
                     title="Item guidance unavailable"
                     note="Final-board evidence does not establish holders or priorities."

@@ -18,6 +18,7 @@ import {
   settingsAffectRecommendations,
   type Repository,
   type Settings,
+  type DifficultyPreference,
 } from '../storage/repository';
 import {
   createRecommendations,
@@ -88,7 +89,9 @@ export function App() {
     [attempt, setAttempt] = useState(0),
     [historyStore, setHistoryStore] = useState<HistoryStore | null>(null),
     [lobby, setLobby] = useState<LobbyPressure | null>(null),
-    [scanState, setScanState] = useState<LobbyScanState>(createIdleScanState());
+    [scanState, setScanState] = useState<LobbyScanState>(createIdleScanState()),
+    [difficultyPreferenceOverride, setDifficultyPreferenceOverride] =
+      useState<DifficultyPreference | null>(null);
   const repository = useRef<Repository | null>(null),
     main = useRef<HTMLElement | null>(null);
   const operation = useRef(false);
@@ -595,26 +598,31 @@ export function App() {
         }
         return;
       }
-      const finalLobby = await scanDiscoveredLobby(discovery.value, async (identities, requested) => {
-        return scanLobby(identities, riotProvider, historyStore, {
-          set: state.data.version.set,
-          patch: state.data.version.patch,
-          now: new Date().toISOString(),
-          historyWindow: state.settings.historyWindow,
-          currentUnitIds: state.data.champions.filter((unit) => unit.boardEligible).map((unit) => unit.id),
-          copyEligibleUnitIds: new Set(
-            state.data.champions
-              .filter((unit) => unit.boardEligible && unit.shopStatus === 'pool')
+      const finalLobby = await scanDiscoveredLobby(
+        discovery.value,
+        async (identities, requested) => {
+          return scanLobby(identities, riotProvider, historyStore, {
+            set: state.data.version.set,
+            patch: state.data.version.patch,
+            now: new Date().toISOString(),
+            historyWindow: state.settings.historyWindow,
+            currentUnitIds: state.data.champions
+              .filter((unit) => unit.boardEligible)
               .map((unit) => unit.id),
-          ),
-          staticSourceVersion: state.data.version.sourceVersion,
-          timeoutMs: 8_000,
-          requestedOpponents: requested,
-          onProgress: (prog) => {
-            setScanState((cur) => updateScanProgress(cur, prog));
-          },
-        });
-      });
+            copyEligibleUnitIds: new Set(
+              state.data.champions
+                .filter((unit) => unit.boardEligible && unit.shopStatus === 'pool')
+                .map((unit) => unit.id),
+            ),
+            staticSourceVersion: state.data.version.sourceVersion,
+            timeoutMs: 8_000,
+            requestedOpponents: requested,
+            onProgress: (prog) => {
+              setScanState((cur) => updateScanProgress(cur, prog));
+            },
+          });
+        },
+      );
       const completed = completeScan(finalLobby);
       setScanState(completed);
       if (
@@ -673,7 +681,12 @@ export function App() {
             const currentHistory = historyStoreRef.current;
             const currentRepo = repository.current;
             const currentState = stateRef.current;
-            if (!currentProvider || !currentHistory || !currentRepo || !currentState?.settings.riotId) {
+            if (
+              !currentProvider ||
+              !currentHistory ||
+              !currentRepo ||
+              !currentState?.settings.riotId
+            ) {
               return;
             }
             try {
@@ -685,7 +698,10 @@ export function App() {
               );
               let identity: import('../domain/models').RiotIdentity | null = cached;
               if (!identity) {
-                const resolved = await currentProvider.resolveAccount(parsed.gameName, parsed.tagLine);
+                const resolved = await currentProvider.resolveAccount(
+                  parsed.gameName,
+                  parsed.tagLine,
+                );
                 await currentHistory.putIdentity(resolved, new Date().toISOString());
                 identity = resolved;
               }
@@ -695,7 +711,9 @@ export function App() {
               const recentIds = await currentProvider.recentMatchIds(resolvedIdentity.puuid, 0, 5, {
                 deadlineAt: Date.now() + 8_000,
               });
-              const existingObs = await currentRepo.listPersonalMatchObservations(resolvedIdentity.puuid);
+              const existingObs = await currentRepo.listPersonalMatchObservations(
+                resolvedIdentity.puuid,
+              );
               const existingIds = new Set(existingObs.map((o) => o.matchId));
               const hasNewMatch = recentIds.some((id: string) => !existingIds.has(id));
 
@@ -776,7 +794,13 @@ export function App() {
 
   const liveHome = useMemo(() => {
     if (!state) return null;
-    return rescoreHomeRecommendations(state, lobby ?? undefined, undefined, liveScreen);
+    return rescoreHomeRecommendations(
+      state,
+      lobby ?? undefined,
+      undefined,
+      liveScreen,
+      difficultyPreferenceOverride ?? state.settings.difficultyPreference ?? 'anything',
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     lobby,
@@ -784,6 +808,8 @@ export function App() {
     state?.registry,
     state?.data,
     state?.settings.homeRecommendation,
+    state?.settings.difficultyPreference,
+    difficultyPreferenceOverride,
     state?.external,
     state?.meta,
     state?.discovery,
@@ -1002,6 +1028,20 @@ export function App() {
                       setLobby(null);
                       setScanState(createIdleScanState());
                       window.dispatchEvent(new Event('strategist-clear-lobby'));
+                    }}
+                    difficultyPreference={
+                      difficultyPreferenceOverride ??
+                      state.settings.difficultyPreference ??
+                      'anything'
+                    }
+                    onDifficultyPreference={setDifficultyPreferenceOverride}
+                    onSaveDifficultyDefault={() => {
+                      const preference =
+                        difficultyPreferenceOverride ??
+                        state.settings.difficultyPreference ??
+                        'anything';
+                      setDifficultyPreferenceOverride(null);
+                      void saveSettings({ ...state.settings, difficultyPreference: preference });
                     }}
                   />
                 ) : page === 'scout' && riotProvider && historyStore ? (

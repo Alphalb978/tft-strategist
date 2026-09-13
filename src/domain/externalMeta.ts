@@ -22,6 +22,18 @@ export const positionSchema = z.object({
   row: z.number().int().min(0).max(3),
   column: z.number().int().min(0).max(6),
 });
+export const compDifficultySchema = z.enum(['easy', 'medium', 'hard', 'unknown']);
+export type CompDifficulty = z.infer<typeof compDifficultySchema>;
+export type DifficultyPreference = CompDifficulty | 'anything';
+
+const externalFieldProvenanceSchema = z.object({
+  source: z.literal('MetaTFT'),
+  providerCompId: z.string(),
+  set: z.number().int(),
+  patch: z.string(),
+  hotfix: z.string().nullable(),
+  evidence: z.enum(['public-comp-row', 'public-definition']),
+});
 const entity = z.object({
   id: z.string(),
   name: z.string(),
@@ -55,9 +67,28 @@ export const externalSnapshotSchema = z.object({
       units: z.array(z.string()).min(1).max(28),
       core: z.array(z.string()),
       style: z.string().nullable(),
+      providerTier: z.string().nullable().optional(),
+      difficulty: compDifficultySchema.optional(),
+      levelingStyle: z.string().nullable().optional(),
+      metadataProvenance: z
+        .object({
+          tier: externalFieldProvenanceSchema.optional(),
+          difficulty: externalFieldProvenanceSchema.optional(),
+          levelingStyle: externalFieldProvenanceSchema.optional(),
+        })
+        .optional(),
       positions: z.array(positionSchema),
       packages: z.array(
-        z.object({ holder: z.string(), items: z.array(z.string()), source: z.string() }),
+        z.object({
+          holder: z.string(),
+          items: z.array(z.string()).min(1),
+          source: z.string(),
+          providerCompId: z.string().optional(),
+          set: z.number().int().optional(),
+          patch: z.string().optional(),
+          hotfix: z.string().nullable().optional(),
+          evidence: z.literal('structured-build+public-comp-row').optional(),
+        }),
       ),
     }),
   ),

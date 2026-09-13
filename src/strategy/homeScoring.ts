@@ -1,4 +1,8 @@
-import type { ExternalSnapshot } from '../domain/externalMeta';
+import type {
+  CompDifficulty,
+  DifficultyPreference,
+  ExternalSnapshot,
+} from '../domain/externalMeta';
 import { stableFingerprint } from '../domain/fingerprint';
 import type {
   AggregateMetaDataset,
@@ -19,6 +23,16 @@ import { deriveLiveScreenModifiers, type LiveScreenState } from './liveScreenFus
 export const HOME_RECOMMENDATION_MODEL_VERSION = 'contest-edge-v1';
 export const HOME_BASE_PERCENTILE_MINIMUM_POPULATION = 5;
 export const HOME_DIVERSITY_PENALTY_CAP = 2;
+export const MAX_DIFFICULTY_PREFERENCE_ADJUSTMENT = 3;
+
+export function difficultyPreferenceAdjustment(
+  preference: DifficultyPreference,
+  difficulty: CompDifficulty,
+) {
+  return preference !== 'anything' && preference === difficulty
+    ? MAX_DIFFICULTY_PREFERENCE_ADJUSTMENT
+    : 0;
+}
 
 export const DEFAULT_HOME_RECOMMENDATION_CONFIG: HomeRecommendationModelConfig = {
   top4Weight: 0.7,
@@ -282,9 +296,13 @@ export function lobbyAdjustment(
   const value = clamp(contest.value);
   const hasObservedRouteContest =
     (contest.routeEvidence?.opponentsWithRouteMatch ?? 0) > 0 ||
-    (contest.routeContest !== null && contest.routeContest !== undefined && contest.routeContest > 0);
+    (contest.routeContest !== null &&
+      contest.routeContest !== undefined &&
+      contest.routeContest > 0);
   const hasObservedUnitContest =
-    (contest.unitContest !== null && contest.unitContest !== undefined && contest.unitContest >= 0.15) ||
+    (contest.unitContest !== null &&
+      contest.unitContest !== undefined &&
+      contest.unitContest >= 0.15) ||
     (contest.pressuredUnits ?? []).some((u) => u.membership === 'core' && u.lobbyPressure >= 0.15);
 
   let nominal = 0;
@@ -316,6 +334,7 @@ export interface HomeScoringContext {
   discovery?: DiscoveryDataset | null;
   lobby?: LobbyPressure;
   liveScreen?: LiveScreenState | null;
+  difficultyPreference?: DifficultyPreference;
 }
 
 export function scoreHomeCandidates(playbooks: Playbook[], context: HomeScoringContext) {
@@ -384,21 +403,13 @@ export function scoreHomeCandidates(playbooks: Playbook[], context: HomeScoringC
       );
       const lobby = lobbyAdjustment(generic.contest, config);
       const live = deriveLiveScreenModifiers(entry.playbook, context.liveScreen, context.data);
-      const finalSafety = round(
-        clamp(
-          entry.basePerformance + rarity + lobby,
-          0,
-          100,
-        ),
-      );
+      const finalSafety = round(clamp(entry.basePerformance + rarity + lobby, 0, 100));
       const liveBonus = round((live.ownedAffinity + live.shopOpportunity) * 10) / 10;
-      const liveDirection = round(
-        clamp(
-          finalSafety + liveBonus,
-          0,
-          100,
-        ),
-      );
+      const liveDirection = round(clamp(finalSafety + liveBonus, 0, 100));
+      const difficulty =
+        relatedExternal(entry.playbook, context.external)?.comp.difficulty ?? 'unknown';
+      const preference = context.difficultyPreference ?? 'anything';
+      const preferenceAdjustment = difficultyPreferenceAdjustment(preference, difficulty);
       const home: HomeScoreBreakdown = {
         modelVersion: HOME_RECOMMENDATION_MODEL_VERSION,
         config,
@@ -410,6 +421,8 @@ export function scoreHomeCandidates(playbooks: Playbook[], context: HomeScoringC
         liveShopOpportunity: live.shopOpportunity,
         liveDirection,
         liveSummary: live.summary,
+        difficultyPreferenceAdjustment: preferenceAdjustment,
+        difficultyPreference: preference,
         finalSafety,
         reliability: round(entry.evidence.reliability),
         evidenceSource: entry.evidence.source,
@@ -428,10 +441,10 @@ export function scoreHomeCandidates(playbooks: Playbook[], context: HomeScoringC
       const liveSuffix = liveReasons.length ? ` · live ${liveReasons.join(', ')}` : '';
       return {
         ...generic,
-        score: liveDirection,
+        score: round(clamp(liveDirection + preferenceAdjustment, 0, 100)),
         home,
         reasons: [
-          `Base ${home.basePerformance.toFixed(1)} · low-pick ${home.lowPickEdge >= 0 ? '+' : ''}${home.lowPickEdge.toFixed(1)} · lobby ${home.lobbyAdjustment >= 0 ? '+' : ''}${home.lobbyAdjustment.toFixed(1)}${liveSuffix}.`,
+          `Base ${home.basePerformance.toFixed(1)} · low-pick ${home.lowPickEdge >= 0 ? '+' : ''}${home.lowPickEdge.toFixed(1)} · lobby ${home.lobbyAdjustment >= 0 ? '+' : ''}${home.lobbyAdjustment.toFixed(1)}${liveSuffix}${preferenceAdjustment ? ` · ${preference} preference +${preferenceAdjustment.toFixed(1)}` : ''}.`,
           `${home.evidenceSource} · ${Math.round(home.reliability * 100)}% reliability.`,
         ],
       };
@@ -503,7 +516,9 @@ export function optimizeHomePortfolio(
   );
   const interactions = [
     {
-      label: chosen.some((e) => e.home?.liveDirection !== undefined && e.home.liveDirection !== e.home.finalSafety)
+      label: chosen.some(
+        (e) => e.home?.liveDirection !== undefined && e.home.liveDirection !== e.home.finalSafety,
+      )
         ? 'Individual Live Direction'
         : 'Individual Final Safety',
       value: chosen.reduce((sum, entry) => sum + entry.score, 0),

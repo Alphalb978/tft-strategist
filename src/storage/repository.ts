@@ -1,9 +1,5 @@
 import type Database from '@tauri-apps/plugin-sql';
-import {
-  getSharedSqlDatabase,
-  withSqliteWriteLock,
-  withSqliteRetry,
-} from './database';
+import { getSharedSqlDatabase, withSqliteWriteLock, withSqliteRetry } from './database';
 import {
   SqlKnowledgeRepository,
   MemoryKnowledgeRepository,
@@ -35,6 +31,8 @@ import {
   DEFAULT_HOME_RECOMMENDATION_CONFIG,
   normalizeHomeRecommendationConfig,
 } from '../strategy/homeScoring';
+import type { DifficultyPreference } from '../domain/externalMeta';
+export type { DifficultyPreference } from '../domain/externalMeta';
 export interface ScreenIntelligenceSettings {
   enabled: boolean;
   saveDebugFrames: boolean;
@@ -62,6 +60,7 @@ export interface Settings {
   riotPlatform: RiotPlatform;
   homeRecommendation: HomeRecommendationModelConfig;
   screenIntelligence: ScreenIntelligenceSettings;
+  difficultyPreference?: DifficultyPreference;
 }
 export const defaultSettings: Settings = {
   personalWeight: 0.05,
@@ -70,6 +69,7 @@ export const defaultSettings: Settings = {
   riotPlatform: 'EUW1',
   homeRecommendation: DEFAULT_HOME_RECOMMENDATION_CONFIG,
   screenIntelligence: defaultScreenIntelligenceSettings,
+  difficultyPreference: 'anything',
 };
 export type SettingsInput = Partial<Omit<Settings, 'screenIntelligence'>> & {
   screenIntelligence?: Partial<ScreenIntelligenceSettings> | Record<string, unknown> | null;
@@ -122,6 +122,11 @@ export function normalizeSettings(value?: SettingsInput | null): Settings {
     riotPlatform,
     homeRecommendation: normalizeHomeRecommendationConfig(value?.homeRecommendation),
     screenIntelligence,
+    difficultyPreference: ['easy', 'medium', 'hard', 'anything'].includes(
+      String(value?.difficultyPreference),
+    )
+      ? (value!.difficultyPreference as DifficultyPreference)
+      : defaultSettings.difficultyPreference,
   };
 }
 
@@ -133,6 +138,11 @@ export function settingsAffectRecommendations(
   if (previous.personalWeight !== next.personalWeight) return true;
   if (previous.historyWindow !== next.historyWindow) return true;
   if (JSON.stringify(previous.homeRecommendation) !== JSON.stringify(next.homeRecommendation))
+    return true;
+  if (
+    (previous.difficultyPreference ?? defaultSettings.difficultyPreference) !==
+    (next.difficultyPreference ?? defaultSettings.difficultyPreference)
+  )
     return true;
   return false;
 }
@@ -309,7 +319,9 @@ export class MemoryRepository implements Repository {
     );
     const filtered = accountPuuid ? list.filter((obs) => obs.accountPuuid === accountPuuid) : list;
     return filtered.sort(
-      (a, b) => Date.parse(b.gameTimestamp) - Date.parse(a.gameTimestamp) || a.matchId.localeCompare(b.matchId),
+      (a, b) =>
+        Date.parse(b.gameTimestamp) - Date.parse(a.gameTimestamp) ||
+        a.matchId.localeCompare(b.matchId),
     );
   }
   async putPersonalMatchObservation(observation: PersonalMatchObservation) {
@@ -327,7 +339,8 @@ export class MemoryRepository implements Repository {
   }
   async listPersonalMatchCorrections(): Promise<PersonalMatchCorrection[]> {
     return (
-      (this.entries.get('personal-match-corrections') as PersonalMatchCorrection[] | undefined) ?? []
+      (this.entries.get('personal-match-corrections') as PersonalMatchCorrection[] | undefined) ??
+      []
     );
   }
   async getPersonalMatchCorrection(matchId: string): Promise<PersonalMatchCorrection | null> {
@@ -476,7 +489,9 @@ class BrowserRepository implements Repository {
     const list = (await this.get<PersonalMatchObservation[]>('personal-match-observations')) ?? [];
     const filtered = accountPuuid ? list.filter((obs) => obs.accountPuuid === accountPuuid) : list;
     return filtered.sort(
-      (a, b) => Date.parse(b.gameTimestamp) - Date.parse(a.gameTimestamp) || a.matchId.localeCompare(b.matchId),
+      (a, b) =>
+        Date.parse(b.gameTimestamp) - Date.parse(a.gameTimestamp) ||
+        a.matchId.localeCompare(b.matchId),
     );
   }
   async putPersonalMatchObservation(observation: PersonalMatchObservation) {
@@ -532,8 +547,7 @@ export class SqlRepository implements Repository {
     return {
       select: <T = unknown>(query: string, bindParams?: unknown[]) =>
         this.db.select<T[]>(query, bindParams),
-      execute: (query: string, bindParams?: unknown[]) =>
-        this.executeWrite(query, bindParams),
+      execute: (query: string, bindParams?: unknown[]) => this.executeWrite(query, bindParams),
     };
   }
   getKnowledgeRepository(): KnowledgeRepository {
@@ -720,7 +734,11 @@ export class SqlRepository implements Repository {
       }[]
     >(sql, params);
     return rows.map((row) => {
-      let parsed: { candidateCompIds?: string[]; runnerUpCompId?: string | null; units?: unknown[] } = {};
+      let parsed: {
+        candidateCompIds?: string[];
+        runnerUpCompId?: string | null;
+        units?: unknown[];
+      } = {};
       try {
         parsed = JSON.parse(row.payload);
       } catch {
@@ -738,7 +756,8 @@ export class SqlRepository implements Repository {
         queueId: row.queue_id,
         gameType: row.game_type,
         classifiedCompId: row.classified_comp_id,
-        classificationState: row.classification_state as PersonalMatchObservation['classificationState'],
+        classificationState:
+          row.classification_state as PersonalMatchObservation['classificationState'],
         classificationConfidence: row.classification_confidence,
         classificationModelVersion: row.classification_model_version,
         candidateCompIds: parsed.candidateCompIds,
@@ -860,7 +879,9 @@ export class SqlRepository implements Repository {
     );
   }
   async deletePersonalMatchCorrection(matchId: string): Promise<void> {
-    await this.executeWrite('DELETE FROM personal_match_corrections WHERE match_id = $1', [matchId]);
+    await this.executeWrite('DELETE FROM personal_match_corrections WHERE match_id = $1', [
+      matchId,
+    ]);
   }
 }
 export async function openRepository(existingDb?: Database): Promise<Repository> {
@@ -878,4 +899,3 @@ export async function openKnowledgeRepository(existingDb?: Database): Promise<Kn
   }
   return new MemoryKnowledgeRepository();
 }
-

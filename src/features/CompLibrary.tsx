@@ -16,7 +16,8 @@ import type {
   StaticData,
 } from '../domain/models';
 import type { ApplicationState } from '../services/application';
-import { Art, Portrait } from '../components/Art';
+import { Art } from '../components/Art';
+import { CompMetaBadges, ExternalCompLineup } from '../components/CompEnrichment';
 
 export type CompSort =
   | 'name'
@@ -404,21 +405,14 @@ export function CompLibrary({
               <div className="library-card-copy">
                 <span className="eyebrow">{playbook.features.style}</span>
                 <h2>{playbook.title}</h2>
+                <CompMetaBadges plan={playbook} external={state.external} />
                 <div className="catalog-roster">
-                  {playbook.target.units.map((unit) => {
-                    const champion = state.data.champions.find((c) => c.id === unit.championId);
-                    return (
-                      champion && (
-                        <div key={unit.championId}>
-                          <Portrait champion={champion} assets={state.assets} compact />
-                          <span>
-                            {champion.name}{' '}
-                            <small>{playbook.family.core.length ? unit.slot : ''}</small>
-                          </span>
-                        </div>
-                      )
-                    );
-                  })}
+                  <ExternalCompLineup
+                    plan={playbook}
+                    external={state.external}
+                    data={state.data}
+                    assets={state.assets}
+                  />
                 </div>
                 {fused.externalWeight >= 30 ? (
                   <div className="library-metrics">

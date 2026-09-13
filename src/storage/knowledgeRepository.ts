@@ -1,6 +1,7 @@
 import type { SqlDatabase } from './knowledgeDatabase';
 import type { EntityMechanics } from '../domain/intelligence';
 import type { EvidenceLabel, Verification } from '../domain/models';
+import type { ExternalComp } from '../domain/externalMeta';
 
 export interface ActiveKnowledgeVersion {
   kind: 'static' | 'curated' | 'external-meta';
@@ -121,7 +122,7 @@ export interface CompMetaObservation {
   pickRate: number | null;
   rawStats: Record<string, unknown>;
   positions: Array<{ championId: string; row: number; column: number }>;
-  itemPackages: Array<{ holder: string; items: string[]; source: string }>;
+  itemPackages: ExternalComp['packages'];
   observedAt: string;
 }
 
@@ -948,11 +949,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         row: number;
         column: number;
       }>,
-      itemPackages: JSON.parse(r.item_packages) as Array<{
-        holder: string;
-        items: string[];
-        source: string;
-      }>,
+      itemPackages: JSON.parse(r.item_packages) as ExternalComp['packages'],
       observedAt: r.observed_at,
     };
   }
@@ -1011,11 +1008,7 @@ export class SqlKnowledgeRepository implements KnowledgeRepository {
         row: number;
         column: number;
       }>,
-      itemPackages: JSON.parse(r.item_packages) as Array<{
-        holder: string;
-        items: string[];
-        source: string;
-      }>,
+      itemPackages: JSON.parse(r.item_packages) as ExternalComp['packages'],
       observedAt: r.observed_at,
     }));
   }

@@ -1,4 +1,4 @@
-import { chromium } from '@playwright/test';
+import { chromium, type Page } from '@playwright/test';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { normalizeCommunityDragon } from '../src/providers/communityDragon';
@@ -40,6 +40,53 @@ const allowed = new Map([
   ['/tft-stat-api/patch', 'patch'],
   ['/lookups/TFTSet18_latest_en_us.json', 'lookup'],
 ]);
+
+async function collectRenderedCompRows(page: Page, providerCompIds: string[]) {
+  const rows = [];
+  for (const providerCompId of providerCompIds) {
+    const row = page.locator(`#row_${providerCompId}`);
+    if (!(await row.count())) continue;
+    await row.scrollIntoViewIfNeeded().catch(() => undefined);
+    await page
+      .waitForFunction(
+        (id) => {
+          const element = document.getElementById(`row_${id}`);
+          return element && !element.classList.contains('CompRowPlaceholder');
+        },
+        providerCompId,
+        { timeout: 4000 },
+      )
+      .catch(() => undefined);
+    if ((await row.getAttribute('class'))?.includes('CompRowPlaceholder')) continue;
+    const captured = await row.evaluate((element, id) => {
+      const difficultyLabels = [
+        ...element.querySelectorAll('.CompRowTag.Easy, .CompRowTag.Medium, .CompRowTag.Hard'),
+      ]
+        .map((label) => label.textContent?.trim() ?? '')
+        .filter(Boolean);
+      const uniqueDifficultyLabels = [...new Set(difficultyLabels)];
+      return {
+        providerCompId: id,
+        tier: element.querySelector('.CompRowTierBadge')?.textContent?.trim() ?? null,
+        difficulty: uniqueDifficultyLabels.length === 1 ? uniqueDifficultyLabels[0] : null,
+        levelingStyle: element.querySelector('.CompRowTag.boost')?.textContent?.trim() ?? null,
+        packages: [...element.querySelectorAll('.Unit_Wrapper')].flatMap((holder) => {
+          const href = holder
+            .querySelector<HTMLAnchorElement>('a[href^="/units/"]')
+            ?.getAttribute('href');
+          const items = [
+            ...holder.querySelectorAll<HTMLAnchorElement>('a.Items_Wrapper[href^="/items/"]'),
+          ]
+            .map((link) => link.getAttribute('href')?.replace('/items/', '') ?? '')
+            .filter(Boolean);
+          return href && items.length ? [{ holder: href.replace('/units/', ''), items }] : [];
+        }),
+      };
+    }, providerCompId);
+    rows.push(captured);
+  }
+  return rows;
+}
 try {
   let patchResponse: Response;
   try {
@@ -98,6 +145,15 @@ try {
       })(),
     );
   });
+  const requiredResponses = ['definitions', 'stats', 'lookup'].map((requiredKey) =>
+    page.waitForResponse(
+      (response) => {
+        const url = new URL(response.url());
+        return allowed.get(url.pathname) === requiredKey && response.status() === 200;
+      },
+      { timeout: 30000 },
+    ),
+  );
   try {
     await page.goto('https://www.metatft.com/comps', {
       waitUntil: 'domcontentloaded',
@@ -111,11 +167,11 @@ try {
     );
   }
   try {
-    await page.getByText('Avg Place', { exact: true }).first().waitFor({ timeout: 20000 });
+    await Promise.all(requiredResponses);
   } catch (error) {
     throw new MetaTftRefreshError(
-      'browser-challenge',
-      'MetaTFT page was blocked or challenged · using last good snapshot',
+      'endpoint-schema',
+      'MetaTFT structured comp responses were unavailable · using last good snapshot',
       { cause: error },
     );
   }
@@ -127,6 +183,13 @@ try {
         `MetaTFT endpoint or schema changed (missing ${key}) · using last good snapshot`,
       );
   const pageText = await page.locator('body').innerText();
+  const definitionBody = captured.get('definitions')!.body as {
+    results?: { data?: { cluster_details?: Record<string, unknown> } };
+  };
+  const pageComps = await collectRenderedCompRows(
+    page,
+    Object.keys(definitionBody.results?.data?.cluster_details ?? {}),
+  );
   const raw = {
     definitions: captured.get('definitions')!.body,
     stats: captured.get('stats')!.body,
@@ -134,6 +197,7 @@ try {
     patch: captured.get('patch')!.body,
     lookup: captured.get('lookup')!.body,
     pageText,
+    pageComps,
   };
   let snapshot;
   try {

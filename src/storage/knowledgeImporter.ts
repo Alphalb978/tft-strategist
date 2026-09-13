@@ -39,22 +39,26 @@ export async function importCommunityDragonKnowledge(
     ['community-dragon', contentHash],
   );
   if (existing.length > 0) {
-    const champCount = (
-      await db.select<{ count: number }>(
-        'SELECT count(*) as count FROM champion_versions WHERE snapshot_id = $1',
-        [existing[0].snapshot_id],
-      )
-    )[0]?.count ?? 0;
+    const champCount =
+      (
+        await db.select<{ count: number }>(
+          'SELECT count(*) as count FROM champion_versions WHERE snapshot_id = $1',
+          [existing[0].snapshot_id],
+        )
+      )[0]?.count ?? 0;
     if (champCount > 0) {
       if (options?.activate !== false) {
         await activateKnowledgeSnapshot(db, 'static', existing[0].snapshot_id);
       }
       return { snapshotId: existing[0].snapshot_id, created: false, contentHash };
     }
-    await db.execute("DELETE FROM active_knowledge_snapshots WHERE snapshot_id = $1", [existing[0].snapshot_id]);
-    await db.execute('DELETE FROM source_snapshots WHERE snapshot_id = $1', [existing[0].snapshot_id]);
+    await db.execute('DELETE FROM active_knowledge_snapshots WHERE snapshot_id = $1', [
+      existing[0].snapshot_id,
+    ]);
+    await db.execute('DELETE FROM source_snapshots WHERE snapshot_id = $1', [
+      existing[0].snapshot_id,
+    ]);
   }
-
 
   const now = new Date().toISOString();
 
@@ -287,22 +291,26 @@ export async function importCuratedPlaybooks(
     ['curated-playbooks', contentHash],
   );
   if (existing.length > 0) {
-    const compCount = (
-      await db.select<{ count: number }>(
-        'SELECT count(*) as count FROM comp_versions WHERE snapshot_id = $1',
-        [existing[0].snapshot_id],
-      )
-    )[0]?.count ?? 0;
+    const compCount =
+      (
+        await db.select<{ count: number }>(
+          'SELECT count(*) as count FROM comp_versions WHERE snapshot_id = $1',
+          [existing[0].snapshot_id],
+        )
+      )[0]?.count ?? 0;
     if (compCount > 0) {
       if (options?.activate !== false) {
         await activateKnowledgeSnapshot(db, 'curated', existing[0].snapshot_id);
       }
       return { snapshotId: existing[0].snapshot_id, created: false, contentHash };
     }
-    await db.execute("DELETE FROM active_knowledge_snapshots WHERE snapshot_id = $1", [existing[0].snapshot_id]);
-    await db.execute('DELETE FROM source_snapshots WHERE snapshot_id = $1', [existing[0].snapshot_id]);
+    await db.execute('DELETE FROM active_knowledge_snapshots WHERE snapshot_id = $1', [
+      existing[0].snapshot_id,
+    ]);
+    await db.execute('DELETE FROM source_snapshots WHERE snapshot_id = $1', [
+      existing[0].snapshot_id,
+    ]);
   }
-
 
   const now = new Date().toISOString();
   const setNumber = options?.set ?? playbooks[0]?.set ?? 18;
@@ -572,6 +580,10 @@ export async function importMetaTFTExternal(
           contentFingerprint,
           JSON.stringify({
             tier: comp.tier,
+            providerTier: comp.providerTier,
+            difficulty: comp.difficulty,
+            levelingStyle: comp.levelingStyle,
+            metadataProvenance: comp.metadataProvenance,
             conditions: comp.conditions,
             packages: comp.packages,
             positions: comp.positions,

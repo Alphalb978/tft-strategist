@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import type { StaticData } from '../src/domain/models';
-import type { ExternalSnapshot } from '../src/domain/externalMeta';
+import type { CompDifficulty, ExternalSnapshot } from '../src/domain/externalMeta';
 import { entityMapper, externalHash, validateExternal } from '../src/providers/externalMeta';
 const definitions = z.object({
   results: z.object({
     data: z.object({
+      cluster_id: z.number().int(),
       tft_set: z.string(),
       cluster_details: z.record(
         z.string(),
@@ -12,6 +13,16 @@ const definitions = z.object({
           units_string: z.string(),
           name: z.array(z.object({ name: z.string() })),
           levelling: z.string().optional(),
+          builds: z
+            .array(
+              z.object({
+                cluster: z.string(),
+                unit: z.string(),
+                buildName: z.array(z.string()).min(1),
+                count: z.number().int().nonnegative(),
+              }),
+            )
+            .optional(),
         }),
       ),
     }),
@@ -20,6 +31,7 @@ const definitions = z.object({
 const stats = z.object({
   updated: z.number().optional(),
   tft_set: z.string(),
+  cluster_id: z.number().int(),
   queue_id: z.number(),
   filter_adjustment: z.object({ override_applied: z.boolean(), rank_filter: z.string() }),
   results: z.array(
@@ -30,6 +42,60 @@ const stats = z.object({
     }),
   ),
 });
+
+export interface PublicCompRow {
+  providerCompId: string;
+  tier: string | null;
+  difficulty: string | null;
+  levelingStyle: string | null;
+  packages: Array<{ holder: string; items: string[] }>;
+}
+
+export function normalizeProviderDifficulty(value: unknown): CompDifficulty {
+  if (typeof value !== 'string') return 'unknown';
+  switch (value.trim().toLowerCase()) {
+    case 'easy':
+      return 'easy';
+    case 'medium':
+      return 'medium';
+    case 'hard':
+      return 'hard';
+    default:
+      return 'unknown';
+  }
+}
+
+export function normalizeProviderTier(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toUpperCase();
+  return /^[SABCDF](?:[+-])?$/.test(normalized) ? normalized : null;
+}
+
+/** Explicit visible provider labels only. Numeric provider difficulty is intentionally ignored. */
+export function publicCompMetadata(
+  text: string,
+  providerCompId: string,
+  name: string,
+  levelingStyle: string | undefined,
+): PublicCompRow | undefined {
+  const lines = text
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const matches = lines.flatMap((line, index) => (line === name ? [index] : []));
+  if (matches.length !== 1) return undefined;
+  const index = matches[0];
+  const nearby = lines.slice(index + 1, index + 5);
+  const difficultyLabels = nearby.filter((entry) => /^(Easy|Medium|Hard)$/i.test(entry));
+  const explicitDifficulty = difficultyLabels.length === 1 ? difficultyLabels[0] : null;
+  return {
+    providerCompId,
+    tier: normalizeProviderTier(lines[index - 1]),
+    difficulty: explicitDifficulty,
+    levelingStyle: levelingStyle && nearby.includes(levelingStyle) ? levelingStyle : null,
+    packages: [],
+  };
+}
 /** Only a named, visible public row; never relabel normalized participant-board share. */
 export function publicPickRate(text: string, name: string) {
   const lines = text
@@ -57,6 +123,7 @@ export function normalizePublicComps(
     statsUrl: string;
     patch: unknown;
     pageText: string;
+    pageComps?: PublicCompRow[];
     lookup: unknown;
   },
   data: StaticData,
@@ -81,14 +148,31 @@ export function normalizePublicComps(
     })
     .parse(raw.lookup);
   const mapper = entityMapper(data.champions),
-    names = new Map<string, string>();
+    itemMapper = entityMapper(data.items),
+    names = new Map<string, string>(),
+    itemNames = new Map<string, string>();
   for (const u of lookup.units)
     if (u.name) for (const alias of [u.apiName, ...(u.assetNames ?? [])]) names.set(alias, u.name);
   for (const t of lookup.traits) names.set(t.apiName, t.name);
+  const lookupItems = z
+    .array(
+      z.object({
+        apiName: z.string(),
+        name: z.string().nullable(),
+        assetNames: z.array(z.string()).optional(),
+      }),
+    )
+    .parse((raw.lookup as { items?: unknown }).items);
+  for (const item of lookupItems)
+    if (item.name)
+      for (const alias of [item.apiName, ...(item.assetNames ?? [])])
+        itemNames.set(alias, item.name);
   const map = (id: string) => mapper(id) ?? mapper(names.get(id) ?? id);
+  const mapItem = (id: string) => itemMapper(id) ?? itemMapper(itemNames.get(id) ?? id);
   const params = new URL(raw.statsUrl).searchParams;
   if (
     parsed.tft_set !== d.tft_set ||
+    parsed.cluster_id !== d.cluster_id ||
     parsed.queue_id !== 1100 ||
     parsed.filter_adjustment.override_applied ||
     parsed.filter_adjustment.rank_filter !== params.get('rank')
@@ -96,11 +180,14 @@ export function normalizePublicComps(
     throw new Error('Public filters changed; scope cannot be assumed');
   const population = s.find((r) => r.cluster === '')?.places[0] ?? null;
   const warnings = [
-    'Definition metadata has independent scope; only roster/name/style used. Item packages, stars and definition outcomes excluded pending scope verification.',
+    'Definition metadata has independent filters. Item packages are accepted only when the structured cluster build agrees with the same rendered public comp row.',
     'Positioning unavailable in captured public response. Pick rate normalized as participant-board share, not provider per-lobby pick rate.',
     'Augment performance unavailable; no fabricated rows.',
   ];
   let unmapped = 0;
+  let packageAttempts = 0;
+  let unmappedPackages = 0;
+  const rendered = new Map((raw.pageComps ?? []).map((row) => [row.providerCompId, row]));
   const comps = s
     .filter((r) => r.cluster && r.cluster !== '-1')
     .flatMap((row) => {
@@ -127,14 +214,84 @@ export function normalizePublicComps(
         raw.pageText,
         def.name.map((n) => names.get(n.name) ?? n.name).join(' '),
       );
+      const name = def.name.map((n) => names.get(n.name) ?? n.name).join(' ');
+      const pageComp =
+        rendered.get(row.cluster) ??
+        publicCompMetadata(raw.pageText, row.cluster, name, def.levelling);
+      const difficulty = normalizeProviderDifficulty(pageComp?.difficulty);
+      const providerTier = normalizeProviderTier(pageComp?.tier);
+      const levelingStyle = pageComp?.levelingStyle ?? def.levelling ?? null;
+      const provenanceBase = {
+        source: 'MetaTFT' as const,
+        providerCompId: row.cluster,
+        set: Number(d.tft_set.replace('TFTSet', '')),
+        patch: patch.patch,
+        hotfix: patch.b_patch_version ?? null,
+      };
+      const packages: ExternalSnapshot['comps'][number]['packages'] = [];
+      for (const visible of pageComp?.packages ?? []) {
+        packageAttempts++;
+        const visibleHolder = map(visible.holder);
+        const visibleItems = visible.items.map(mapItem);
+        const matchingBuild = def.builds?.find((build) => {
+          const buildHolder = map(build.unit);
+          const buildItems = build.buildName.map(mapItem);
+          return (
+            build.cluster === row.cluster &&
+            buildHolder &&
+            buildHolder === visibleHolder &&
+            buildItems.every(Boolean) &&
+            JSON.stringify(buildItems) === JSON.stringify(visibleItems)
+          );
+        });
+        if (
+          !visibleHolder ||
+          !units.includes(visibleHolder) ||
+          visibleItems.some((id) => !id) ||
+          !matchingBuild
+        ) {
+          unmappedPackages++;
+          warnings.push(
+            `Skipped unverified item package for comp ${row.cluster}: ${visible.holder} / ${visible.items.join(', ')}`,
+          );
+          continue;
+        }
+        packages.push({
+          holder: visibleHolder,
+          items: visibleItems as string[],
+          ...provenanceBase,
+          evidence: 'structured-build+public-comp-row' as const,
+        });
+      }
       return [
         {
           id: row.cluster,
-          name: def.name.map((n) => names.get(n.name) ?? n.name).join(' '),
+          name,
           units: units as string[],
           core: [],
           ...(pickRate ? { pickRate } : {}),
-          style: def.levelling ?? null,
+          style: levelingStyle,
+          providerTier,
+          difficulty,
+          levelingStyle,
+          metadataProvenance: {
+            ...(providerTier
+              ? { tier: { ...provenanceBase, evidence: 'public-comp-row' as const } }
+              : {}),
+            ...(difficulty !== 'unknown'
+              ? { difficulty: { ...provenanceBase, evidence: 'public-comp-row' as const } }
+              : {}),
+            ...(levelingStyle
+              ? {
+                  levelingStyle: {
+                    ...provenanceBase,
+                    evidence: pageComp?.levelingStyle
+                      ? ('public-comp-row' as const)
+                      : ('public-definition' as const),
+                  },
+                }
+              : {}),
+          },
           tier: null,
           stats: {
             sampleMethod: 'provider-histogram' as const,
@@ -146,12 +303,14 @@ export function normalizePublicComps(
             playRate: population ? n / population : null,
           },
           positions: [],
-          packages: [],
+          packages,
         },
       ];
     });
   if (unmapped / Math.max(1, s.length - 1) > 0.1)
     throw new Error('Unmapped comp ratio exceeds 10%; snapshot quarantined');
+  if (packageAttempts && unmappedPackages / packageAttempts > 0.1)
+    throw new Error('Unverified item-package ratio exceeds 10%; snapshot quarantined');
   const snapshot: ExternalSnapshot = {
     manifest: {
       schemaVersion: 1,
@@ -171,8 +330,8 @@ export function normalizePublicComps(
         ? new Date(parsed.updated > 1e12 ? parsed.updated : parsed.updated * 1000).toISOString()
         : (raw.pageText.match(/Last Updated:\s*([^\n]+)/)?.[1] ?? null),
       population,
-      collectorVersion: 'public-page-v1',
-      normalizerVersion: 'comps-v1',
+      collectorVersion: 'public-page-v2',
+      normalizerVersion: 'comps-v2',
       contentHash: '',
       warnings,
     },

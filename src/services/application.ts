@@ -197,6 +197,7 @@ export function createRecommendations(
     meta: usableMeta,
     discovery: usableDiscovery,
     external,
+    difficultyPreference: settings.difficultyPreference ?? 'anything',
   });
   const catalog = registry.map((entry) => entry.playbook);
   globalEntityIndex(data, intelligence, catalog);
@@ -248,6 +249,7 @@ export function rescoreHomeRecommendations(
   lobby?: LobbyPressure,
   now = new Date().toISOString(),
   liveScreen?: LiveScreenState | null,
+  difficultyPreference = state.settings.difficultyPreference ?? 'anything',
 ) {
   return homeRecommendations(
     state.registry
@@ -264,6 +266,7 @@ export function rescoreHomeRecommendations(
       discovery: state.discovery,
       lobby,
       liveScreen,
+      difficultyPreference,
     },
   );
 }

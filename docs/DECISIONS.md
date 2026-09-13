@@ -216,3 +216,13 @@ The computer vision pipeline must be documented as **screen intelligence**, **co
 - MetaTFT refresh performs a cheap public patch preflight before opening the browser. Set, patch, schema, mapping, completeness, content-hash, timestamp, and entity checks remain fail-closed.
 - Activation is atomic. A mismatched, partial, malformed, challenged, or unavailable refresh never replaces `current.json`; the compatible snapshot remains available and prior snapshots remain archived.
 - Safe diagnostics distinguish navigation/network, endpoint/schema, browser/challenge, normalization/mapping, set mismatch, patch mismatch, and final snapshot validation without returning headers, cookies, credentials, or personal data.
+
+## MetaTFT comp-card enrichment and player difficulty preference (M12 final companion)
+
+- Provider tier, difficulty, leveling style, and item-holder packages are descriptive MetaTFT card metadata. They do not become TFT rules or measured direct-Riot outcomes.
+- Difficulty accepts only an explicit, same-card `Easy`, `Medium`, or `Hard` label from the rendered public comp row. Missing, ambiguous, or changed labels normalize to `unknown`; the provider's undocumented numeric difficulty field is intentionally ignored.
+- Provider tier accepts only an explicit `S`–`F` tier with an optional `+`/`-`. Leveling style is scoped to the same rendered comp row and never guessed from title, cost, or roster shape.
+- An item package is trusted only when the same rendered provider comp row names the holder and items, the holder is on that row's lineup, and the structured build for the same provider cluster agrees exactly. UI consumption additionally requires strong comp matching and exact set/patch/hotfix provenance.
+- Player difficulty preference is a presentation/ranking layer applied after strategic scoring: an exact known match receives `+3`; `Anything`, unknown difficulty, and non-matches receive `0`. It never subtracts points and never mutates `Final Safety` or `Live Direction`.
+- The Home choice is a session override unless the player explicitly selects **Use as default**. The persisted default lives in normal settings storage, requires no schema migration, and never changes a locked plan/session.
+- Provider-backed item packages are source-labeled in Playbook and remain separate from curated strategy coverage. Missing provider evidence continues to show honest unavailable states.

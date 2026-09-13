@@ -774,6 +774,8 @@ export interface HomeScoreBreakdown {
   liveShopOpportunity?: number;
   liveDirection?: number;
   liveSummary?: string;
+  difficultyPreferenceAdjustment: number;
+  difficultyPreference: import('./externalMeta').CompDifficulty | 'anything';
   finalSafety: number;
   reliability: number;
   evidenceSource: string;
@@ -1402,7 +1404,11 @@ export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 // M13D — Personal Match Observations & Intelligence
 // ==================================================
 
-export type CompClassificationState = 'classified' | 'ambiguous' | 'unclassified' | 'incompatible-set';
+export type CompClassificationState =
+  | 'classified'
+  | 'ambiguous'
+  | 'unclassified'
+  | 'incompatible-set';
 
 export interface NearestCompCandidate {
   compId: string;
@@ -1522,8 +1528,22 @@ export interface PersonalHistorySummary {
   currentSetTop4Rate: number | null;
   currentSetWinRate: number | null;
   mostPlayedComp: { compId: string; compTitle: string; games: number } | null;
-  strongestObserved: { compId: string; compTitle: string; games: number; averagePlacement: number; top4Rate: number; sampleConfidence: PersonalSampleConfidence } | null;
-  weakerObserved: { compId: string; compTitle: string; games: number; averagePlacement: number; top4Rate: number; sampleConfidence: PersonalSampleConfidence } | null;
+  strongestObserved: {
+    compId: string;
+    compTitle: string;
+    games: number;
+    averagePlacement: number;
+    top4Rate: number;
+    sampleConfidence: PersonalSampleConfidence;
+  } | null;
+  weakerObserved: {
+    compId: string;
+    compTitle: string;
+    games: number;
+    averagePlacement: number;
+    top4Rate: number;
+    sampleConfidence: PersonalSampleConfidence;
+  } | null;
 }
 
 export type MatchRecommendationLinkState = 'linked' | 'candidate' | 'ambiguous' | 'none';
@@ -1553,7 +1573,15 @@ export interface PersonalHistoryRefreshStatus {
 
 export interface CalibrationV2Bucket {
   key: string;
-  category: 'rank' | 'safety' | 'confidence' | 'contest' | 'pressure' | 'comp' | 'followed' | 'evidence';
+  category:
+    | 'rank'
+    | 'safety'
+    | 'confidence'
+    | 'contest'
+    | 'pressure'
+    | 'comp'
+    | 'followed'
+    | 'evidence';
   games: number;
   averagePlacement: number;
   top4Rate: number;
@@ -1567,4 +1595,3 @@ export interface CalibrationV2Evaluation {
   weightsChanged: false;
   limitations: string[];
 }
-

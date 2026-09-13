@@ -72,13 +72,16 @@ export async function bootstrapKnowledgeDatabase(
   // Clear broken empty active snapshots so clean import can succeed
   if (staticActive && !staticHealthy) {
     await db.execute("DELETE FROM active_knowledge_snapshots WHERE kind = 'static'");
-    await db.execute('DELETE FROM source_snapshots WHERE snapshot_id = $1', [staticActive.snapshot_id]);
+    await db.execute('DELETE FROM source_snapshots WHERE snapshot_id = $1', [
+      staticActive.snapshot_id,
+    ]);
   }
   if (curatedActive && !curatedHealthy) {
     await db.execute("DELETE FROM active_knowledge_snapshots WHERE kind = 'curated'");
-    await db.execute('DELETE FROM source_snapshots WHERE snapshot_id = $1', [curatedActive.snapshot_id]);
+    await db.execute('DELETE FROM source_snapshots WHERE snapshot_id = $1', [
+      curatedActive.snapshot_id,
+    ]);
   }
-
 
   // Import static knowledge first
   const staticResult = await importCommunityDragonKnowledge(db, data, { activate: true });
@@ -391,6 +394,10 @@ export function populateMemoryKnowledgeRepository(
         ),
         payload: {
           tier: comp.tier,
+          providerTier: comp.providerTier,
+          difficulty: comp.difficulty,
+          levelingStyle: comp.levelingStyle,
+          metadataProvenance: comp.metadataProvenance,
           conditions: comp.conditions,
           packages: comp.packages,
           positions: comp.positions,
