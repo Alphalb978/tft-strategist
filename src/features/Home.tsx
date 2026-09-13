@@ -370,6 +370,30 @@ export function Home({
                           : (activeScan.reason ?? 'Waiting for a TFT game…')}
           </span>
         </div>
+        {activeScan.discoveryDiagnostics && (
+          <details aria-label="Lobby discovery diagnostics">
+            <summary>Connection diagnostics</summary>
+            <p>
+              Spectator: {activeScan.discoveryDiagnostics.spectator} | League Client:{' '}
+              {activeScan.discoveryDiagnostics.leagueClient} | LCU HTTPS:{' '}
+              {activeScan.discoveryDiagnostics.lcuHttps} | Gameflow:{' '}
+              {activeScan.discoveryDiagnostics.gameflow}
+            </p>
+            <p>
+              {activeScan.discoveryDiagnostics.participantsDiscovered} participants |{' '}
+              {activeScan.discoveryDiagnostics.lcuSummonersResolved} local summoners |{' '}
+              {activeScan.discoveryDiagnostics.publicRiotIdentitiesResolved} public identities
+            </p>
+            <p>
+              {Object.entries(activeScan.discoveryDiagnostics.timingsMs ?? {})
+                .map(([stage, ms]) => `${stage}: ${ms} ms`)
+                .join(' | ')}
+            </p>
+            {activeScan.discoveryDiagnostics.budgetExhaustedAt && (
+              <p>Budget exhausted: {activeScan.discoveryDiagnostics.budgetExhaustedAt}</p>
+            )}
+          </details>
+        )}
         {activeScan.stage === 'scanning' && (
           <strong className="scan-impact provisional">
             Recommendations provisional — wait before locking a route

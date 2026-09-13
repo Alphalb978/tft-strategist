@@ -213,11 +213,14 @@ export function createRecommendations(
   };
 }
 
-function currentStaticSnapshotUsable(value: unknown, settings: Settings): value is StaticData {
+export function currentStaticSnapshotUsable(
+  value: unknown,
+  settings: Settings,
+): value is StaticData {
   if (!isStaticData(value)) return false;
-  const activePatch = loadPlaybooks(value)[0]?.patch;
-  if (!activePatch || value.version.patch !== activePatch) return false;
   try {
+    const activePatch = loadPlaybooks(value)[0]?.patch;
+    if (!activePatch || value.version.patch !== activePatch) return false;
     return createRecommendations(value, settings).playbooks.length > 0;
   } catch {
     return false;
@@ -479,17 +482,29 @@ export async function loadApplication(
     )
       activeSession = await persistCompatibility(repository, activeSession, compatibility);
   }
-  if (cached && !cacheUsable) {
+  if (cached && !cacheUsable)
     result.notices.push('Incompatible cache ignored; using the bundled snapshot.');
-    // A validated bundled snapshot safely supersedes the rejected value. Persisting it through the
-    // existing cache path prevents the same obsolete cache from producing noise on every launch.
-    // If persistence fails, the notice remains honest and the next launch retries the replacement.
-    if (source === 'Bundled snapshot') {
-      try {
-        await repository.set('static', data);
-      } catch {
-        /* The in-memory bundled snapshot remains safe for this launch. */
-      }
+  if (source === 'Bundled snapshot') {
+    let phase = 'write';
+    try {
+      await repository.set('static', data);
+      phase = 'read';
+      const persisted = await repository.get<StaticData>('static');
+      phase = 'compatibility-revalidation';
+      if (
+        !currentStaticSnapshotUsable(persisted, settings) ||
+        persisted.version.sourceVersion !== data.version.sourceVersion ||
+        staticSetCompatibilityFingerprint(persisted) !== staticSetCompatibilityFingerprint(data)
+      )
+        throw new Error('incompatible');
+    } catch {
+      // Never log the raw exception: native errors can contain SQL parameters or private payloads.
+      console.warn(
+        `Static cache replacement failed: ${repository.mode === 'SQLite' ? 'sqlite' : 'repository'}-${phase}`,
+      );
+      result.notices.push(
+        'Static cache could not be saved and verified; bundled data is safe for this launch.',
+      );
     }
   }
   return {

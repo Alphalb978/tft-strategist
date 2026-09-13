@@ -1,5 +1,6 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod storage_batch;
 mod credentials;
 mod external_meta;
 mod lcu;
@@ -81,6 +82,7 @@ pub fn run() {
             inner: capture_manager,
         })
         .invoke_handler(tauri::generate_handler![
+            storage_batch::sqlite_write_batch,
             external_meta::external_meta_snapshot,
             external_meta::external_meta_history,
             external_meta::refresh_external_meta,

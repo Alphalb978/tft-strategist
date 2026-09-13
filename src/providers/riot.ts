@@ -28,6 +28,7 @@ export type RiotErrorCode =
   | 'unavailable';
 
 export type SpectatorLobbyError =
+  | 'timed-out'
   | 'unsupported'
   | 'not-in-game'
   | 'forbidden'
@@ -617,6 +618,7 @@ export class NativeRiotProvider implements RiotProvider {
       return { ok: true, value: parsed.data.participants.map(normalizeDiscoveredParticipant) };
     } catch (error) {
       const safe = error instanceof RiotProviderError ? error : sanitizeNativeRiotError(error);
+      if (safe.code === 'deadline') return { ok: false, error: 'timed-out' };
       if (safe.code === 'not-found') return { ok: false, error: 'not-in-game' };
       if (safe.status === 403) return { ok: false, error: 'forbidden' };
       if (safe.code === 'rate-limited') return { ok: false, error: 'rate-limited' };

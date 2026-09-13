@@ -1,3 +1,4 @@
+import { transactionalSqlAdapter } from './sqlBatch';
 import type { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 
@@ -65,7 +66,7 @@ import type Database from '@tauri-apps/plugin-sql';
 export async function openKnowledgeDatabase(existingDb?: Database): Promise<SqlDatabase | null> {
   if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
     const db = existingDb ?? (await getSharedSqlDatabase());
-    return db as unknown as SqlDatabase;
+    return transactionalSqlAdapter(db, (query, params) => db.execute(query, params));
   }
   return null;
 }

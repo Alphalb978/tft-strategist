@@ -1,0 +1,29 @@
+{
+  "case": "injected hung Spectator with real native LCU",
+  "elapsed": 2985,
+  "ok": true,
+  "diagnostics": {
+    "spectator": "timed-out",
+    "leagueClient": "connected",
+    "lcuHttps": "connected",
+    "gameflow": "ranked-tft-detected",
+    "participantsDiscovered": 8,
+    "participantsWithPuuid": 8,
+    "lcuSummonersResolved": 8,
+    "lcuSummonerResolutionFailures": 0,
+    "publicRiotIdentitiesResolved": 8,
+    "publicIdentityResolutionFailures": 0,
+    "opponentsUsable": 7,
+    "riotIdsResolved": 8,
+    "stage": "identity-bridge",
+    "timingsMs": {
+      "account": 8,
+      "spectator": 2514,
+      "lcu-gameflow": 48,
+      "identity-bridge": 415
+    },
+    "spectatorAttempted": true,
+    "budgetExhaustedAt": "spectator",
+    "leagueClientAttempted": true
+  }
+}

@@ -3,7 +3,6 @@ import type { RiotIdentity } from '../domain/models';
 import { FixtureRiotProvider, type LeagueClientLobby, type RiotProvider } from '../providers/riot';
 import {
   discoverCurrentLobby,
-  LobbyDiscoveryTimeoutError,
   scanDiscoveredLobby,
   type CurrentLobbyDiscoveryValue,
 } from '../services/currentLobby';
@@ -464,9 +463,123 @@ describe('bounded automatic current-lobby discovery', () => {
 
     await expect(
       discoverCurrentLobby(source, store, 'Strategist#TFT', 'EUW1', { timeoutMs: 10 }),
-    ).rejects.toBeInstanceOf(LobbyDiscoveryTimeoutError);
+    ).resolves.toMatchObject({ ok: false, diagnostics: { budgetExhaustedAt: expect.any(String) } });
     await expect(
       discoverCurrentLobby(source, store, 'Strategist#TFT', 'EUW1', { timeoutMs: 100 }),
     ).resolves.toMatchObject({ ok: false });
+  });
+});
+
+describe('independent discovery budgets', () => {
+  it.each(['spectator', 'account'] as const)(
+    'a hung %s leaves LCU its native budget',
+    async (slowStage) => {
+      vi.useFakeTimers();
+      try {
+        const source = provider();
+        const store = new MemoryHistoryStore();
+        if (slowStage === 'spectator') await store.putIdentity(own, new Date().toISOString());
+        vi.spyOn(source, 'connectionStatus').mockResolvedValue({
+          keyDetected: true,
+          source: 'native-environment',
+        });
+        if (slowStage === 'spectator')
+          vi.spyOn(source, 'lobby').mockImplementation(() => new Promise(() => {}));
+        else vi.spyOn(source, 'resolveAccount').mockImplementationOnce(() => new Promise(() => {}));
+        const gameflow = vi
+          .spyOn(
+            source as RiotProvider & Required<Pick<RiotProvider, 'leagueClientLobby'>>,
+            'leagueClientLobby',
+          )
+          .mockImplementation(async (options) => {
+            expect(options!.deadlineAt! - Date.now()).toBeGreaterThanOrEqual(3_000);
+            return { ok: true, value: tftLobby(localParticipants) };
+          });
+        mockLcuSummoners(source);
+        const pending = discoverCurrentLobby(source, store, 'Strategist#TFT', 'EUW1');
+        await vi.advanceTimersByTimeAsync(5_000);
+        const result = await pending;
+        expect(gameflow).toHaveBeenCalledOnce();
+        expect(result).toMatchObject({
+          ok: true,
+          value: { source: 'league-client', opponents: expect.any(Array) },
+        });
+        if (result.ok && slowStage === 'spectator')
+          expect(result.value.diagnostics.spectator).toBe('timed-out');
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('settles before the outer watchdog, retaining partial identity counts and permitting retry', async () => {
+    vi.useFakeTimers();
+    try {
+      const source = provider();
+      const store = new MemoryHistoryStore();
+      await store.putIdentity(own, new Date().toISOString());
+      vi.spyOn(source as RiotProvider, 'lobby').mockResolvedValue({
+        ok: false,
+        error: 'forbidden',
+      });
+      vi.spyOn(source, 'leagueClientLobby').mockResolvedValue({
+        ok: true,
+        value: tftLobby(localParticipants),
+      });
+      mockLcuSummoners(source);
+      const resolve = vi
+        .spyOn(source, 'resolveAccount')
+        .mockImplementation(() => new Promise(() => {}));
+      let finished = false;
+      const pending = discoverCurrentLobby(source, store, 'Strategist#TFT', 'EUW1').then((r) => {
+        finished = true;
+        return r;
+      });
+      await vi.advanceTimersByTimeAsync(14_749);
+      expect(finished).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const result = await pending;
+      expect(result).toMatchObject({
+        ok: false,
+        diagnostics: {
+          budgetExhaustedAt: 'identity-bridge',
+          leagueClient: 'connected',
+          participantsDiscovered: 8,
+          lcuSummonersResolved: 8,
+          publicRiotIdentitiesResolved: 1,
+        },
+      });
+      expect(JSON.stringify(result)).not.toMatch(/Authorization|password|self-puuid|localPuuid/);
+      expect(vi.getTimerCount()).toBe(0);
+      resolve.mockRestore();
+      await expect(
+        discoverCurrentLobby(source, store, 'Strategist#TFT', 'EUW1'),
+      ).resolves.toMatchObject({ ok: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+it('preserves a native Spectator deadline result and still uses LCU', async () => {
+  const source = provider();
+  vi.spyOn(source as RiotProvider, 'lobby').mockResolvedValue({ ok: false, error: 'timed-out' });
+  vi.spyOn(source, 'leagueClientLobby').mockResolvedValue({
+    ok: true,
+    value: tftLobby(localParticipants),
+  });
+  mockLcuSummoners(source);
+  const result = await discoverCurrentLobby(
+    source,
+    new MemoryHistoryStore(),
+    'Strategist#TFT',
+    'EUW1',
+  );
+  expect(result).toMatchObject({
+    ok: true,
+    value: {
+      diagnostics: { spectator: 'timed-out', leagueClient: 'connected', opponentsUsable: 7 },
+    },
   });
 });

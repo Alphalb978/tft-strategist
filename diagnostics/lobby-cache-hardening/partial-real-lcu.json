@@ -1,0 +1,28 @@
+{
+  "case": "one injected local summoner failure with otherwise real native providers",
+  "elapsed": 342,
+  "ok": true,
+  "diagnostics": {
+    "spectator": "403",
+    "leagueClient": "connected",
+    "lcuHttps": "connected",
+    "gameflow": "ranked-tft-detected",
+    "participantsDiscovered": 8,
+    "participantsWithPuuid": 8,
+    "lcuSummonersResolved": 7,
+    "lcuSummonerResolutionFailures": 1,
+    "publicRiotIdentitiesResolved": 7,
+    "publicIdentityResolutionFailures": 0,
+    "opponentsUsable": 6,
+    "riotIdsResolved": 7,
+    "stage": "identity-bridge",
+    "timingsMs": {
+      "account": 8,
+      "spectator": 84,
+      "lcu-gameflow": 39,
+      "identity-bridge": 211
+    },
+    "spectatorAttempted": true,
+    "leagueClientAttempted": true
+  }
+}

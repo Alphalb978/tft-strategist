@@ -247,9 +247,11 @@ export function RiotScouting({
     onLobby(null);
     onScanStateChange?.(discoveringScan());
     setOrigin('');
+    setDiscoveryDiagnostics(null);
     setWorking('discovery');
     setLobbyStatus('Finding…');
     setMessage('Finding current TFT lobby…');
+    let historyStarted = false;
     try {
       const discovery = await discoverCurrentLobby(
         provider,
@@ -263,7 +265,9 @@ export function RiotScouting({
         const notInGame =
           discovery.diagnostics.gameflow === 'no-tft-session' ||
           discovery.diagnostics.gameflow === 'no-active-tft-session' ||
-          discovery.diagnostics.spectator === '404';
+          (discovery.diagnostics.spectator === '404' &&
+            discovery.diagnostics.leagueClient !== 'connected' &&
+            !discovery.diagnostics.budgetExhaustedAt);
         setLobbyStatus(
           notInGame
             ? 'Not in game'
@@ -272,7 +276,10 @@ export function RiotScouting({
               ? 'Unsupported'
               : 'Unavailable',
         );
-        onScanStateChange?.(notInGame ? notInGameScan(discovery.error) : failScan(discovery.error));
+        onScanStateChange?.({
+          ...(notInGame ? notInGameScan(discovery.error) : failScan(discovery.error)),
+          discoveryDiagnostics: discovery.diagnostics,
+        });
         return;
       }
       setDiscoveryDiagnostics(discovery.value.diagnostics);
@@ -286,6 +293,7 @@ export function RiotScouting({
         `${discovery.value.opponents.length}/7 opponents detected · Source: ${source}${discovery.value.partialIdentities ? ' · partial identities' : ''}`,
       );
       setMessage('Loading recent history…');
+      historyStarted = true;
       await scanDiscoveredLobby(discovery.value, runScan);
       setLobbyStatus('Available');
     } catch (error) {
@@ -294,7 +302,9 @@ export function RiotScouting({
       setMessage(
         (error instanceof RiotProviderError
           ? `${error.message} `
-          : 'Lobby scan could not finish. ') +
+          : historyStarted
+            ? 'Opponent history scan could not finish. '
+            : 'Lobby discovery could not finish. ') +
           'Retry or use manual opponents; cached plans still work.',
       );
     } finally {
@@ -472,6 +482,14 @@ export function RiotScouting({
       {discoveryDiagnostics && (
         <div className="lobby-discovery-diagnostics" aria-label="Lobby discovery diagnostics">
           <span>
+            {discoveryDiagnostics.budgetExhaustedAt && (
+              <span>Budget exhausted: {discoveryDiagnostics.budgetExhaustedAt} � </span>
+            )}
+            {Object.entries(discoveryDiagnostics.timingsMs ?? {}).map(([stage, ms]) => (
+              <span key={stage}>
+                {stage}: {ms} ms �{' '}
+              </span>
+            ))}
             Spectator TFT <strong>{discoveryLabel(discoveryDiagnostics.spectator)}</strong>
           </span>
           <span>

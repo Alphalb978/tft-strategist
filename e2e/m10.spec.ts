@@ -132,3 +132,38 @@ test('M10 failed automatic rescan clears previous active lobby evidence', async 
   await expect(page.locator('.lobby-pressure-summary')).toHaveCount(0);
   await expect(page.getByText('No active lobby pressure. Adjustments are neutral.')).toBeVisible();
 });
+
+test('discovery timeout clears working state and stale evidence, then retry succeeds', async ({
+  page,
+}) => {
+  await page.goto('/?riot-fixture=1');
+  await page.getByRole('button', { name: 'Scouting', exact: true }).click();
+  await page.getByRole('button', { name: 'Scan current lobby', exact: true }).click();
+  await expect(page.getByText('7/7 profiles')).toBeVisible();
+  await page.evaluate(async () => {
+    const modulePath = '/src/providers/riot.ts';
+    const { FixtureRiotProvider } = await import(/* @vite-ignore */ modulePath);
+    const original = FixtureRiotProvider.prototype.leagueClientLobby;
+    const originalLobby = FixtureRiotProvider.prototype.lobby;
+    FixtureRiotProvider.prototype.lobby = async () => ({ ok: false, error: 'forbidden' });
+    FixtureRiotProvider.prototype.leagueClientLobby = function () {
+      FixtureRiotProvider.prototype.leagueClientLobby = original;
+      FixtureRiotProvider.prototype.lobby = originalLobby;
+      return new Promise(() => {});
+    };
+  });
+  await page.getByRole('button', { name: 'Scan current lobby', exact: true }).click();
+  await expect(page.locator('.riot-message')).toContainText('Lobby discovery timed out', {
+    timeout: 10_000,
+  });
+  await expect(page.getByLabel('Lobby discovery diagnostics')).toContainText('lcu-gameflow');
+  await expect(page.getByRole('button', { name: 'Scan current lobby', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Resolve & scan history' })).toBeEnabled();
+  await expect(page.locator('.scan-progress')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Your plans', exact: true }).click();
+  await expect(page.getByText('Recommendations provisional', { exact: false })).toHaveCount(0);
+  await expect(page.getByText('No active lobby pressure. Adjustments are neutral.')).toBeVisible();
+  await page.getByRole('button', { name: 'Scouting', exact: true }).click();
+  await page.getByRole('button', { name: 'Scan current lobby', exact: true }).click();
+  await expect(page.getByText('7/7 profiles')).toBeVisible();
+});

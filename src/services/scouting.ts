@@ -817,7 +817,7 @@ export async function scanLobby(
       });
     }
     if (signal.aborted)
-      errors.push('Time budget reached; cached and partial results were retained.');
+      errors.push('Opponent history time budget reached; cached and partial results were retained.');
     const metricEnd = await provider.metrics();
     telemetry.requestsAttempted = Math.max(
       0,

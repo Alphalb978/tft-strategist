@@ -1,3 +1,4 @@
+import { transactionalSqlAdapter, writeSqlBatch } from './sqlBatch';
 import type Database from '@tauri-apps/plugin-sql';
 import { getSharedSqlDatabase, withSqliteWriteLock, withSqliteRetry } from './database';
 import {
@@ -544,16 +545,20 @@ export class SqlRepository implements Repository {
   }
 
   getSqlDatabase(): SqlDatabase {
-    return {
-      select: <T = unknown>(query: string, bindParams?: unknown[]) =>
-        this.db.select<T[]>(query, bindParams),
-      execute: (query: string, bindParams?: unknown[]) => this.executeWrite(query, bindParams),
-    };
+    return transactionalSqlAdapter(this.db, (query, params) => this.executeWrite(query, params));
   }
   getKnowledgeRepository(): KnowledgeRepository {
     return new SqlKnowledgeRepository(this.db);
   }
   async get<T>(key: string): Promise<T | null> {
+    if (key === 'static') {
+      const cache = await this.db.select<{ payload: string }[]>(
+        'SELECT payload FROM static_cache WHERE key=$1',
+        [key],
+      );
+      if (cache[0]) return JSON.parse(cache[0].payload) as T;
+      // Legacy settings-only caches are accepted and upgraded on the next validated write.
+    }
     const rows = await this.db.select<{ value: string }[]>(
       'SELECT value FROM settings WHERE key = $1',
       [key],
@@ -563,18 +568,37 @@ export class SqlRepository implements Repository {
       : null;
   }
   async set<T>(key: string, value: T) {
+    if (key === 'static') {
+      const data = value as StaticData;
+      const payload = JSON.stringify(value);
+      await writeSqlBatch(this.db, [
+        {
+          query:
+            'INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+          params: [key, payload],
+        },
+        {
+          query:
+            'INSERT INTO static_cache (key,payload,fetched_at,source_version) VALUES ($1,$2,$3,$4) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at,source_version=excluded.source_version',
+          params: [key, payload, data.version.provenance.fetchedAt, data.version.sourceVersion],
+        },
+      ]);
+      const rows = await this.db.select<
+        { payload: string; fetched_at: string; source_version: string }[]
+      >('SELECT payload,fetched_at,source_version FROM static_cache WHERE key=$1', [key]);
+      if (
+        rows[0]?.payload !== payload ||
+        rows[0]?.fetched_at !== data.version.provenance.fetchedAt ||
+        rows[0]?.source_version !== data.version.sourceVersion
+      )
+        throw new Error('sqlite-static-revalidation');
+      return;
+    }
     const referenced = await referenceDerived(value, (k, v) => this.set(k, v));
     await this.executeWrite(
       'INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
       [key, JSON.stringify(referenced)],
     );
-    if (key === 'static') {
-      const data = value as StaticData;
-      await this.executeWrite(
-        'INSERT INTO static_cache (key,payload,fetched_at,source_version) VALUES ($1,$2,$3,$4) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at,source_version=excluded.source_version',
-        [key, JSON.stringify(value), data.version.provenance.fetchedAt, data.version.sourceVersion],
-      );
-    }
     if (key === 'selection' && value) {
       const plan = value as unknown as SelectedPlan;
       await this.executeWrite(

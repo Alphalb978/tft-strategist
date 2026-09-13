@@ -160,3 +160,47 @@ describe('application persistence and refresh', () => {
     );
   });
 });
+
+describe('static replacement diagnostics', () => {
+  it.each(['write', 'read', 'compatibility-revalidation'])(
+    'safely reports %s failure',
+    async (phase) => {
+      const repo = new MemoryRepository();
+      await repo.set('static', { ...data, version: { ...data.version, patch: '18.1' } });
+      await repo.set('unrelated', { retained: true });
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockImplementation((url: string) =>
+            Promise.resolve(
+              new Response(JSON.stringify(url.includes('asset-manifest') ? {} : data)),
+            ),
+          ),
+      );
+      const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const originalSet = repo.set.bind(repo);
+      const originalGet = repo.get.bind(repo);
+      let replaced = false;
+      vi.spyOn(repo, 'set').mockImplementation(async (key, value) => {
+        if (key === 'static') {
+          if (phase === 'write') throw new Error('private payload must never appear');
+          replaced = true;
+          if (phase === 'compatibility-revalidation') return;
+        }
+        await originalSet(key, value);
+      });
+      vi.spyOn(repo, 'get').mockImplementation(async (key) => {
+        if (key === 'static' && replaced && phase === 'read')
+          throw new Error('private payload must never appear');
+        return originalGet(key);
+      });
+      const result = await loadApplication(repo);
+      expect(result.source).toBe('Bundled snapshot');
+      expect(result.notices.join()).toContain('could not be saved and verified');
+      expect(warning).toHaveBeenCalledWith(`Static cache replacement failed: repository-${phase}`);
+      expect(JSON.stringify(warning.mock.calls)).not.toContain('private payload');
+      expect(await originalGet('unrelated')).toEqual({ retained: true });
+    },
+  );
+});

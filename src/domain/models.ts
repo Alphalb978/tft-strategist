@@ -1053,6 +1053,7 @@ export interface LobbyScanProgress {
 }
 
 export interface LobbyScanState {
+  discoveryDiagnostics?: import('../services/currentLobby').LobbyDiscoveryDiagnostics;
   stage: LobbyScanStage;
   opponentsAnalyzed: number;
   opponentsTotal: number;

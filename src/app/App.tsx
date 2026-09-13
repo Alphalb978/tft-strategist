@@ -578,35 +578,28 @@ export function App() {
         const notInGame =
           discovery.diagnostics.gameflow === 'no-tft-session' ||
           discovery.diagnostics.gameflow === 'no-active-tft-session' ||
-          discovery.diagnostics.spectator === '404';
-
-        const isAuthOrRateLimit =
-          discovery.diagnostics.spectator === '403' ||
-          discovery.diagnostics.spectator === 'rate-limited' ||
-          discovery.error.toLowerCase().includes('expired') ||
-          discovery.error.toLowerCase().includes('key') ||
-          discovery.error.toLowerCase().includes('rate limit');
+          (discovery.diagnostics.spectator === '404' &&
+            discovery.diagnostics.leagueClient !== 'connected' &&
+            !discovery.diagnostics.budgetExhaustedAt);
 
         if (notInGame && !options?.tftDetected) {
-          setScanState(notInGameScan(discovery.error));
-        } else if (options?.tftDetected && isAuthOrRateLimit) {
           setScanState({
-            ...failScan(discovery.error),
-            tftDetected: true,
-            error:
-              discovery.error.includes('expired') || discovery.diagnostics.spectator === '403'
-                ? 'Riot API key expired'
-                : discovery.error,
+            ...notInGameScan(discovery.error),
+            discoveryDiagnostics: discovery.diagnostics,
           });
         } else {
           setScanState({
             ...failScan(discovery.error),
+            discoveryDiagnostics: discovery.diagnostics,
             ...(options?.tftDetected ? { tftDetected: true } : {}),
           });
         }
         return;
       }
-      setScanState(startScan(discovery.value.opponents.length));
+      setScanState({
+        ...startScan(discovery.value.opponents.length),
+        discoveryDiagnostics: discovery.value.diagnostics,
+      });
       const finalLobby = await scanDiscoveredLobby(
         discovery.value,
         async (identities, requested) => {
@@ -632,7 +625,10 @@ export function App() {
           });
         },
       );
-      const completed = completeScan(finalLobby);
+      const completed = {
+        ...completeScan(finalLobby),
+        discoveryDiagnostics: discovery.value.diagnostics,
+      };
       setScanState(completed);
       if (
         completed.stage === 'complete' ||

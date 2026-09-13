@@ -15,7 +15,13 @@ import type { HistoryStore } from '../storage/history';
 export type LobbyDiscoverySource = 'riot-spectator' | 'league-client';
 
 export interface LobbyDiscoveryDiagnostics {
+  stage?: DiscoveryStage;
+  budgetExhaustedAt?: DiscoveryStage;
+  timingsMs?: Partial<Record<DiscoveryStage, number>>;
+  spectatorAttempted?: boolean;
+  leagueClientAttempted?: boolean;
   spectator:
+    | 'timed-out'
     | 'success'
     | '403'
     | '404'
@@ -55,7 +61,76 @@ export type CurrentLobbyDiscovery =
   | { ok: true; value: CurrentLobbyDiscoveryValue }
   | { ok: false; error: string; diagnostics: LobbyDiscoveryDiagnostics };
 
-export const CURRENT_LOBBY_DISCOVERY_TIMEOUT_MS = 8_000;
+export const CURRENT_LOBBY_DISCOVERY_TIMEOUT_MS = 15_000;
+export const DISCOVERY_WATCHDOG_GRACE_MS = 250;
+type DiscoveryStage = 'account' | 'spectator' | 'lcu-gameflow' | 'identity-bridge';
+
+// Every awaited provider/store call is bounded, even if its implementation ignores deadlines.
+// The watchdog is only a final guard, after the inner deadline has had time to settle.
+class DiscoveryBudget {
+  stage: DiscoveryStage = 'account';
+  stageDeadline: number;
+  stageStarted = Date.now();
+  constructor(
+    readonly deadline: number,
+    readonly diagnostics: LobbyDiscoveryDiagnostics,
+  ) {
+    this.stageDeadline = Math.min(deadline, Date.now() + 2_000);
+  }
+  enter(stage: DiscoveryStage, allowance: number) {
+    this.stage = stage;
+    this.stageStarted = Date.now();
+    this.diagnostics.stage = stage;
+    this.stageDeadline = Math.min(this.deadline, Date.now() + allowance);
+  }
+  async run<T>(operation: () => Promise<T>): Promise<T> {
+    const stage = this.stage;
+    const started = Date.now();
+    const stageStarted = this.stageStarted;
+    const remaining = this.stageDeadline - started;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      if (remaining <= 0) throw new LobbyDiscoveryTimeoutError(0);
+      return await Promise.race([
+        operation(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new LobbyDiscoveryTimeoutError(remaining)), remaining);
+        }),
+      ]);
+    } catch (error) {
+      if (
+        error instanceof LobbyDiscoveryTimeoutError ||
+        (error instanceof RiotProviderError && error.code === 'deadline')
+      )
+        this.diagnostics.budgetExhaustedAt = stage;
+      throw error;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      const timings = (this.diagnostics.timingsMs ??= {});
+      // Parallel identity operations overlap; report wall time, not their sum.
+      timings[stage] = Math.max(timings[stage] ?? 0, Date.now() - stageStarted);
+    }
+  }
+  wrap<T extends object>(target: T): T {
+    return new Proxy(target, {
+      get: (object, property) => {
+        const value = Reflect.get(object, property);
+        return typeof value === 'function'
+          ? (...args: unknown[]) => this.run(() => value.apply(object, args))
+          : value;
+      },
+    });
+  }
+}
+
+function timeoutFailure(diagnostics: LobbyDiscoveryDiagnostics): CurrentLobbyDiscovery {
+  return manualFailure(
+    `Lobby discovery timed out during ${diagnostics.budgetExhaustedAt ?? diagnostics.stage ?? 'account'}. ` +
+      `League Client: ${diagnostics.leagueClient}; ${diagnostics.participantsDiscovered} participants visible, ` +
+      `${diagnostics.publicRiotIdentitiesResolved} identities resolved.`,
+    structuredClone(diagnostics),
+  );
+}
 
 export class LobbyDiscoveryTimeoutError extends Error {
   constructor(timeoutMs: number) {
@@ -207,6 +282,7 @@ async function resolveLeagueClientParticipants(
   store: HistoryStore,
   platform: string,
   deadlineAt: number,
+  diagnostics: LobbyDiscoveryDiagnostics,
 ) {
   let lcuSummonerResolutionFailures = 0;
   let publicIdentityResolutionFailures = 0;
@@ -216,11 +292,14 @@ async function resolveLeagueClientParticipants(
         lcuSummonerResolutionFailures++;
         return null;
       }
-      const result = await provider.leagueClientSummoner(participant.summonerId, { deadlineAt });
+      const result = await provider
+        .leagueClientSummoner(participant.summonerId, { deadlineAt })
+        .catch(() => ({ ok: false as const, error: 'unavailable' as const }));
       if (!result.ok) {
         lcuSummonerResolutionFailures++;
         return null;
       }
+      diagnostics.lcuSummonersResolved++;
       return { participant, riotId: result.value };
     }),
   );
@@ -238,12 +317,14 @@ async function resolveLeagueClientParticipants(
       if (!identity || identity.puuid === record.participant.localPuuid) {
         try {
           identity = await provider.resolveAccount(parsed.gameName, parsed.tagLine, { deadlineAt });
-          await store.putIdentity(identity, new Date().toISOString());
         } catch {
           publicIdentityResolutionFailures++;
           return null;
         }
       }
+      diagnostics.publicRiotIdentitiesResolved++;
+      // Cache persistence must not turn a verified public identity into a failed lookup.
+      await store.putIdentity(identity, new Date().toISOString()).catch(() => {});
       return { identity, localPuuid: record.participant.localPuuid, riotId: parsed };
     }),
   );
@@ -290,12 +371,14 @@ async function discoverCurrentLobbyWithinDeadline(
   store: HistoryStore,
   riotId: string,
   platform: string,
-  timeoutMs: number,
+  budget: DiscoveryBudget,
 ): Promise<CurrentLobbyDiscovery> {
-  const diagnostics = { ...EMPTY_DIAGNOSTICS };
+  const diagnostics = budget.diagnostics;
   const configured = parseRiotId(riotId);
-  const deadlineAt = Date.now() + timeoutMs;
-  const cached = await store.getIdentity(configured.gameName, configured.tagLine, platform);
+  let deadlineAt = budget.stageDeadline;
+  const cached = await store
+    .getIdentity(configured.gameName, configured.tagLine, platform)
+    .catch(() => null);
   let own: RiotIdentity | null = cached;
   let keyDetected = false;
   try {
@@ -312,7 +395,10 @@ async function discoverCurrentLobbyWithinDeadline(
     }
   }
 
+  budget.enter('spectator', 2_500);
+  deadlineAt = budget.stageDeadline;
   if (spectatorTftSupported(platform) && keyDetected && own) {
+    diagnostics.spectatorAttempted = true;
     let spectator: Awaited<ReturnType<RiotProvider['lobby']>>;
     try {
       spectator = await provider.lobby(own, { deadlineAt });
@@ -372,7 +458,11 @@ async function discoverCurrentLobbyWithinDeadline(
         };
       }
     } else {
-      diagnostics.spectator = spectatorDiagnostic(spectator.error);
+      if (spectator.error === 'timed-out') diagnostics.budgetExhaustedAt = 'spectator';
+      diagnostics.spectator =
+        diagnostics.budgetExhaustedAt === 'spectator'
+          ? 'timed-out'
+          : spectatorDiagnostic(spectator.error);
     }
   } else if (!spectatorTftSupported(platform)) {
     diagnostics.spectator = 'unsupported';
@@ -380,6 +470,9 @@ async function discoverCurrentLobbyWithinDeadline(
     diagnostics.spectator = 'unavailable';
   }
 
+  budget.enter('lcu-gameflow', 3_250);
+  deadlineAt = budget.stageDeadline;
+  diagnostics.leagueClientAttempted = Boolean(provider.leagueClientLobby);
   const local = provider.leagueClientLobby
     ? await provider.leagueClientLobby({ deadlineAt })
     : ({ ok: false, error: 'client-unavailable' } as const);
@@ -423,6 +516,8 @@ async function discoverCurrentLobbyWithinDeadline(
     return manualFailure('No active TFT game detected.', diagnostics);
   }
   diagnostics.gameflow = local.value.rankedTftDetected ? 'ranked-tft-detected' : 'tft-detected';
+  budget.enter('identity-bridge', budget.deadline - Date.now());
+  deadlineAt = budget.stageDeadline;
   const bridged = await resolveLeagueClientParticipants(
     local.value.participants,
     configured,
@@ -431,6 +526,7 @@ async function discoverCurrentLobbyWithinDeadline(
     store,
     platform,
     deadlineAt,
+    diagnostics,
   );
   diagnostics.lcuSummonersResolved = bridged.lcuSummonersResolved;
   diagnostics.lcuSummonerResolutionFailures = bridged.lcuSummonerResolutionFailures;
@@ -475,15 +571,40 @@ export async function discoverCurrentLobby(
   platform: string,
   options?: { timeoutMs?: number },
 ): Promise<CurrentLobbyDiscovery> {
-  const timeoutMs = options?.timeoutMs ?? CURRENT_LOBBY_DISCOVERY_TIMEOUT_MS;
+  const timeoutMs = Math.max(1, options?.timeoutMs ?? CURRENT_LOBBY_DISCOVERY_TIMEOUT_MS);
+  const diagnostics: LobbyDiscoveryDiagnostics = {
+    ...EMPTY_DIAGNOSTICS,
+    stage: 'account',
+    timingsMs: {},
+  };
+  const budget = new DiscoveryBudget(
+    Date.now() + Math.max(1, timeoutMs - DISCOVERY_WATCHDOG_GRACE_MS),
+    diagnostics,
+  );
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await Promise.race([
-      discoverCurrentLobbyWithinDeadline(provider, store, riotId, platform, timeoutMs),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new LobbyDiscoveryTimeoutError(timeoutMs)), timeoutMs);
+    const result = await Promise.race([
+      discoverCurrentLobbyWithinDeadline(
+        budget.wrap(provider),
+        budget.wrap(store),
+        riotId,
+        platform,
+        budget,
+      ).catch((error: unknown) =>
+        error instanceof LobbyDiscoveryTimeoutError
+          ? timeoutFailure(diagnostics)
+          : manualFailure(
+              `Lobby discovery unavailable during ${diagnostics.stage}.`,
+              structuredClone(diagnostics),
+            ),
+      ),
+      new Promise<CurrentLobbyDiscovery>((resolve) => {
+        timer = setTimeout(() => resolve(timeoutFailure(diagnostics)), timeoutMs);
       }),
     ]);
+    if (!result.ok && diagnostics.budgetExhaustedAt === 'identity-bridge')
+      return timeoutFailure(diagnostics);
+    return structuredClone(result);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
