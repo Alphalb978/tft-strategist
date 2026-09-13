@@ -1,3 +1,5 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type {
   CandidateContest,
@@ -11,26 +13,22 @@ import {
   lobbyAdjustment,
   scoreHomeCandidates,
 } from '../strategy/homeScoring';
-import {
-  candidateContestFor,
-  M4_ROUTE_MODEL,
-  M4_UNIT_MODEL,
-} from '../strategy/lobbyPressure';
+import { candidateContestFor, M4_ROUTE_MODEL, M4_UNIT_MODEL } from '../strategy/lobbyPressure';
 import {
   completeScan,
+  discoveringScan,
   failScan,
   notInGameScan,
   resolveHomeRanking,
   startScan,
   updateScanProgress,
 } from '../services/lobbyScan';
+import { Home } from '../features/Home';
+import { createRecommendations, type ApplicationState } from '../services/application';
+import { defaultSettings } from '../storage/repository';
 import { data, playbooks, NOW } from './fixtures';
 
-function makeContest(
-  value: number | null,
-  coverage = 1,
-  unavailable = false,
-): CandidateContest {
+function makeContest(value: number | null, coverage = 1, unavailable = false): CandidateContest {
   return {
     state:
       unavailable || value === null
@@ -146,21 +144,84 @@ describe('Live-UX Lobby Scan State & Scoring Calibration (15 Deterministic Requi
     expect(previousComplete.stage).toBe('complete');
     expect(previousComplete.lobby).not.toBeNull();
 
-    const freshScan = startScan(previousComplete);
+    const freshScan = startScan(7, previousComplete);
     expect(freshScan.stage).toBe('scanning');
     expect(freshScan.lobby).toBeNull();
     expect(freshScan.isProvisional).toBe(true);
     expect(freshScan.opponentsAnalyzed).toBe(0);
 
-    const resolved = resolveHomeRanking(baseline, scoreSample(samplePlans, previousComplete.lobby!), freshScan);
+    const resolved = resolveHomeRanking(
+      baseline,
+      scoreSample(samplePlans, previousComplete.lobby!),
+      freshScan,
+    );
     expect(resolved.isFinalLobbyAware).toBe(false);
     expect(resolved.isProvisional).toBe(true);
     expect(resolved.candidates).toEqual(baseline);
   });
 
+  it('discovery is baseline-only and Home makes no opponent or provisional claim', () => {
+    const discovering = discoveringScan();
+    const ranking = resolveHomeRanking(
+      baseline,
+      scoreSample(samplePlans, makeMockLobby(7)),
+      discovering,
+    );
+    expect(discovering).toMatchObject({
+      stage: 'discovering',
+      opponentsAnalyzed: 0,
+      opponentsTotal: 0,
+      lobby: null,
+      isProvisional: false,
+    });
+    expect(ranking.candidates).toEqual(baseline);
+    expect(ranking.isProvisional).toBe(false);
+    expect(ranking.statusText).toBe('FINDING CURRENT TFT LOBBY…');
+
+    const recommendations = createRecommendations(data, defaultSettings, NOW);
+    const appState: ApplicationState = {
+      data,
+      ...recommendations,
+      settings: defaultSettings,
+      activeSession: null,
+      source: 'Bundled snapshot',
+      assets: {},
+    };
+    const html = renderToStaticMarkup(
+      createElement(Home, {
+        state: appState,
+        portfolio: recommendations.portfolio,
+        candidates: recommendations.homeCandidates,
+        baselineCandidates: recommendations.homeCandidates,
+        onOpen: () => {},
+        onData: () => {},
+        onScout: () => {},
+        lobby: null,
+        scanState: discovering,
+      }),
+    );
+    expect(html).toContain('FINDING CURRENT TFT LOBBY…');
+    expect(html).not.toContain('0/7');
+    expect(html).not.toContain('0 / 7 opponents');
+    expect(html).not.toContain('Recommendations provisional');
+  });
+
+  it('historical scanning can begin only after usable opponents are known', () => {
+    const discovering = discoveringScan();
+    const scanning = startScan(6, discovering);
+    expect(scanning).toMatchObject({
+      stage: 'scanning',
+      opponentsAnalyzed: 0,
+      opponentsTotal: 6,
+      isProvisional: true,
+      lobby: null,
+    });
+    expect(() => startScan(0, discovering)).toThrow('at least one usable opponent');
+  });
+
   // 2. 3/7 -> no final lobby ranking state
   it('2. 3/7 -> no final lobby ranking state', () => {
-    let state = startScan();
+    let state = startScan(7);
     state = updateScanProgress(state, {
       opponentsAnalyzed: 3,
       opponentsTotal: 7,
@@ -177,7 +238,7 @@ describe('Live-UX Lobby Scan State & Scoring Calibration (15 Deterministic Requi
 
   // 3. 5/7 -> still provisional
   it('3. 5/7 -> still provisional', () => {
-    let state = startScan();
+    let state = startScan(7);
     state = updateScanProgress(state, {
       opponentsAnalyzed: 5,
       opponentsTotal: 7,
@@ -256,7 +317,7 @@ describe('Live-UX Lobby Scan State & Scoring Calibration (15 Deterministic Requi
 
   // 8. recommendations do not reorder as "final" on each intermediate profile
   it('8. recommendations do not reorder as "final" on each intermediate profile', () => {
-    let scanState = startScan();
+    let scanState = startScan(7);
     const intermediateLobby3 = makeMockLobby(3, 3 / 7);
     const intermediateScored3 = scoreSample(samplePlans, intermediateLobby3);
 
@@ -318,7 +379,9 @@ describe('Live-UX Lobby Scan State & Scoring Calibration (15 Deterministic Requi
     expect(sixSeventhsCoverage).toBe(-25.7);
 
     // Partial coverage never awards a clean bonus if observed contest exists
-    expect(Math.abs(halfCoverage)).toBeLessThan(Math.abs(lobbyAdjustment(makeContest(1.0, 1.0), config)));
+    expect(Math.abs(halfCoverage)).toBeLessThan(
+      Math.abs(lobbyAdjustment(makeContest(1.0, 1.0), config)),
+    );
   });
 
   // 14. route/unit contest model outputs are unchanged

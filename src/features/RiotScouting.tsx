@@ -12,6 +12,7 @@ import {
 import type { LobbyPressure, LobbyScanState, RiotIdentity, StaticData } from '../domain/models';
 import {
   completeScan,
+  discoveringScan,
   failScan,
   notInGameScan,
   startScan,
@@ -87,7 +88,13 @@ export function RiotScouting({
   const [discoveryDiagnostics, setDiscoveryDiagnostics] =
     useState<LobbyDiscoveryDiagnostics | null>(null);
   const [lobbyStatus, setLobbyStatus] = useState<
-    'Not checked' | 'Checking' | 'Available' | 'Not in game' | 'Unavailable' | 'Unsupported'
+    | 'Not checked'
+    | 'Finding…'
+    | `${number} opponents found`
+    | 'Available'
+    | 'Not in game'
+    | 'Unavailable'
+    | 'Unsupported'
   >('Not checked');
   const busy = useRef(false);
 
@@ -148,6 +155,8 @@ export function RiotScouting({
       setMessage('No opponent identities were resolved; no history requests were started.');
       return;
     }
+    const scanning = startScan(identities.length);
+    onScanStateChange?.(scanning);
     const now = new Date().toISOString();
     const final = await scanLobby(identities, provider, store, {
       set: data.version.set,
@@ -164,7 +173,7 @@ export function RiotScouting({
       timeoutMs: 8_000,
       requestedOpponents: requested,
       onProgress: (prog) => {
-        onScanStateChange?.(updateScanProgress(scanState ?? startScan(), prog));
+        onScanStateChange?.(updateScanProgress(scanning, prog));
         setMessage(
           `Scouting opponents: ${prog.opponentsAnalyzed}/${prog.opponentsTotal} analyzed (${prog.matchesProcessed} matches)…`,
         );
@@ -236,11 +245,11 @@ export function RiotScouting({
     // profiles remain in HistoryStore and may be reused only if a fresh current lobby succeeds.
     setResult(null);
     onLobby(null);
-    onScanStateChange?.(startScan());
+    onScanStateChange?.(discoveringScan());
     setOrigin('');
     setWorking('discovery');
-    setLobbyStatus('Checking');
-    setMessage('Finding your current lobby…');
+    setLobbyStatus('Finding…');
+    setMessage('Finding current TFT lobby…');
     try {
       const discovery = await discoverCurrentLobby(
         provider,
@@ -266,11 +275,11 @@ export function RiotScouting({
         onScanStateChange?.(notInGame ? notInGameScan(discovery.error) : failScan(discovery.error));
         return;
       }
-      setLobbyStatus('Available');
       setDiscoveryDiagnostics(discovery.value.diagnostics);
       setOwnIdentity(discovery.value.own);
       onSave({ ...settings, riotId: parseRiotId(ownInput).display });
       setEntries([]);
+      setLobbyStatus(`${discovery.value.opponents.length} opponents found`);
       const source =
         discovery.value.source === 'riot-spectator' ? 'Riot Spectator' : 'League Client';
       setOrigin(
@@ -278,6 +287,7 @@ export function RiotScouting({
       );
       setMessage('Loading recent history…');
       await scanDiscoveredLobby(discovery.value, runScan);
+      setLobbyStatus('Available');
     } catch (error) {
       setLobbyStatus('Unavailable');
       onScanStateChange?.(failScan(error instanceof Error ? error.message : 'Lobby scan failed'));
@@ -312,11 +322,17 @@ export function RiotScouting({
         <span>
           Current lobby{' '}
           <strong>
-            {scanState?.stage === 'detected'
-              ? 'TFT game detected'
+            {scanState?.stage === 'discovering'
+              ? 'Finding…'
               : scanState?.stage === 'scanning'
-                ? 'Scanning…'
-                : lobbyStatus}
+                ? 'Scanning history…'
+                : scanState?.stage === 'complete' || scanState?.stage === 'partial-complete'
+                  ? 'Available'
+                  : scanState?.stage === 'not-in-game'
+                    ? 'Not in game'
+                    : scanState?.stage === 'failed'
+                      ? 'Unavailable'
+                      : lobbyStatus}
           </strong>
         </span>
       </div>
@@ -386,7 +402,11 @@ export function RiotScouting({
             disabled={!ownInput.trim() || working !== null}
           >
             <Users size={14} />{' '}
-            {working === 'discovery' ? 'Scanning current lobby…' : 'Scan current lobby'}
+            {working === 'discovery'
+              ? scanState?.stage === 'scanning'
+                ? 'Scanning history…'
+                : 'Finding current TFT lobby…'
+              : 'Scan current lobby'}
           </button>
           {!spectatorTftSupported(settings.riotPlatform) && (
             <p className="fine-print">

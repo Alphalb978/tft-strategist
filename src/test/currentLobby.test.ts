@@ -3,6 +3,7 @@ import type { RiotIdentity } from '../domain/models';
 import { FixtureRiotProvider, type LeagueClientLobby, type RiotProvider } from '../providers/riot';
 import {
   discoverCurrentLobby,
+  LobbyDiscoveryTimeoutError,
   scanDiscoveredLobby,
   type CurrentLobbyDiscoveryValue,
 } from '../services/currentLobby';
@@ -424,5 +425,48 @@ describe('bounded automatic current-lobby discovery', () => {
     await expect(scanDiscoveredLobby(discovery, scan)).resolves.toBe('scanned');
     expect(scan).toHaveBeenCalledOnce();
     expect(scan).toHaveBeenCalledWith(discovery.opponents, 7);
+  });
+
+  it('does not start history scanning without a usable opponent identity', async () => {
+    const discovery = {
+      own,
+      opponents: [],
+      source: 'league-client',
+      partialIdentities: true,
+      diagnostics: {
+        spectator: '403',
+        leagueClient: 'connected',
+        lcuHttps: 'connected',
+        gameflow: 'tft-detected',
+        participantsDiscovered: 1,
+        participantsWithPuuid: 1,
+        lcuSummonersResolved: 1,
+        lcuSummonerResolutionFailures: 0,
+        publicRiotIdentitiesResolved: 1,
+        publicIdentityResolutionFailures: 0,
+        opponentsUsable: 0,
+        riotIdsResolved: 1,
+      },
+    } satisfies CurrentLobbyDiscoveryValue;
+    const scan = vi.fn();
+
+    await expect(scanDiscoveredLobby(discovery, scan)).rejects.toThrow('no usable opponent');
+    expect(scan).not.toHaveBeenCalled();
+  });
+
+  it('settles an ignored provider deadline and allows a normal retry', async () => {
+    const source = provider();
+    vi.spyOn(source, 'connectionStatus')
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValue({ keyDetected: false, source: 'unavailable' });
+    vi.spyOn(source, 'leagueClientLobby').mockResolvedValue({ ok: false, error: 'no-session' });
+    const store = new MemoryHistoryStore();
+
+    await expect(
+      discoverCurrentLobby(source, store, 'Strategist#TFT', 'EUW1', { timeoutMs: 10 }),
+    ).rejects.toBeInstanceOf(LobbyDiscoveryTimeoutError);
+    await expect(
+      discoverCurrentLobby(source, store, 'Strategist#TFT', 'EUW1', { timeoutMs: 100 }),
+    ).resolves.toMatchObject({ ok: false });
   });
 });

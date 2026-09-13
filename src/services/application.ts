@@ -212,6 +212,17 @@ export function createRecommendations(
     personal,
   };
 }
+
+function currentStaticSnapshotUsable(value: unknown, settings: Settings): value is StaticData {
+  if (!isStaticData(value)) return false;
+  const activePatch = loadPlaybooks(value)[0]?.patch;
+  if (!activePatch || value.version.patch !== activePatch) return false;
+  try {
+    return createRecommendations(value, settings).playbooks.length > 0;
+  } catch {
+    return false;
+  }
+}
 /** Shared registry boundary for every live re-score, including partial lobby scans. */
 export function rescoreRecommendations(
   state: ApplicationState,
@@ -294,14 +305,7 @@ export async function loadApplication(
   ]);
   const bundle = await repository.get<MetaBundle>('meta-current:v1');
   const settings = normalizeSettings(savedSettings);
-  let cacheUsable = isStaticData(cached);
-  if (cacheUsable) {
-    try {
-      cacheUsable = createRecommendations(cached!, settings).playbooks.length > 0;
-    } catch {
-      cacheUsable = false;
-    }
-  }
+  const cacheUsable = currentStaticSnapshotUsable(cached, settings);
   let response: Response | null = null;
   if (!cacheUsable) response = await fetch('/data/static-set18.json').catch(() => null);
   let data: unknown = cached;
@@ -309,6 +313,8 @@ export async function loadApplication(
   if (!cacheUsable) {
     if (response?.ok) {
       data = await response.json();
+      if (!currentStaticSnapshotUsable(data, settings))
+        throw new Error('The bundled static snapshot is incompatible with the active patch.');
       source = 'Bundled snapshot';
     } else if (isPlanSession(storedSession) && isStaticData(storedSession.snapshot.staticData)) {
       data = storedSession.snapshot.staticData;
@@ -473,8 +479,19 @@ export async function loadApplication(
     )
       activeSession = await persistCompatibility(repository, activeSession, compatibility);
   }
-  if (cached && !cacheUsable)
+  if (cached && !cacheUsable) {
     result.notices.push('Incompatible cache ignored; using the bundled snapshot.');
+    // A validated bundled snapshot safely supersedes the rejected value. Persisting it through the
+    // existing cache path prevents the same obsolete cache from producing noise on every launch.
+    // If persistence fails, the notice remains honest and the next launch retries the replacement.
+    if (source === 'Bundled snapshot') {
+      try {
+        await repository.set('static', data);
+      } catch {
+        /* The in-memory bundled snapshot remains safe for this launch. */
+      }
+    }
+  }
   return {
     data,
     ...result,

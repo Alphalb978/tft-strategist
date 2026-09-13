@@ -46,7 +46,7 @@ const DataSettings = lazy(() =>
 import type { LobbyPressure, LobbyScanState } from '../domain/models';
 import {
   createIdleScanState,
-  detectedScan,
+  discoveringScan,
   startScan,
   updateScanProgress,
   completeScan,
@@ -95,6 +95,7 @@ export function App() {
   const repository = useRef<Repository | null>(null),
     main = useRef<HTMLElement | null>(null);
   const operation = useRef(false);
+  const lobbyScanWorkingRef = useRef(false);
   const manualWrites = useRef(Promise.resolve());
   const metaController = useRef<AbortController | null>(null);
   const [metaProgress, setMetaProgress] = useState<MetaProgress | null>(null);
@@ -539,10 +540,15 @@ export function App() {
   }, []);
 
   const startLobbyScan = async (options?: { isAuto?: boolean; tftDetected?: boolean }) => {
-    if (!state || !riotProvider || !historyStore || scanState.stage === 'scanning') return;
-    if (!options?.isAuto) {
-      detectorRef.current?.onManualScan();
-    }
+    if (
+      !state ||
+      !riotProvider ||
+      !historyStore ||
+      scanState.stage === 'scanning' ||
+      scanState.stage === 'discovering' ||
+      lobbyScanWorkingRef.current
+    )
+      return;
     if (!state.settings.riotId && !fixturePreview) {
       if (options?.isAuto) {
         setScanState({
@@ -557,9 +563,11 @@ export function App() {
       navigate('data');
       return;
     }
-    setLobby(null);
-    setScanState(startScan());
+    lobbyScanWorkingRef.current = true;
     try {
+      if (!options?.isAuto) void detectorRef.current?.onManualScan();
+      setLobby(null);
+      setScanState(discoveringScan());
       const discovery = await discoverCurrentLobby(
         riotProvider,
         historyStore,
@@ -598,6 +606,7 @@ export function App() {
         }
         return;
       }
+      setScanState(startScan(discovery.value.opponents.length));
       const finalLobby = await scanDiscoveredLobby(
         discovery.value,
         async (identities, requested) => {
@@ -646,6 +655,8 @@ export function App() {
         ...(options?.tftDetected ? { tftDetected: true } : {}),
       });
       setLobby(null);
+    } finally {
+      lobbyScanWorkingRef.current = false;
     }
   };
 
@@ -663,7 +674,7 @@ export function App() {
             clearTimeout(postGameSyncTimerRef.current);
             postGameSyncTimerRef.current = null;
           }
-          setScanState(detectedScan('Preparing lobby scan…'));
+          setScanState(discoveringScan());
         },
         onScan: async () => {
           await startLobbyScanRef.current({ isAuto: true, tftDetected: true });

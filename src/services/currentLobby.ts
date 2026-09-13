@@ -55,6 +55,15 @@ export type CurrentLobbyDiscovery =
   | { ok: true; value: CurrentLobbyDiscoveryValue }
   | { ok: false; error: string; diagnostics: LobbyDiscoveryDiagnostics };
 
+export const CURRENT_LOBBY_DISCOVERY_TIMEOUT_MS = 8_000;
+
+export class LobbyDiscoveryTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Current-lobby discovery timed out after ${timeoutMs} ms.`);
+    this.name = 'LobbyDiscoveryTimeoutError';
+  }
+}
+
 const EMPTY_DIAGNOSTICS: LobbyDiscoveryDiagnostics = {
   spectator: 'not-attempted',
   leagueClient: 'not-attempted',
@@ -276,15 +285,16 @@ function manualFailure(
  * Bounded read-only identity discovery. The existing scouting service remains the sole history
  * acquisition path after this function returns.
  */
-export async function discoverCurrentLobby(
+async function discoverCurrentLobbyWithinDeadline(
   provider: RiotProvider,
   store: HistoryStore,
   riotId: string,
   platform: string,
+  timeoutMs: number,
 ): Promise<CurrentLobbyDiscovery> {
   const diagnostics = { ...EMPTY_DIAGNOSTICS };
   const configured = parseRiotId(riotId);
-  const deadlineAt = Date.now() + 8_000;
+  const deadlineAt = Date.now() + timeoutMs;
   const cached = await store.getIdentity(configured.gameName, configured.tagLine, platform);
   let own: RiotIdentity | null = cached;
   let keyDetected = false;
@@ -458,6 +468,27 @@ export async function discoverCurrentLobby(
   };
 }
 
+export async function discoverCurrentLobby(
+  provider: RiotProvider,
+  store: HistoryStore,
+  riotId: string,
+  platform: string,
+  options?: { timeoutMs?: number },
+): Promise<CurrentLobbyDiscovery> {
+  const timeoutMs = options?.timeoutMs ?? CURRENT_LOBBY_DISCOVERY_TIMEOUT_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      discoverCurrentLobbyWithinDeadline(provider, store, riotId, platform, timeoutMs),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new LobbyDiscoveryTimeoutError(timeoutMs)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 function localFailureMessage(
   error: LeagueClientLobbyError,
   spectator: LobbyDiscoveryDiagnostics['spectator'],
@@ -482,5 +513,7 @@ export async function scanDiscoveredLobby<T>(
   discovery: CurrentLobbyDiscoveryValue,
   runScan: (opponents: RiotIdentity[], requested: number) => Promise<T>,
 ) {
+  if (!discovery.opponents.length)
+    throw new Error('Discovered lobby has no usable opponent identities.');
   return runScan(discovery.opponents, 7);
 }

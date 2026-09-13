@@ -316,14 +316,14 @@ export function Home({
         <button
           className="secondary"
           onClick={onScout}
-          disabled={activeScan.stage === 'scanning' || activeScan.stage === 'detected'}
+          disabled={activeScan.stage === 'scanning' || activeScan.stage === 'discovering'}
           aria-label="Scan current lobby"
         >
           <Radio size={16} />
           {activeScan.stage === 'scanning'
             ? 'Analyzing lobby…'
-            : activeScan.stage === 'detected'
-              ? 'Preparing scan…'
+            : activeScan.stage === 'discovering'
+              ? 'Finding current TFT lobby…'
               : 'Scan current lobby'}
         </button>
       </div>
@@ -332,24 +332,25 @@ export function Home({
         <div>
           <Radio size={15} />
           <strong>
-            {activeScan.stage === 'detected' ||
-            (activeScan.tftDetected && activeScan.stage === 'failed')
-              ? 'TFT GAME DETECTED'
-              : activeScan.stage === 'scanning'
-                ? `ANALYZING — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
-                : activeScan.stage === 'complete'
-                  ? `LOBBY READY — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
-                  : activeScan.stage === 'partial-complete'
-                    ? activeScan.opponentsAnalyzed >= 6
-                      ? `PARTIAL — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
-                      : 'PARTIAL LOBBY DATA'
-                    : activeScan.stage === 'failed'
-                      ? 'LOBBY SCAN FAILED'
-                      : 'NO CURRENT LOBBY'}
+            {activeScan.stage === 'discovering'
+              ? 'FINDING CURRENT TFT LOBBY…'
+              : activeScan.tftDetected && activeScan.stage === 'failed'
+                ? 'TFT GAME DETECTED'
+                : activeScan.stage === 'scanning'
+                  ? `ANALYZING — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
+                  : activeScan.stage === 'complete'
+                    ? `LOBBY READY — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
+                    : activeScan.stage === 'partial-complete'
+                      ? activeScan.opponentsAnalyzed >= 6
+                        ? `PARTIAL — ${activeScan.opponentsAnalyzed}/${activeScan.opponentsTotal}`
+                        : 'PARTIAL LOBBY DATA'
+                      : activeScan.stage === 'failed'
+                        ? 'LOBBY SCAN FAILED'
+                        : 'NO CURRENT LOBBY'}
           </strong>
           <span>
-            {activeScan.stage === 'detected'
-              ? (activeScan.reason ?? 'Preparing lobby scan…')
+            {activeScan.stage === 'discovering'
+              ? (activeScan.reason ?? 'Finding current TFT lobby…')
               : activeScan.tftDetected && activeScan.stage === 'failed'
                 ? activeScan.error
                   ? `Lobby scan unavailable — ${activeScan.error}`
@@ -369,30 +370,32 @@ export function Home({
                           : (activeScan.reason ?? 'Waiting for a TFT game…')}
           </span>
         </div>
-        {(activeScan.stage === 'scanning' || activeScan.stage === 'detected') && (
+        {activeScan.stage === 'scanning' && (
           <strong className="scan-impact provisional">
             Recommendations provisional — wait before locking a route
           </strong>
         )}
-        {activeScan.lobby && activeScan.stage !== 'scanning' && activeScan.stage !== 'detected' && (
-          <>
-            <strong className="scan-impact">
-              {orderChanged
-                ? 'Lobby scan changed recommendation order'
-                : 'Recommendations unchanged'}
-            </strong>
-            <div className="lobby-deltas" aria-label="Lobby score changes">
-              {portfolio.plans.map(({ candidate }) => (
-                <span key={candidate.playbook.id}>
-                  {candidate.playbook.title} {signed(candidate.home?.lobbyAdjustment ?? 0)} lobby
-                </span>
-              ))}
-            </div>
-            <button className="clear-lobby" onClick={onClearLobby}>
-              Clear Lobby
-            </button>
-          </>
-        )}
+        {activeScan.lobby &&
+          activeScan.stage !== 'scanning' &&
+          activeScan.stage !== 'discovering' && (
+            <>
+              <strong className="scan-impact">
+                {orderChanged
+                  ? 'Lobby scan changed recommendation order'
+                  : 'Recommendations unchanged'}
+              </strong>
+              <div className="lobby-deltas" aria-label="Lobby score changes">
+                {portfolio.plans.map(({ candidate }) => (
+                  <span key={candidate.playbook.id}>
+                    {candidate.playbook.title} {signed(candidate.home?.lobbyAdjustment ?? 0)} lobby
+                  </span>
+                ))}
+              </div>
+              <button className="clear-lobby" onClick={onClearLobby}>
+                Clear Lobby
+              </button>
+            </>
+          )}
       </section>
 
       {!state.settings.riotId && (

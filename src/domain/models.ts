@@ -1038,7 +1038,7 @@ export interface LobbyPressure {
 }
 export type LobbyScanStage =
   | 'idle'
-  | 'detected'
+  | 'discovering'
   | 'scanning'
   | 'complete'
   | 'partial-complete'

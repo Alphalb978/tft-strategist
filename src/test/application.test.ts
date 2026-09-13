@@ -34,6 +34,54 @@ describe('application persistence and refresh', () => {
     expect(result.source).toBe('Bundled snapshot');
     expect(result.activeSession).toBeNull();
     expect(result.notices.join()).toContain('cache ignored');
+    expect(await repo.get('static')).toEqual(data);
+
+    const restarted = await loadApplication(repo);
+    expect(restarted.source).toBe('Local cache');
+    expect(restarted.notices.join()).not.toContain('cache ignored');
+  });
+  it('rejects and safely supersedes an obsolete 18.1 static cache without recurring noise', async () => {
+    const repo = new MemoryRepository();
+    const obsolete = structuredClone(data);
+    obsolete.version.patch = '18.1';
+    await repo.set('static', obsolete);
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementation((url: string) =>
+          Promise.resolve(new Response(JSON.stringify(url.includes('asset-manifest') ? {} : data))),
+        ),
+    );
+
+    const first = await loadApplication(repo);
+    expect(first.source).toBe('Bundled snapshot');
+    expect(first.data.version.patch).toBe('18.2');
+    expect(first.notices.join()).toContain('cache ignored');
+    expect((await repo.get<typeof data>('static'))?.version.patch).toBe('18.2');
+
+    const restarted = await loadApplication(repo);
+    expect(restarted.source).toBe('Local cache');
+    expect(restarted.notices.join()).not.toContain('cache ignored');
+  });
+  it('fails closed when a bundled snapshot disagrees with the active patch', async () => {
+    const repo = new MemoryRepository();
+    const incompatible = structuredClone(data);
+    incompatible.version.patch = '18.3';
+    await repo.set('static', incompatible);
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementation((url: string) =>
+          Promise.resolve(
+            new Response(JSON.stringify(url.includes('asset-manifest') ? {} : incompatible)),
+          ),
+        ),
+    );
+
+    await expect(loadApplication(repo)).rejects.toThrow('incompatible with the active patch');
+    expect((await repo.get<typeof data>('static'))?.version.patch).toBe('18.3');
   });
   it('loads warm cache and clamps settings', async () => {
     const repo = new MemoryRepository();

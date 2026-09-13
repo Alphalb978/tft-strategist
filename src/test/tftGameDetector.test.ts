@@ -8,7 +8,7 @@ import {
 } from '../services/tftGameDetector';
 import {
   createIdleScanState,
-  detectedScan,
+  discoveringScan,
   startScan,
   completeScan,
   failScan,
@@ -18,16 +18,11 @@ import type { LobbyPressure } from '../domain/models';
 import { data, playbooks, NOW } from './fixtures';
 import { DEFAULT_HOME_RECOMMENDATION_CONFIG, scoreHomeCandidates } from '../strategy/homeScoring';
 
-function makeMockLobby(
-  overrides: Partial<LeagueClientLobby> = {},
-): LeagueClientLobby {
-  const defaultParticipants: LeagueClientParticipant[] = Array.from(
-    { length: 8 },
-    (_, i) => ({
-      localPuuid: `puuid-${i}`,
-      summonerId: `summoner-${i}`,
-    }),
-  );
+function makeMockLobby(overrides: Partial<LeagueClientLobby> = {}): LeagueClientLobby {
+  const defaultParticipants: LeagueClientParticipant[] = Array.from({ length: 8 }, (_, i) => ({
+    localPuuid: `puuid-${i}`,
+    summonerId: `summoner-${i}`,
+  }));
 
   return {
     participants: defaultParticipants,
@@ -276,13 +271,10 @@ describe('M13C.2 — Automatic TFT Game Detection & Lobby Scan', () => {
     expect(detector.getState()).toBe('NO_GAME');
 
     // Game 2 begins (with new participants)
-    const newParticipants: LeagueClientParticipant[] = Array.from(
-      { length: 8 },
-      (_, i) => ({
-        localPuuid: `new-puuid-${i}`,
-        summonerId: `new-summoner-${i}`,
-      }),
-    );
+    const newParticipants: LeagueClientParticipant[] = Array.from({ length: 8 }, (_, i) => ({
+      localPuuid: `new-puuid-${i}`,
+      summonerId: `new-summoner-${i}`,
+    }));
     setResponse({
       ok: true,
       value: makeMockLobby({ participants: newParticipants }),
@@ -451,15 +443,15 @@ describe('M13C.2 — Automatic TFT Game Detection & Lobby Scan', () => {
     expect(idleRanking.isProvisional).toBe(false);
     expect(idleRanking.statusText).toBe('NO CURRENT LOBBY');
 
-    // Detected state: baseline candidates returned, provisional tag active
-    const detectedRanking = resolveHomeRanking(sampleCandidates, null, detectedScan());
-    expect(detectedRanking.candidates).toEqual(sampleCandidates);
-    expect(detectedRanking.isFinalLobbyAware).toBe(false);
-    expect(detectedRanking.isProvisional).toBe(true);
-    expect(detectedRanking.statusText).toBe('TFT GAME DETECTED');
+    // Discovery state: baseline candidates remain normal while the current lobby is located.
+    const discoveringRanking = resolveHomeRanking(sampleCandidates, null, discoveringScan());
+    expect(discoveringRanking.candidates).toEqual(sampleCandidates);
+    expect(discoveringRanking.isFinalLobbyAware).toBe(false);
+    expect(discoveringRanking.isProvisional).toBe(false);
+    expect(discoveringRanking.statusText).toBe('FINDING CURRENT TFT LOBBY…');
 
     // Scanning state: baseline candidates returned, provisional tag active
-    const scanningRanking = resolveHomeRanking(sampleCandidates, null, startScan());
+    const scanningRanking = resolveHomeRanking(sampleCandidates, null, startScan(7));
     expect(scanningRanking.candidates).toEqual(sampleCandidates);
     expect(scanningRanking.isFinalLobbyAware).toBe(false);
     expect(scanningRanking.isProvisional).toBe(true);

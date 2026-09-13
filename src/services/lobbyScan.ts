@@ -1,8 +1,4 @@
-import type {
-  LobbyPressure,
-  LobbyScanState,
-  RecommendationCandidate,
-} from '../domain/models';
+import type { LobbyPressure, LobbyScanState, RecommendationCandidate } from '../domain/models';
 
 export type { LobbyScanStage, LobbyScanProgress, LobbyScanState } from '../domain/models';
 
@@ -21,29 +17,30 @@ export function createIdleScanState(reason = 'Waiting for a TFT game…'): Lobby
   };
 }
 
-export function detectedScan(reason = 'Preparing lobby scan…'): LobbyScanState {
+export function discoveringScan(reason = 'Finding current TFT lobby…'): LobbyScanState {
   return {
-    stage: 'detected',
+    stage: 'discovering',
     opponentsAnalyzed: 0,
-    opponentsTotal: 7,
+    opponentsTotal: 0,
     matchesProcessed: 0,
     relevantGamesAvailable: 0,
     relevantGamesTarget: 0,
     coverage: 0,
     lobby: null,
-    isProvisional: true,
-    tftDetected: true,
+    isProvisional: false,
     reason,
   };
 }
 
-export function startScan(previous?: LobbyScanState): LobbyScanState {
+export function startScan(opponentsTotal: number, previous?: LobbyScanState): LobbyScanState {
+  if (!Number.isInteger(opponentsTotal) || opponentsTotal < 1)
+    throw new Error('Opponent-history scanning requires at least one usable opponent.');
   // Immediately clear stale previous-lobby evidence as already implemented.
   void previous;
   return {
     stage: 'scanning',
     opponentsAnalyzed: 0,
-    opponentsTotal: 7,
+    opponentsTotal,
     matchesProcessed: 0,
     relevantGamesAvailable: 0,
     relevantGamesTarget: 0,
@@ -63,6 +60,8 @@ export function updateScanProgress(
     message?: string;
   },
 ): LobbyScanState {
+  if (current.stage !== 'scanning' || current.opponentsTotal < 1)
+    throw new Error('Scan progress requires an active opponent-history scan.');
   return {
     ...current,
     stage: 'scanning',
@@ -78,8 +77,7 @@ export function completeScan(
   lobby: LobbyPressure,
   options?: { timedOut?: boolean; errors?: string[] },
 ): LobbyScanState {
-  const matchesProcessed =
-    lobby.telemetry.uniqueMatchDetailsFetched + lobby.telemetry.cacheHits;
+  const matchesProcessed = lobby.telemetry.uniqueMatchDetailsFetched + lobby.telemetry.cacheHits;
   const opponentsAnalyzed = lobby.profilesCompleted;
   const opponentsTotal = lobby.expectedOpponents;
 
@@ -193,12 +191,12 @@ export function resolveHomeRanking(
         isProvisional: true,
         statusText: `ANALYZING LOBBY · ${scanState.opponentsAnalyzed}/${scanState.opponentsTotal} opponents`,
       };
-    case 'detected':
+    case 'discovering':
       return {
         candidates: baselineCandidates,
         isFinalLobbyAware: false,
-        isProvisional: true,
-        statusText: 'TFT GAME DETECTED',
+        isProvisional: false,
+        statusText: 'FINDING CURRENT TFT LOBBY…',
       };
     case 'not-in-game':
       return {
