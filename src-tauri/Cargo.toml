@@ -1,4 +1,5 @@
 [package]
+default-run = "tft-strategist"
 name = "tft-strategist"
 version = "1.0.0-rc.1"
 description = "Private TFT pre-game strategist"
@@ -40,3 +41,4 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Dwm",
 ] }
+
