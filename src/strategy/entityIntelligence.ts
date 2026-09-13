@@ -1,7 +1,7 @@
 import type { CurrentGameState, IntelligenceModel, ObservedProfile } from '../domain/intelligence';
 import type { Playbook, StaticData } from '../domain/models';
 import type { ExternalSnapshot } from '../domain/externalMeta';
-import { externalStatus } from '../providers/externalMeta';
+import { externalStatusDetail } from '../providers/externalMeta';
 import { reconcileIntelligence } from './intelligenceCompatibility';
 
 type Package = { holder: string; ids: string[] };
@@ -109,7 +109,7 @@ export function resolveEntityIntelligence(input: {
         : guidance.length
           ? 'Global sourced guidance'
           : 'Unavailable';
-  const rows = externalStatus(external, data).startsWith('Compatible')
+  const rows = externalStatusDetail(external, data).kind === 'compatible'
     ? champion
       ? external?.units
       : item

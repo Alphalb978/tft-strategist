@@ -43,13 +43,13 @@ describe('M10 appearance isolation and contrast', () => {
   });
 });
 describe('M10 independently evidenced Set 18 planner', () => {
-  it('decodes the external fixture in exact slot order, retains 404 unresolved, and re-encodes exactly', () => {
+  it('decodes the external fixture in exact slot order, resolves current 404 mapping, and re-encodes exactly', () => {
     const decoded = decodePlannerCode(wire.code);
     expect(decoded.ok).toBe(true);
     if (!decoded.ok) return;
     expect(decoded.value.map((slot) => slot.plannerId)).toEqual(wire.slots);
     expect(decoded.value.map((slot) => slot.championId)).toEqual(wire.expectedPublicIds);
-    expect(decoded.value[4].state).toBe('unresolved');
+    expect(decoded.value[4].state).toBe('mapped');
     expect(decoded.value[9].state).toBe('empty');
     expect(encodePlannerSlots(decoded.value.map((slot) => slot.plannerId))).toEqual({
       ok: true,
@@ -115,7 +115,7 @@ describe('M10 independently evidenced Set 18 planner', () => {
     const changed = structuredClone(data);
     changed.champions[0].cost++;
     expect(candidatePlannerCode(board, changed).ok).toBe(false);
-    const lux = decodePlannerCode('02413000000000000000000000000000TFTSet18');
+    const lux = decodePlannerCode('02405000000000000000000000000000TFTSet18');
     expect(lux.ok && lux.value[0].state).toBe('ambiguous');
   });
 });

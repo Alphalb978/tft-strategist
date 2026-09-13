@@ -19,7 +19,7 @@ describe('inspectable deterministic scoring', () => {
   it('bounds default personal influence and shrinks small / old-set samples', () => {
     const p: PersonalProfile = {
       set: 18,
-      patch: '18.1',
+      patch: '18.2',
       effectiveGames: 10000,
       familyAffinity: { [playbooks[0].id]: 1 },
       generatedAt: NOW,

@@ -2,7 +2,12 @@ import { globalEntityIndex } from '../strategy/entityIntelligence';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { ExternalSnapshot } from '../domain/externalMeta';
 import { externalSnapshotSchema } from '../domain/externalMeta';
-import { validateExternal, externalHash } from '../providers/externalMeta';
+import {
+  ExternalValidationError,
+  externalStatusDetail,
+  validateExternal,
+  externalHash,
+} from '../providers/externalMeta';
 import type {
   AggregateMetaDataset,
   CompRegistryEntry,
@@ -67,8 +72,6 @@ import {
   importCuratedPlaybooks,
   importMetaTFTExternal,
 } from '../storage/knowledgeImporter';
-import { externalStatus } from '../providers/externalMeta';
-
 export interface ApplicationState {
   external?: ExternalSnapshot | null;
   externalHistory?: ExternalSnapshot[];
@@ -356,9 +359,11 @@ export async function loadApplication(
     external = validateExternal(incoming ?? cachedExternal, data);
     await repository.set('external-meta:v1', external);
   } catch (error) {
-    externalNotice = String(error).includes('Wrong set or patch')
-      ? 'External meta snapshot incompatible with current patch. Refresh required.'
-      : 'External refresh unavailable or invalid. Using compatible cached evidence when available.';
+    externalNotice =
+      error instanceof ExternalValidationError &&
+      (error.code === 'patch-mismatch' || error.code === 'set-mismatch')
+        ? error.message
+        : 'MetaTFT refresh unavailable · using last good snapshot';
     try {
       external = validateExternal(await repository.get('external-meta:v1'), data);
     } catch {
@@ -540,7 +545,7 @@ export async function refreshApplication(
   if (sqlDb) {
     const staticRes = await importCommunityDragonKnowledge(sqlDb, data, { activate: true });
     await importCuratedPlaybooks(sqlDb, rawPlaybooks, staticRes.snapshotId, { activate: true });
-    if (current.external && externalStatus(current.external, data).startsWith('Compatible')) {
+    if (current.external && externalStatusDetail(current.external, data).kind === 'compatible') {
       try {
         await importMetaTFTExternal(sqlDb, current.external, data, { activate: true });
       } catch {

@@ -37,7 +37,7 @@ export function loadPlaybooks(data: StaticData): Playbook[] {
       value,
       status: 'curated',
       source: s.source,
-      note: 'Public guide, re-audited September 6. Outcome evidence not collected.',
+      note: `Public guide, re-audited ${seed.reviewedAt}. Outcome evidence not collected.`,
     });
     const core = s.core.map(id);
     const board = (names: string[], stage: string): Board => {

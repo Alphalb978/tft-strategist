@@ -113,8 +113,10 @@ export function auditStaticData(data: StaticData): RuleAuditIssue[] {
     if (!champion || champion.boardEligible || champion.shopStatus !== 'placeholder')
       add('special-unit', `${championId} placeholder classification is missing.`);
   }
-  const disabled = data.augments.find((augment) => augment.id === 'DA_ForgeAFriend');
-  if (!disabled || disabled.liveStatus !== 'disabled')
-    add('augment-live', 'Forge A Friend official disabled override is missing.');
+  if (data.augments.some((augment) => augment.id === 'DA_ForgeAFriend'))
+    add(
+      'augment-live',
+      'Forge A Friend unexpectedly returned to the export; live availability requires review.',
+    );
   return issues;
 }

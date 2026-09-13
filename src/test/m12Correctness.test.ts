@@ -118,7 +118,7 @@ describe('M12 pre-game correctness', () => {
     expect(fusedForPlan(plan, s, withHotfix('e'), NOW).externalWeight).toBe(0);
     expect(unknown.externalWeight).toBeLessThan(known.externalWeight);
     expect(unknown.confidence).toBeLessThan(known.confidence);
-    expect(externalStatus(s, withHotfix())).toContain('Hotfix parity unverified');
+    expect(externalStatus(s, withHotfix())).toContain('hotfix parity unverified');
   });
 });
 function resolve(plan = playbooks[0], entityId = id, intelligence = model) {

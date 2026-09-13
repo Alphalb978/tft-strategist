@@ -16,7 +16,7 @@ describe('real CommunityDragon fixture normalization', () => {
     expect(data.version.name).toBe('Enchanted Wilds');
     expect(data.version.set).toBe(18);
     expect(data.version.patchVerified).toBe(false);
-    expect(data.version.parityStatus).toBe('known-stale');
+    expect(data.version.parityStatus).toBe('unverified');
   });
   it('normalizes IDs, costs, traits and art from source', () => {
     const x = data.champions.find((c) => c.name === 'Xayah')!;
@@ -44,7 +44,7 @@ describe('real CommunityDragon fixture normalization', () => {
     expect(data.traits.find((t) => t.name === 'Eclipse')?.breakpoints).toEqual([]);
     expect(data.traits.find((t) => t.name === 'Eclipse')?.availability).toBe('unavailable');
   });
-  it('classifies Lux export entities and the official augment override explicitly', () => {
+  it('classifies Lux export entities and current augment presence explicitly', () => {
     expect(data.champions.find((c) => c.id === 'DA_Lux18_Base')).toMatchObject({
       shopStatus: 'placeholder',
       boardEligible: false,
@@ -53,9 +53,10 @@ describe('real CommunityDragon fixture normalization', () => {
       shopStatus: 'runtime-variant',
       boardEligible: true,
     });
-    expect(data.augments.find((a) => a.id === 'DA_ForgeAFriend')).toMatchObject({
+    expect(data.augments.find((a) => a.id === 'DA_ForgeAFriend')).toBeUndefined();
+    expect(data.augments.find((a) => a.id === 'DA_KnowYourEnemy')).toMatchObject({
       presentInExport: true,
-      liveStatus: 'disabled',
+      liveStatus: 'unverified',
     });
   });
   it('rejects a missing set and malformed unit instead of using memory', () => {

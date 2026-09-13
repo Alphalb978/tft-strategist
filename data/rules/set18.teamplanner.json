@@ -7,8 +7,8 @@
   "suffix": "TFTSet18",
   "emptySlot": "000",
   "source": "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/tftchampions-teamplanner.json",
-  "reviewedAt": "2026-09-06T16:06:43.518Z",
-  "sha256": "4045ed79bd1b4b95503752916b9476292e88e86533781ee103e5c451e3cca307",
+  "reviewedAt": "2026-09-13T00:36:20.000Z",
+  "sha256": "0cdb14f5e271b88000ec90a0f1934d7cdb54381dff0020e0ebef21c6654c93d4",
   "formatSource": "https://github.com/nkhoit/tftkit#team-planner-codes",
   "manualPasteVerified": true,
   "manualPasteEvidence": {
@@ -391,14 +391,14 @@
     {
       "championId": "DA_18_Ivern",
       "name": "Ivern",
-      "plannerId": 1029,
+      "plannerId": 1028,
       "boardEligible": true,
       "shopStatus": "pool"
     },
     {
       "championId": "DA_Lux18_Base",
       "name": "Lux",
-      "plannerId": 1043,
+      "plannerId": 1029,
       "boardEligible": false,
       "shopStatus": "placeholder"
     },

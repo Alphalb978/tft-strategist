@@ -7,7 +7,7 @@ import {
   importCuratedPlaybooks,
   importMetaTFTExternal,
 } from '../storage/knowledgeImporter';
-import { externalStatus } from '../providers/externalMeta';
+import { externalStatusDetail } from '../providers/externalMeta';
 import { stableFingerprint, familyDefinitionsFingerprint } from '../domain/fingerprint';
 
 export interface BootstrapResult {
@@ -89,7 +89,7 @@ export async function bootstrapKnowledgeDatabase(
   });
 
   let externalSnapshotId: string | undefined;
-  if (external && externalStatus(external, data).startsWith('Compatible')) {
+  if (external && externalStatusDetail(external, data).kind === 'compatible') {
     try {
       const extResult = await importMetaTFTExternal(db, external, data, { activate: true });
       externalSnapshotId = extResult.snapshotId;
@@ -329,7 +329,7 @@ export function populateMemoryKnowledgeRepository(
 
   // External meta if compatible
   let externalSnapshotId: string | undefined;
-  if (external && externalStatus(external, data).startsWith('Compatible')) {
+  if (external && externalStatusDetail(external, data).kind === 'compatible') {
     const extContentHash = external.manifest.contentHash;
     externalSnapshotId = `metatft:${extContentHash}`;
 

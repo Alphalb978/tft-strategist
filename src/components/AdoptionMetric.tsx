@@ -1,7 +1,7 @@
 import type { ApplicationState } from '../services/application';
 import type { Playbook } from '../domain/models';
 import { relatedExternal } from '../strategy/evidenceFusion';
-import { externalStatus } from '../providers/externalMeta';
+import { externalStatusDetail } from '../providers/externalMeta';
 import { familyRepresentation, metaCohortLabel } from '../strategy/metaCatalog';
 export const PICK_HELP =
   'Broad MetaTFT adoption for the active external scope. Shown in the provider’s displayed units.';
@@ -15,7 +15,7 @@ export function adoptionMetrics(
   const snapshot = state.external;
   const relation = relatedExternal(plan, snapshot);
   const compatible =
-    externalStatus(snapshot, state.data, now).startsWith('Compatible') &&
+    externalStatusDetail(snapshot, state.data, now).kind === 'compatible' &&
     snapshot?.manifest.scope.queue === 1100 &&
     Boolean(snapshot.manifest.scope.rank && snapshot.manifest.scope.window);
   const reported = compatible ? relation?.comp.pickRate : undefined;

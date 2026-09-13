@@ -41,11 +41,11 @@ export const STATIC_URL = 'https://raw.communitydragon.org/latest/cdragon/tft/en
 export const ACTIVE_SET = {
   set: 18,
   name: 'Enchanted Wilds',
-  patch: '18.1',
+  patch: '18.2',
   mutator: 'TFTSet18',
-  checkedAt: '2026-09-06',
+  checkedAt: '2026-09-13',
   source:
-    'https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-1/',
+    'https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-2/',
 };
 
 export function assetUrl(path?: string | null): string | null {
@@ -134,10 +134,11 @@ export function normalizeCommunityDragon(input: unknown, provenance: Provenance)
   const augments = sourceItems
     .filter((i) => i.isAugment && set.augments.includes(i.apiName))
     .map((i) => {
-      const override =
-        auditedRules.augmentAvailability.overrides[
-          i.apiName as keyof typeof auditedRules.augmentAvailability.overrides
-        ];
+      const overrides = auditedRules.augmentAvailability.overrides as Record<
+        string,
+        { liveStatus: Augment['liveStatus']; reason: string }
+      >;
+      const override = overrides[i.apiName];
       return {
         id: i.apiName,
         name: i.name,
@@ -165,7 +166,7 @@ export function normalizeCommunityDragon(input: unknown, provenance: Provenance)
     sourceVersion: provenance.hash ?? provenance.publishedAt ?? provenance.fetchedAt,
     schemaVersion: 2,
     patchVerified: false,
-    parityStatus: auditedRules.parity.status as 'known-stale',
+    parityStatus: auditedRules.parity.status as 'unverified',
     provenance,
   };
   const data: StaticData = {
@@ -175,7 +176,7 @@ export function normalizeCommunityDragon(input: unknown, provenance: Provenance)
     items,
     augments,
     warnings: [
-      `Static export date: ${provenance.publishedAt ?? 'unavailable'}; official hotfix evidence runs through ${auditedRules.parity.liveEvidenceThrough}. Combat-value parity is known stale.`,
+      `Static export date: ${provenance.publishedAt ?? 'unavailable'}; official evidence reviewed through ${auditedRules.parity.liveEvidenceThrough}. Exact combat-value parity remains unverified.`,
       'Augment export presence is verified; live availability remains unverified except official overrides.',
       `Provider internal set name is ${set.name}; display name verified from Riot patch notes.`,
       'Board capacity, shop odds, pools, XP, interest, normal trait counting, Lux Avatar and Elder Dragon exceptions are audited in the Set 18 rules fixture.',

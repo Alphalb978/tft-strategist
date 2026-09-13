@@ -205,3 +205,14 @@ When zero opponents exist in the lobby (such as in Tocker's Trials or before liv
 
 ### Authoritative terminology
 The computer vision pipeline must be documented as **screen intelligence**, **computer vision**, or **live screen recognition/tracking** rather than OCR, accurately reflecting the multi-zone template matching and spatial occupancy tracking models.
+
+## Patch 18.2 reviewed authority and external-meta activation
+
+- The reviewed active release is Set 18 / `TFTSet18` / Patch 18.2. Patch promotion is a human-reviewed operation; a newer provider patch never promotes the app automatically.
+- Riot's official Patch 18.2 notes are primary authority for the roll-forward. The rules engine adopts the changed XP costs: Level 7→8 is 56, Level 8→9 is 64, and Level 9→10 is 64.
+- Patch 18.2 trait combat values, champion balance numbers, augment rewards/exclusivity, and Wisp prices/individual behavior are not inputs to current product logic. They are audited as intentionally unmodeled rather than copied into unused tables.
+- CommunityDragon remains structural/technical evidence. The September 12 export passes Set 18 mutator, identity-probe, roster, trait, and rule validation, but exact combat parity remains `unverified`; a post-patch timestamp alone is not proof of live-value parity.
+- Curated public playbook boards and route labels were re-audited on September 13 against their current Set 18/Patch 18.2 pages. They remain `Experimental`; the review does not turn guide claims into measured strength.
+- MetaTFT refresh performs a cheap public patch preflight before opening the browser. Set, patch, schema, mapping, completeness, content-hash, timestamp, and entity checks remain fail-closed.
+- Activation is atomic. A mismatched, partial, malformed, challenged, or unavailable refresh never replaces `current.json`; the compatible snapshot remains available and prior snapshots remain archived.
+- Safe diagnostics distinguish navigation/network, endpoint/schema, browser/challenge, normalization/mapping, set mismatch, patch mismatch, and final snapshot validation without returning headers, cookies, credentials, or personal data.

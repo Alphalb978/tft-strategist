@@ -88,7 +88,7 @@ export function DataSettings({
               await invoke('refresh_external_meta');
               location.reload();
             } catch (error) {
-              setExternalRefresh(`Failed · last good snapshot retained. ${String(error)}`);
+              setExternalRefresh(String(error));
             }
           }}
         >
@@ -162,7 +162,8 @@ export function DataSettings({
             ))}
           </div>
           <p>
-            Set 18 · Enchanted Wilds · patch 18.1 ·{' '}
+            Set {state.data.version.set} · {state.data.version.name} · patch{' '}
+            {state.data.version.patch} ·{' '}
             <span className="badge muted">{state.data.version.parityStatus}</span>
           </p>
           <p className="fine-print">

@@ -1,6 +1,6 @@
 import type { ExternalSnapshot } from '../domain/externalMeta';
 import { matchExternal, relatedExternal } from './evidenceFusion';
-import { externalStatus } from '../providers/externalMeta';
+import { externalStatusDetail } from '../providers/externalMeta';
 import type { Board, Playbook, StaticData, LobbyPressure } from '../domain/models';
 import type { BoardAlternative, CurrentGameState, IntelligenceModel } from '../domain/intelligence';
 import { validateBoard, boardTraitCounts } from '../rules/validation';
@@ -24,7 +24,7 @@ export function optimizeBoards(input: {
   targetLevel?: number;
 }): BoardAlternative[] {
   const { data, plan, intelligence, game, lobby } = input;
-  const external = externalStatus(input.external, data).startsWith('Compatible')
+  const external = externalStatusDetail(input.external, data).kind === 'compatible'
     ? input.external
     : null;
   const level = input.targetLevel ?? plan.target.targetLevel;

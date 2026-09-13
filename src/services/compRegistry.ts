@@ -1,6 +1,6 @@
 import type { ExternalSnapshot } from '../domain/externalMeta';
 import { matchExternal } from '../strategy/evidenceFusion';
-import { externalStatus } from '../providers/externalMeta';
+import { externalStatusDetail } from '../providers/externalMeta';
 import { sparseGuidance } from '../strategy/guidanceInheritance';
 import { teamPlanner } from '../rules/teamPlanner';
 import type {
@@ -255,7 +255,7 @@ export function buildCompRegistry(
       entry.playbook.subtitle = 'Observed final-board structure; adaptation uses target gaps.';
     }
   }
-  if (external && externalStatus(external, data).startsWith('Compatible')) {
+  if (external && externalStatusDetail(external, data).kind === 'compatible') {
     for (const comp of external.comps) {
       const matches = entries
         .filter((e) => e.sourceKind !== 'external')

@@ -2,16 +2,16 @@
   "schemaVersion": 1,
   "guidanceVersion": "set18-strategy-v1",
   "set": 18,
-  "staticSourceFingerprint": "fnv1a-9b3bc81f",
-  "reviewedAt": "2026-09-06T00:00:00Z",
-  "sourceReviewVersion": "public-page-review-2026-09-06",
+  "staticSourceFingerprint": "fnv1a-e2985ac2",
+  "reviewedAt": "2026-09-13T00:00:00Z",
+  "sourceReviewVersion": "patch-18.2-public-page-review-2026-09-13",
   "sources": [
     {
       "id": "mobalytics-rise-and-vine",
       "url": "https://mobalytics.gg/tft/comps-guide/elderwood-reroll-3HDqt0FrDEBPMY81ihqGePxVjU3",
       "title": "Rise and Vine — Set 18 comp guide",
-      "reviewedAt": "2026-09-06T00:00:00Z",
-      "sourceVersion": "page-review-2026-09-06",
+      "reviewedAt": "2026-09-13T00:00:00Z",
+      "sourceVersion": "patch-18.2-page-review-2026-09-13",
       "scope": "Final, early and mid boards; Level 6 Slow Roll; when-to-make signals; item holders; augment list and comp tips.",
       "note": "The page's early XP call conflicts with its leveling table, so M7 withholds the disputed exact early timing."
     },
@@ -19,8 +19,8 @@
       "id": "mobalytics-adapt-or-die",
       "url": "https://mobalytics.gg/tft/comps-guide/adaptor-reroll-3HRVQSudB7SJTckVeLxU4ICvPDg",
       "title": "Adapt or Die — Set 18 comp guide",
-      "reviewedAt": "2026-09-06T00:00:00Z",
-      "sourceVersion": "page-review-2026-09-06",
+      "reviewedAt": "2026-09-13T00:00:00Z",
+      "sourceVersion": "patch-18.2-page-review-2026-09-13",
       "scope": "Final, early and mid boards; Level 7 Slow Roll; when-to-make signals; holders and item lists.",
       "note": "Only text and structured page facts visible without authentication were imported."
     },
@@ -28,8 +28,8 @@
       "id": "mobalytics-ap-8-4",
       "url": "https://mobalytics.gg/tft/comps-guide/eldritch-3GPUwYsD4LyC2jj0jH40XM7iS2f",
       "title": "AP 8-4 — Set 18 comp guide",
-      "reviewedAt": "2026-09-06T00:00:00Z",
-      "sourceVersion": "page-review-2026-09-06",
+      "reviewedAt": "2026-09-13T00:00:00Z",
+      "sourceVersion": "patch-18.2-page-review-2026-09-13",
       "scope": "Final, early and mid boards; Fast 8 route; when-to-make signals; holders and item lists.",
       "note": "The final page board has nine units while the route stabilizes at level 8; those are represented as separate milestones."
     },
@@ -37,8 +37,8 @@
       "id": "mobalytics-final-forest",
       "url": "https://mobalytics.gg/tft/comps-guide/elderwood-cap-3HBMcPmR81fWMyuppwi8smQJ37O",
       "title": "The Final Forest — Set 18 comp guide",
-      "reviewedAt": "2026-09-06T00:00:00Z",
-      "sourceVersion": "page-review-2026-09-06",
+      "reviewedAt": "2026-09-13T00:00:00Z",
+      "sourceVersion": "patch-18.2-page-review-2026-09-13",
       "scope": "Final, early and mid boards; level 8 stabilization into Fast 9; when-to-make signals; holder/item and flex tips.",
       "note": "Exact page facts were retained; no placement strength was inferred."
     },
@@ -46,8 +46,8 @@
       "id": "tftactics-set18-tierlist",
       "url": "https://tftactics.gg/tierlist/team-comps/",
       "title": "TFTactics Set 18 team comps tier list",
-      "reviewedAt": "2026-09-06T00:00:00Z",
-      "sourceVersion": "page-review-2026-09-06",
+      "reviewedAt": "2026-09-13T00:00:00Z",
+      "sourceVersion": "patch-18.2-page-review-2026-09-13",
       "scope": "Public final rosters, roll-style labels and visibly marked augment/emblem gates.",
       "note": "The public listing does not establish early boards, holders, items, exact timings, pivots or positioning for these entries."
     }

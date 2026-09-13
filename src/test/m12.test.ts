@@ -34,14 +34,14 @@ function snapshot() {
 describe('M12 public snapshot boundary', () => {
   it('normalizes captured public responses, exact canonical aliases and scope', () => {
     const s = snapshot();
-    expect(s.comps).toHaveLength(53);
+    expect(s.comps).toHaveLength(54);
     expect(s.units).toHaveLength(65);
     expect(s.items).toHaveLength(141);
     expect(s.traits).toHaveLength(36);
     expect(s.manifest.scope).toMatchObject({
       set: 18,
-      patch: '18.1',
-      hotfix: 'd',
+      patch: '18.2',
+      hotfix: '',
       window: 'Last 3 days',
       queue: 1100,
     });
@@ -104,43 +104,43 @@ describe('M12 public snapshot boundary', () => {
       await activateExternal(root, s, data);
       expect(await readdir(join(root, 'archive'))).toHaveLength(1);
       await expect(activateExternal(root, { ...s, comps: [] }, data)).rejects.toThrow();
-      expect(JSON.parse(await readFile(join(root, 'current.json'), 'utf8')).comps).toHaveLength(53);
+      expect(JSON.parse(await readFile(join(root, 'current.json'), 'utf8')).comps).toHaveLength(54);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
   it('marks compatible old data stale and excludes cross-patch trends', () => {
     const s = snapshot();
-    expect(externalStatus(s, data, '2026-10-01T00:00:00Z')).toContain('Stale');
+    expect(externalStatus(s, data, '2026-10-01T00:00:00Z')).toContain('stale');
     const next = structuredClone(s);
-    next.manifest.scope.patch = '18.2';
+    next.manifest.scope.patch = '18.3';
     expect(externalTrend(s, next, s.comps[0].id)).toBeNull();
   });
 });
 describe('M12 strategic evidence and decisions', () => {
   const scope = snapshot().manifest.scope;
   const e = { sample: 10000, average: 4, top4: 0.6, win: 0.15, playRate: 0.1 };
-  const internal = { average: 3, top4: 0.8, win: 0.2, effectiveSample: 30, patch: '18.1' };
+  const internal = { average: 3, top4: 0.8, win: 0.2, effectiveSample: 30, patch: '18.2' };
   it('large compatible prior dominates tiny local evidence, which still adjusts it', () => {
-    const f = fuseEvidence(e, scope, NOW, internal, '18.1', NOW);
+    const f = fuseEvidence(e, scope, NOW, internal, '18.2', NOW);
     expect(f.average).toBeGreaterThan(3.95);
     expect(f.average).toBeLessThan(4);
     expect(f.externalWeight).toBeGreaterThan(f.internalWeight * 50);
   });
   it('wrong patch contributes zero; missing external falls back', () => {
     for (const ext of [e, undefined]) {
-      const f = fuseEvidence(ext, { ...scope, patch: '18.2' }, NOW, internal, '18.1', NOW);
+      const f = fuseEvidence(ext, { ...scope, patch: '18.3' }, NOW, internal, '18.2', NOW);
       expect(f.externalWeight).toBe(0);
       expect(f.average).toBe(3);
     }
   });
   it('unknown scope and stale evidence reduce confidence and preserve disagreement', () => {
-    const a = fuseEvidence(e, scope, NOW, undefined, '18.1', NOW),
-      b = fuseEvidence(e, { ...scope, rank: null }, NOW, undefined, '18.1', NOW),
-      c = fuseEvidence(e, scope, NOW, undefined, '18.1', '2026-11-01T00:00:00Z');
+    const a = fuseEvidence(e, scope, NOW, undefined, '18.2', NOW),
+      b = fuseEvidence(e, { ...scope, rank: null }, NOW, undefined, '18.2', NOW),
+      c = fuseEvidence(e, scope, NOW, undefined, '18.2', '2026-11-01T00:00:00Z');
     expect(b.confidence).toBeLessThan(a.confidence);
     expect(c.externalWeight).toBeLessThan(1);
-    const d = fuseEvidence(e, scope, NOW, { ...internal, effectiveSample: 500 }, '18.1', NOW);
+    const d = fuseEvidence(e, scope, NOW, { ...internal, effectiveSample: 500 }, '18.2', NOW);
     expect(d.disagreement).toBe(true);
     expect(opportunitySignals({ ...d, internalWeight: 5, externalWeight: 5 }, 0)).toEqual([]);
   });

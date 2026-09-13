@@ -57,7 +57,7 @@ const baseState = (): ApplicationState => ({
 
 describe('M11 patch knowledge compiler', () => {
   it('accepts a same-set balance refresh while marking old guidance stale', () => {
-    const next = normalizeCommunityDragon(raw, { ...provenance, patch: '18.2' });
+    const next = normalizeCommunityDragon(raw, { ...provenance, patch: '18.3' });
     const result = createRecommendations(next, defaultSettings, NOW);
     expect(result.playbooks.length).toBeGreaterThan(0);
     expect(result.playbooks.every((p) => p.strategy.freshness.state === 'stale')).toBe(true);
@@ -93,8 +93,8 @@ describe('M11 patch knowledge compiler', () => {
     const k = compileKnowledge(changed, data);
     expect(knowledgeDelta(data.knowledge!, k).changed).toEqual(['DA_18_Xayah']);
     expect(k.fingerprint).not.toBe(data.knowledge?.fingerprint);
-    expect(normalizeCommunityDragon(raw, { ...provenance, patch: '18.2' }).version.patch).toBe(
-      '18.2',
+    expect(normalizeCommunityDragon(raw, { ...provenance, patch: '18.3' }).version.patch).toBe(
+      '18.3',
     );
   });
   it('fails closed on ambiguity and new-set isolation', () => {

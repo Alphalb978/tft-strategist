@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "set": 18,
-  "patch": "18.1",
-  "reviewedAt": "2026-09-06T00:00:00Z",
+  "patch": "18.2",
+  "reviewedAt": "2026-09-13T00:00:00Z",
   "playbooks": [
     {
       "id": "solar-elderwood",
@@ -167,7 +167,7 @@
       "augmentCategory": "",
       "augmentChange": "",
       "levelNote": "Fast 9 is source-labeled; exact timing is unavailable.",
-      "notes": "Patch 18.1d public roster and roll-style label. Core entries are classifier anchors selected from the sourced board; roles, items and opening are unavailable.",
+      "notes": "Patch 18.2 public roster and roll-style label. Core entries are classifier anchors selected from the sourced board; roles, items and opening are unavailable.",
       "features": [50, 50, 50, 50, 50, 50, 50, 50, 50],
       "coverage": [],
       "opening": []
@@ -194,7 +194,7 @@
       "augmentCategory": "",
       "augmentChange": "",
       "levelNote": "Slow Roll (5) and augment requirement are source-labeled; exact timing is unavailable.",
-      "notes": "Patch 18.1d public roster and roll-style label. The source marks this line as augment-dependent; no specific augment fact is imported.",
+      "notes": "Patch 18.2 public roster and roll-style label. The source marks this line as augment-dependent; no specific augment fact is imported.",
       "features": [50, 50, 50, 50, 50, 50, 50, 50, 50],
       "coverage": [],
       "opening": []
@@ -221,7 +221,7 @@
       "augmentCategory": "",
       "augmentChange": "",
       "levelNote": "Fast 8 is source-labeled; exact timing is unavailable.",
-      "notes": "Patch 18.1d public roster and roll-style label; roles, items and opening are unavailable.",
+      "notes": "Patch 18.2 public roster and roll-style label; roles, items and opening are unavailable.",
       "features": [50, 50, 50, 50, 50, 50, 50, 50, 50],
       "coverage": [],
       "opening": []
@@ -248,7 +248,7 @@
       "augmentCategory": "",
       "augmentChange": "",
       "levelNote": "Fast 8 and emblem requirement are source-labeled; exact timing is unavailable.",
-      "notes": "Patch 18.1d public roster. The source marks the line as emblem-dependent; no emblem encoding or requirement is inferred.",
+      "notes": "Patch 18.2 public roster. The source marks the line as emblem-dependent; no emblem encoding or requirement is inferred.",
       "features": [50, 50, 50, 50, 50, 50, 50, 50, 50],
       "coverage": [],
       "opening": []
@@ -275,7 +275,7 @@
       "augmentCategory": "",
       "augmentChange": "",
       "levelNote": "Slow Roll (7) and augment requirement are source-labeled; exact timing is unavailable.",
-      "notes": "Patch 18.1d public roster. The source marks the line as augment-dependent; roles and specific augment requirements are unavailable.",
+      "notes": "Patch 18.2 public roster. The source marks the line as augment-dependent; roles and specific augment requirements are unavailable.",
       "features": [50, 50, 50, 50, 50, 50, 50, 50, 50],
       "coverage": [],
       "opening": []
@@ -302,7 +302,7 @@
       "augmentCategory": "",
       "augmentChange": "",
       "levelNote": "Fast 8 is source-labeled; exact timing is unavailable.",
-      "notes": "Patch 18.1d public roster and roll-style label; roles, items and opening are unavailable.",
+      "notes": "Patch 18.2 public roster and roll-style label; roles, items and opening are unavailable.",
       "features": [50, 50, 50, 50, 50, 50, 50, 50, 50],
       "coverage": [],
       "opening": []
@@ -338,7 +338,7 @@
       "augmentCategory": "",
       "augmentChange": "",
       "levelNote": "Slow Roll (5) is source-labeled; exact timing is unavailable.",
-      "notes": "Patch 18.1d public roster and roll-style label; roles, items and opening are unavailable.",
+      "notes": "Patch 18.2 public roster and roll-style label; roles, items and opening are unavailable.",
       "features": [50, 50, 50, 50, 50, 50, 50, 50, 50],
       "coverage": [],
       "opening": []
@@ -365,7 +365,7 @@
       "augmentCategory": "",
       "augmentChange": "",
       "levelNote": "Slow Roll (6) is source-labeled; exact timing is unavailable.",
-      "notes": "Patch 18.1d public roster and roll-style label; roles, items and opening are unavailable.",
+      "notes": "Patch 18.2 public roster and roll-style label; roles, items and opening are unavailable.",
       "features": [50, 50, 50, 50, 50, 50, 50, 50, 50],
       "coverage": [],
       "opening": []
@@ -401,7 +401,7 @@
       "augmentCategory": "",
       "augmentChange": "",
       "levelNote": "Fast 8 is source-labeled; exact timing is unavailable.",
-      "notes": "Patch 18.1d public roster and roll-style label; roles, items and opening are unavailable.",
+      "notes": "Patch 18.2 public roster and roll-style label; roles, items and opening are unavailable.",
       "features": [50, 50, 50, 50, 50, 50, 50, 50, 50],
       "coverage": [],
       "opening": []

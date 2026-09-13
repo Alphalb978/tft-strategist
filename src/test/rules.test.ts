@@ -19,8 +19,9 @@ const errorCodes = (value = board()) =>
 describe('audited Set 18 rules and validation', () => {
   it('reconciles the normalized export with the versioned rule fixture', () => {
     expect(auditStaticData(data)).toEqual([]);
-    expect(data.version.parityStatus).toBe('known-stale');
-    expect(set18Rules.hotfixOverlay.changes).toContainEqual([
+    expect(data.version.parityStatus).toBe('unverified');
+    expect(set18Rules.hotfixOverlay.changes).toEqual([]);
+    expect(set18Rules.hotfixOverlay.history[0].changes).toContainEqual([
       'DA_Riftbeast18',
       '7-piece team stats',
       '6%',
@@ -44,9 +45,9 @@ describe('audited Set 18 rules and validation', () => {
       4: 10,
       5: 20,
       6: 36,
-      7: 60,
-      8: 68,
-      9: 68,
+      7: 56,
+      8: 64,
+      9: 64,
     });
     expect(set18Rules.shop.starCopies).toEqual({ 1: 1, 2: 3, 3: 9 });
     expect(set18Rules.economy).toMatchObject({
@@ -190,11 +191,12 @@ describe('audited Set 18 rules and validation', () => {
   });
 
   it('distinguishes export presence from live augment availability', () => {
-    const forge = data.augments.find((augment) => augment.id === 'DA_ForgeAFriend')!;
-    expect(forge).toMatchObject({ presentInExport: true, liveStatus: 'disabled' });
+    expect(data.augments.find((augment) => augment.id === 'DA_ForgeAFriend')).toBeUndefined();
+    const current = data.augments.find((augment) => augment.id === 'DA_KnowYourEnemy')!;
+    expect(current).toMatchObject({ presentInExport: true, liveStatus: 'unverified' });
     const value = board();
-    value.augmentIds = [forge.id];
-    expect(errorCodes(value)).toContain('augment-disabled');
+    value.augmentIds = ['DA_ForgeAFriend'];
+    expect(errorCodes(value)).toContain('augment');
     expect(data.augments.some((augment) => augment.liveStatus === 'unverified')).toBe(true);
   });
 

@@ -12,7 +12,7 @@ import { staticSetCompatibilityFingerprint } from '../domain/fingerprint';
 import { usedBoardSlots } from './ruleSet';
 
 export const TEAM_PLANNER_CONTRACT_VERSION = 'team-planner-support-v3';
-export const PLANNER_STATIC_FINGERPRINT = 'fnv1a-9b3bc81f';
+export const PLANNER_STATIC_FINGERPRINT = 'fnv1a-e2985ac2';
 const byChampion = new Map(mapping.entries.map((entry) => [entry.championId, entry]));
 const byCode = new Map(mapping.entries.map((entry) => [entry.plannerId, entry]));
 export interface PlannerWireSlot {

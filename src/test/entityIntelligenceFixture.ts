@@ -22,7 +22,7 @@ export const profile: ObservedProfile = {
   fingerprint: 'fixture',
   scope: {
     set: 18,
-    patch: '18.1',
+    patch: '18.2',
     clientVersions: [],
     cohort: 'verified-rank',
     ranks: ['MASTER'],

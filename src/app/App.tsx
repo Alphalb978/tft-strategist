@@ -233,7 +233,7 @@ export function App() {
       setState(await refreshApplication(state, repository.current));
       setLobby(null);
       setScanState(createIdleScanState());
-      setToast('Static source refreshed. Combat-value parity remains known stale.');
+      setToast('Static source refreshed. Combat-value parity remains unverified.');
     } catch {
       setToast('Refresh unavailable. Your previous data and plans are still available.');
     } finally {
@@ -902,8 +902,10 @@ export function App() {
           <div className="topbar-right">
             <span className="patch-dot" />
             <span>
-              Set {state?.data.version.set ?? '18'} · {state?.data.version.patch ?? '18.1'}{' '}
-              <small>Combat data: known stale</small>
+              Set {state?.data.version.set ?? '18'} · {state?.data.version.patch ?? 'unknown'}{' '}
+              <small>
+                Combat data: {state?.data.version.parityStatus.replace('-', ' ') ?? 'unverified'}
+              </small>
             </span>
             <span className="top-divider" />
             <span className="profile-avatar">S</span>

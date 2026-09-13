@@ -4,12 +4,19 @@
     "setId": "set18",
     "setNumber": 18,
     "setName": "Enchanted Wilds",
-    "patch": "18.1",
+    "patch": "18.2",
     "mode": "standard",
     "mutator": "TFTSet18",
-    "verifiedAt": "2026-09-06T00:00:00.000Z"
+    "verifiedAt": "2026-09-13T00:00:00.000Z"
   },
   "sources": {
+    "riotPatch182": {
+      "title": "Teamfight Tactics patch 18.2 notes",
+      "url": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-2/",
+      "publisher": "Riot Games",
+      "sourceClass": "official",
+      "checkedAt": "2026-09-13T00:00:00.000Z"
+    },
     "riotPatch181": {
       "title": "Teamfight Tactics patch 18.1 notes",
       "url": "https://teamfighttactics.leagueoflegends.com/en-sg/news/game-updates/teamfight-tactics-patch-18-1/",
@@ -50,18 +57,18 @@
       "url": "https://raw.communitydragon.org/latest/cdragon/tft/en_us.json",
       "publisher": "CommunityDragon",
       "sourceClass": "technical",
-      "checkedAt": "2026-09-06T00:00:00.000Z",
-      "lastModified": "2026-08-29T00:53:30.000Z",
-      "etag": "\"6a922d8a-170fa5c\""
+      "checkedAt": "2026-09-13T00:00:00.000Z",
+      "lastModified": "2026-09-12T00:37:08.000Z",
+      "etag": "W/\"6aa49eb4-170eb27\""
     },
     "communityDragonMap22": {
       "title": "CommunityDragon Map22 raw game data",
       "url": "https://raw.communitydragon.org/latest/game/data/maps/shipping/map22/map22.bin.json",
       "publisher": "CommunityDragon",
       "sourceClass": "technical",
-      "checkedAt": "2026-09-06T00:00:00.000Z",
-      "lastModified": "2026-08-29T00:50:59.000Z",
-      "etag": "W/\"6a922cf3-4217efc\""
+      "checkedAt": "2026-09-13T00:00:00.000Z",
+      "lastModified": "2026-09-12T00:35:39.000Z",
+      "etag": "W/\"6aa49e5b-4256696\""
     },
     "wikiChampion": {
       "title": "TFT champion and shop mechanics",
@@ -93,11 +100,11 @@
     }
   },
   "parity": {
-    "status": "known-stale",
-    "exportLastModified": "2026-08-29T00:53:30.000Z",
-    "liveEvidenceThrough": "2026-09-01T00:00:00.000Z",
-    "reason": "The available CommunityDragon export predates the official August 31 / September 1 patch 18.1 hotfix. Structural identifiers and rule tables are audited independently; live combat values are not claimed current.",
-    "sourceRefs": ["communityDragonStatic", "communityDragonMap22", "riotPatch181"]
+    "status": "unverified",
+    "exportLastModified": "2026-09-12T00:37:08.000Z",
+    "liveEvidenceThrough": "2026-09-09T18:00:00.000Z",
+    "reason": "The reviewed CommunityDragon export postdates Riot's Patch 18.2 notes and passes Set 18 structural identity and roster checks. CommunityDragon does not assert exact live-patch combat parity, so combat values remain unverified rather than being promoted to current.",
+    "sourceRefs": ["communityDragonStatic", "communityDragonMap22", "riotPatch182"]
   },
   "board": {
     "status": "verified",
@@ -197,11 +204,11 @@
   },
   "experience": {
     "status": "verified",
-    "xpToNextLevel": { "2": 2, "3": 6, "4": 10, "5": 20, "6": 36, "7": 60, "8": 68, "9": 68 },
+    "xpToNextLevel": { "2": 2, "3": 6, "4": 10, "5": 20, "6": 36, "7": 56, "8": 64, "9": 64 },
     "purchaseGold": 4,
     "purchaseXp": 4,
     "freeXpPerRound": 2,
-    "sourceRefs": ["riotPatch161", "riotPatch164", "wikiExperience"]
+    "sourceRefs": ["riotPatch161", "riotPatch164", "wikiExperience", "riotPatch182"]
   },
   "economy": {
     "status": "verified",
@@ -218,7 +225,7 @@
       "planningPhaseOnly": true,
       "appearsEveryOtherShop": true,
       "stageFiveEveryOtherGuaranteedCategory": "combat",
-      "sourceRefs": ["riotPatch181", "riotSetOverview"]
+      "sourceRefs": ["riotPatch181", "riotPatch182", "riotSetOverview"]
     },
     "teamPlanner": {
       "status": "unverified",
@@ -229,33 +236,59 @@
   "augmentAvailability": {
     "exportPresenceStatus": "verified",
     "defaultLiveStatus": "unverified",
-    "overrides": {
-      "DA_ForgeAFriend": {
-        "liveStatus": "disabled",
-        "effectiveAt": "2026-08-28T00:00:00.000Z",
-        "reason": "Temporarily disabled in the official patch 18.1 notes.",
-        "sourceRefs": ["riotPatch181"]
-      }
-    },
-    "sourceRefs": ["communityDragonStatic", "riotPatch181"]
+    "overrides": {},
+    "sourceRefs": ["communityDragonStatic", "riotPatch182"]
   },
   "hotfixOverlay": {
-    "status": "verified",
-    "effectiveThrough": "2026-09-01T00:00:00.000Z",
-    "sourceRefs": ["riotPatch181"],
-    "changes": [
-      ["DA_Riftbeast18", "7-piece team stats", "6%", "5%"],
-      ["DA_Cinderling18", "attack damage / ability AD ratio", "48 / 450%", "45 / 500%"],
-      ["DA_18_Cassiopeia", "ability damage", "240/360/540", "245/370/555"],
-      ["DA_18_MasterYi_AD", "bonus armor and magic resistance", "40", "45"],
-      ["DA_18_Ahri", "ability damage", "270/405/610", "280/420/630"],
-      ["DA_Amumu18", "mana / heal", "40/100 / 80/105/135", "25/85 / 90/115/145"],
-      ["DA_18_Morgana", "mana", "0/40", "10/50"],
-      ["DA_18_Soraka", "ability damage", "110/165/270", "115/175/285"],
-      ["DA_Draven18", "mana / attack speed", "0/75 / 0.8", "0/60 / 0.85"],
-      ["DA_18_ElderDragon", "attack damage", "80", "75"],
-      ["DA_Lux18_Base", "ability damage", "330/495/9,999", "360/540/9,999"],
-      ["DA_18_Lux_Moonbeam", "Lunar ally damage amplification", "15/15/50%", "10/10/50%"]
+    "status": "not-applied",
+    "effectiveThrough": "2026-09-09T18:00:00.000Z",
+    "sourceRefs": ["communityDragonStatic", "riotPatch182"],
+    "reason": "No combat-value overlay is applied to the refreshed post-18.2 export. Strategist normalizes structural unit data only, and exact CommunityDragon combat parity remains explicitly unverified.",
+    "changes": [],
+    "history": [
+      {
+        "patch": "18.1",
+        "effectiveThrough": "2026-09-01T00:00:00.000Z",
+        "sourceRefs": ["riotPatch181"],
+        "changes": [
+          ["DA_Riftbeast18", "7-piece team stats", "6%", "5%"],
+          ["DA_Cinderling18", "attack damage / ability AD ratio", "48 / 450%", "45 / 500%"],
+          ["DA_18_Cassiopeia", "ability damage", "240/360/540", "245/370/555"],
+          ["DA_18_MasterYi_AD", "bonus armor and magic resistance", "40", "45"],
+          ["DA_18_Ahri", "ability damage", "270/405/610", "280/420/630"],
+          ["DA_Amumu18", "mana / heal", "40/100 / 80/105/135", "25/85 / 90/115/145"],
+          ["DA_18_Morgana", "mana", "0/40", "10/50"],
+          ["DA_18_Soraka", "ability damage", "110/165/270", "115/175/285"],
+          ["DA_Draven18", "mana / attack speed", "0/75 / 0.8", "0/60 / 0.85"],
+          ["DA_18_ElderDragon", "attack damage", "80", "75"],
+          ["DA_Lux18_Base", "ability damage", "330/495/9,999", "360/540/9,999"],
+          ["DA_18_Lux_Moonbeam", "Lunar ally damage amplification", "15/15/50%", "10/10/50%"]
+        ]
+      }
+    ]
+  },
+  "patchAudit": {
+    "patch": "18.2",
+    "reviewedAt": "2026-09-13T00:00:00.000Z",
+    "sourceRefs": ["riotPatch182", "communityDragonStatic", "communityDragonMap22"],
+    "adopted": [
+      ["experience.xpToNextLevel.7", 56, "Level 7 to Level 8 XP"],
+      ["experience.xpToNextLevel.8", 64, "Level 8 to Level 9 XP"],
+      ["experience.xpToNextLevel.9", 64, "Level 9 to Level 10 XP"]
+    ],
+    "unchangedRepresentedContracts": [
+      "Set 18 / TFTSet18 identity and probes",
+      "board capacity and special slot rules",
+      "unique-unit trait counting and Lux/Elder Dragon contribution overrides",
+      "shop odds, pool copies, reroll price, interest and star-copy math",
+      "Wisp shop cadence, planning-phase duration and stage-five category cadence"
+    ],
+    "reviewedNotModeled": [
+      "Patch 18.2 trait combat values and Coven/Fae reward values are not inputs to the current rules engine.",
+      "Patch 18.2 champion spell, mana, attack damage, attack speed, shield, heal and targeting changes are not normalized into product logic.",
+      "Patch 18.2 augment balance, exclusivity and reward changes are not modeled; only export presence and explicit live availability overrides are represented.",
+      "Patch 18.2 Wisp prices, Cutpurse gold chance, Combust damage, Borrowed Gear timing and Field of Mice removal are not represented by the current Wisp cadence contract.",
+      "Curated playbook boards and route labels were re-audited on their current Patch 18.2 public pages and retain the Experimental evidence label; no Patch 18.2 strength claim is inferred. Their qualitative level routes contain no old numeric XP thresholds."
     ]
   },
   "unknowns": [

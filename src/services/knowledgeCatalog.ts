@@ -41,7 +41,7 @@ import {
 } from '../rules/ruleSet';
 import { teamPlanner } from '../rules/teamPlanner';
 import { loadStrategyGuidance } from '../providers/strategyGuidance';
-import { externalStatus } from '../providers/externalMeta';
+import { externalStatusDetail } from '../providers/externalMeta';
 import { deriveCanonicalRouteSignature } from '../strategy/lobbyPressure';
 
 export interface RuntimeKnowledgeCatalog {
@@ -668,8 +668,8 @@ export async function loadRuntimeKnowledgeCatalog(
 
   // Check snapshot compatibility
   if (externalSnapshot) {
-    const status = externalStatus(externalSnapshot, staticData);
-    if (status.includes('incompatible')) {
+    const status = externalStatusDetail(externalSnapshot, staticData);
+    if (status.kind !== 'compatible') {
       externalSnapshot = null;
     }
   }

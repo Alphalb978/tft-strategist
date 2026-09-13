@@ -130,6 +130,9 @@ Every such field should be either evidence-derived, explicitly curated, or clear
 - Invalidate/recompute derived features when source version changes materially.
 - Preserve historical completed-match records with their original set/patch metadata.
 - If patch identification is uncertain, display that uncertainty rather than presenting stale strategy as current.
+- Current reviewed authority is Set 18 / `TFTSet18` / Patch 18.2, reviewed 2026-09-13 against Riot's official Patch 18.2 notes.
+- The only Patch 18.2 balance delta consumed directly by the rules engine is XP: 56 for Level 7→8, 64 for Level 8→9, and 64 for Level 9→10. Other Patch 18.2 changes stay unmodeled unless product logic begins to depend on them.
+- MetaTFT patch preflight and snapshot activation compare external set/patch against this reviewed identity. Unknown or future patches are rejected while the last compatible snapshot remains active.
 
 ## Team Planner
 Team Planner is isolated behind a codec/adapter.

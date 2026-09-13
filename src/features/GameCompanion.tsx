@@ -12,7 +12,7 @@ import { IntelligenceHover } from '../components/IntelligenceHover';
 import { CurrentGameEditor } from './SmartCompanion';
 import { fusedForPlan, relatedExternal, externalTrend } from '../strategy/evidenceFusion';
 import { opportunitySignals } from '../strategy/opportunities';
-import { externalStatus } from '../providers/externalMeta';
+import { externalStatus, externalStatusDetail } from '../providers/externalMeta';
 import type { LiveScreenState } from '../strategy/liveScreenFusion';
 export function GameCompanion({
   plan,
@@ -78,7 +78,7 @@ export function GameCompanion({
   const positioning = positionBoard(
       plan,
       state.data,
-      externalStatus(state.external, state.data, now).startsWith('Compatible') &&
+      externalStatusDetail(state.external, state.data, now).kind === 'compatible' &&
         relatedExternal(plan, state.external)?.relation === 'strong'
         ? {
             comp: relatedExternal(plan, state.external)!.comp,
@@ -98,9 +98,7 @@ export function GameCompanion({
           .map((old) => externalTrend(old, state.external!, external.comp.id))
           .find(Boolean)
       : null;
-  const usable =
-    externalStatus(state.external, state.data, now).startsWith('Compatible') ||
-    externalStatus(state.external, state.data, now).startsWith('Stale');
+  const usable = externalStatusDetail(state.external, state.data, now).usable;
   const name = (id: string) =>
     [...state.data.champions, ...state.data.items].find((e) => e.id === id)?.name ?? id;
   const hover = (id: string) => (
