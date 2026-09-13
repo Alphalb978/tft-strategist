@@ -75,6 +75,7 @@ The Home control is session-only until **Use as default** is selected. The defau
 `npm.cmd run tauri dev` launched the real desktop application. The same rendered frontend was inspected at 1440×1000 and exercised with a focused Playwright acceptance test.
 
 - Home: provider tier, difficulty, leveling style, holder emphasis, and item icons render compactly on all three primary cards.
+- Home cleanup: leveling style appears only in the metadata badge row, evidence reliability is labeled `Evidence confidence`, and the leading role explains whether Final Safety, trusted live evidence, or the bounded preference adjustment caused the comp to rank first.
 - Home preference: selecting Easy moved `Blossom Sett` into the primary portfolio. Its displayed ranking became `55.2 Preferred Fit`, with an explicit `+3.0` row, while `Final Safety` remained `52.2`.
 - Comps: enriched library cards show compact provider badges and place item icons directly below the correct holder.
 - Playbook: the details view labels packages `MetaTFT · same comp, set, patch and visible holder package` and each holder as a `provider recommendation`. Strategy coverage remains distinct.
@@ -93,7 +94,7 @@ Screenshots:
 ## Verification commands
 
 - `npm.cmd run metatft:refresh` — passed; 54 comps activated for Patch 18.2.
-- `npm.cmd test -- --reporter=dot` — passed; 50 files, 667 tests.
+- `npm.cmd test` — passed; 50 files, 672 tests.
 - `npm.cmd exec playwright -- test e2e/metatftEnrichment.spec.ts` — passed; 1 focused rendered acceptance test.
 - `npm.cmd run typecheck` — passed.
 - `npm.cmd run lint` — passed.

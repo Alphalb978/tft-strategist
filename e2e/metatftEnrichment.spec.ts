@@ -20,7 +20,16 @@ test('MetaTFT enrichment and difficulty preference are visible without changing 
   await expect(blossom.getByText('Preferred Fit', { exact: true })).toBeVisible();
   await expect(blossom.getByText('+ Difficulty preference', { exact: true })).toBeVisible();
   await expect(blossom.getByText('Final Safety', { exact: true })).toBeVisible();
+  await expect(blossom.getByText('Fast 8', { exact: true })).toHaveCount(1);
+  await expect(blossom.locator('.plan-role')).not.toContainText('Fast 8');
+  await expect(blossom.getByText(/Evidence confidence:/)).toBeVisible();
   await capture(page, { path: 'artifacts/m12-final-companion/home-easy-preference.png' });
+  await blossom.scrollIntoViewIfNeeded();
+  await blossom
+    .locator('img')
+    .evaluateAll((images) =>
+      Promise.all(images.map((image) => (image as HTMLImageElement).decode().catch(() => {}))),
+    );
   await blossom.screenshot({
     path: 'artifacts/m12-final-companion/home-easy-preferred-comp.png',
   });

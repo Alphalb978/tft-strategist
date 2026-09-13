@@ -11,8 +11,13 @@ import {
 } from '../../scripts/metatft-normalize';
 import { CompMetaBadges, ExternalCompLineup } from '../components/CompEnrichment';
 import type { ExternalSnapshot } from '../domain/externalMeta';
-import type { Playbook } from '../domain/models';
-import { createRecommendations, rescoreHomeRecommendations } from '../services/application';
+import type { Playbook, RecommendationCandidate, RecommendationPortfolio } from '../domain/models';
+import { Home, primaryRecommendationRole } from '../features/Home';
+import {
+  createRecommendations,
+  rescoreHomeRecommendations,
+  type ApplicationState,
+} from '../services/application';
 import { defaultSettings } from '../storage/repository';
 import { difficultyPreferenceAdjustment, scoreHomeCandidates } from '../strategy/homeScoring';
 import { data, NOW, playbooks } from './fixtures';
@@ -65,6 +70,34 @@ function exactExternal(
     },
   }));
   return snapshot;
+}
+
+function candidateWithDisplayScores(
+  index: number,
+  finalSafety: number,
+  liveDirection = finalSafety,
+  difficultyPreferenceAdjustment = 0,
+): RecommendationCandidate {
+  const plan = playbooks[index];
+  const [candidate] = scoreHomeCandidates([plan], {
+    data,
+    now: NOW,
+    config: defaultSettings.homeRecommendation,
+    external: exactExternal([plan], ['unknown']),
+    difficultyPreference: 'anything',
+  });
+  return {
+    ...candidate,
+    score: liveDirection + difficultyPreferenceAdjustment,
+    home: {
+      ...candidate.home!,
+      finalSafety,
+      liveDirection,
+      liveOwnedAffinity: Math.max(0, liveDirection - finalSafety),
+      liveShopOpportunity: 0,
+      difficultyPreferenceAdjustment,
+    },
+  };
 }
 
 describe('MetaTFT explicit comp enrichment ingestion', () => {
@@ -203,6 +236,88 @@ describe('bounded player difficulty preference', () => {
     };
     rescoreHomeRecommendations(state as never, undefined, NOW, null, 'easy');
     expect(state.activeSession.selectedPlaybookId).toBe('locked-plan');
+  });
+});
+
+describe('Home enrichment labels', () => {
+  it('labels a #1 with the highest Final Safety as BEST FINAL SAFETY', () => {
+    const leader = candidateWithDisplayScores(0, 60);
+    const other = candidateWithDisplayScores(1, 59);
+    expect(primaryRecommendationRole(leader, [leader, other])).toBe('BEST FINAL SAFETY');
+  });
+
+  it('labels a live-evidence-driven #1 as BEST LIVE DIRECTION', () => {
+    const safetyLeader = candidateWithDisplayScores(0, 60);
+    const liveLeader = candidateWithDisplayScores(1, 59, 61);
+    expect(primaryRecommendationRole(liveLeader, [liveLeader, safetyLeader])).toBe(
+      'BEST LIVE DIRECTION',
+    );
+  });
+
+  it('labels a preference-driven #1 as BEST PREFERRED FIT', () => {
+    const safetyLeader = candidateWithDisplayScores(0, 60);
+    const preferredLeader = candidateWithDisplayScores(1, 59, 59, 3);
+    expect(primaryRecommendationRole(preferredLeader, [preferredLeader, safetyLeader])).toBe(
+      'BEST PREFERRED FIT',
+    );
+  });
+
+  it('derives role labels without altering any candidate score', () => {
+    const safetyLeader = candidateWithDisplayScores(0, 60);
+    const liveLeader = candidateWithDisplayScores(1, 59, 61);
+    const preferredLeader = candidateWithDisplayScores(2, 58.5, 58.5, 3);
+    const candidates = [preferredLeader, liveLeader, safetyLeader];
+    const before = structuredClone(candidates);
+    primaryRecommendationRole(safetyLeader, candidates);
+    primaryRecommendationRole(liveLeader, candidates);
+    primaryRecommendationRole(preferredLeader, candidates);
+    expect(candidates).toEqual(before);
+  });
+
+  it('renders leveling style once per main card and names evidence confidence accurately', () => {
+    const plan = playbooks[2];
+    expect(plan.features.style).toBe('Fast 8');
+    const external = exactExternal([plan], ['easy']);
+    const [candidate] = scoreHomeCandidates([plan], {
+      data,
+      now: NOW,
+      config: defaultSettings.homeRecommendation,
+      external,
+      difficultyPreference: 'anything',
+    });
+    const state: ApplicationState = {
+      data,
+      ...createRecommendations(data, defaultSettings, NOW),
+      external,
+      settings: defaultSettings,
+      activeSession: null,
+      source: 'Bundled snapshot',
+      assets: {},
+    };
+    const portfolio: RecommendationPortfolio = {
+      plans: [{ candidate, role: 'Best Final Safety' }],
+      objective: candidate.score,
+      interactions: [],
+      generatedAt: NOW,
+      version: 'home-portfolio-contest-edge-v1',
+    };
+    const html = renderToStaticMarkup(
+      createElement(Home, {
+        state,
+        portfolio,
+        candidates: [candidate],
+        baselineCandidates: [candidate],
+        onOpen: () => {},
+        onData: () => {},
+        onScout: () => {},
+        lobby: null,
+      }),
+    );
+    const card = html.match(/<article class="plan-card primary-plan"[\s\S]*?<\/article>/)?.[0];
+    expect(card).toBeDefined();
+    expect(card?.match(/Fast 8/g)).toHaveLength(1);
+    expect(card).toContain('Evidence confidence:');
+    expect(card).not.toContain('Score confidence:');
   });
 });
 

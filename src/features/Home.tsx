@@ -34,6 +34,32 @@ export function pickRate(candidate: RecommendationCandidate) {
   return pick.unit === 'percent' ? `${pick.value.toFixed(2)}%` : pick.value.toFixed(2);
 }
 
+export function primaryRecommendationRole(
+  candidate: RecommendationCandidate,
+  candidates: RecommendationCandidate[],
+) {
+  const home = candidate.home;
+  if (!home) return 'BEST FINAL SAFETY';
+  const highestFinalSafety = Math.max(
+    ...candidates.map((entry) => entry.home?.finalSafety ?? Number.NEGATIVE_INFINITY),
+  );
+  if (home.finalSafety >= highestFinalSafety) return 'BEST FINAL SAFETY';
+
+  const liveDirection = home.liveDirection ?? home.finalSafety;
+  const highestLiveDirection = Math.max(
+    ...candidates.map(
+      (entry) => entry.home?.liveDirection ?? entry.home?.finalSafety ?? Number.NEGATIVE_INFINITY,
+    ),
+  );
+  const hasTrustedLiveContribution =
+    (home.liveOwnedAffinity ?? 0) > 0 || (home.liveShopOpportunity ?? 0) > 0;
+  if (hasTrustedLiveContribution && liveDirection >= highestLiveDirection) {
+    return 'BEST LIVE DIRECTION';
+  }
+  if (home.difficultyPreferenceAdjustment > 0) return 'BEST PREFERRED FIT';
+  return 'BEST FINAL SAFETY';
+}
+
 function supportedRole(
   candidate: RecommendationCandidate,
   index: number,
@@ -50,17 +76,7 @@ function supportedRole(
   }
   const home = candidate.home;
   if (!home) return primary[index]?.role ?? 'Portfolio route';
-  const bestTop4 = candidates
-    .filter((entry) => entry.home?.top4.raw !== null)
-    .sort(
-      (a, b) =>
-        (b.home?.top4.raw ?? 0) - (a.home?.top4.raw ?? 0) ||
-        a.playbook.id.localeCompare(b.playbook.id),
-    )[0];
-  if (index === 0)
-    return bestTop4?.playbook.id === candidate.playbook.id
-      ? 'BEST TOP-4 ROUTE'
-      : 'BEST FINAL SAFETY';
+  if (index === 0) return primaryRecommendationRole(candidate, candidates);
   if (candidate.contest.state === 'Low' && primary[0]?.candidate.contest.state !== 'Low')
     return 'LOW-CONTEST ALTERNATIVE';
   if (
@@ -449,7 +465,6 @@ export function Home({
               <div className="plan-identity">
                 <div className="plan-role">
                   {supportedRole(c, index, candidates, portfolio.plans, activeScan)}
-                  <span>{p.features.style}</span>
                 </div>
                 <h2>{p.title}</h2>
                 <CompMetaBadges plan={p} external={state.external} />
@@ -486,7 +501,7 @@ export function Home({
                         ? 'Provisional Safety'
                         : 'Final Safety'}
                 </span>
-                <b>Score confidence: {c.confidence.level}</b>
+                <b>Evidence confidence: {c.confidence.level}</b>
                 {activeScan.lobby && prior && (
                   <small className="score-delta">{formatLobbyDelta(c.score - prior.score)}</small>
                 )}

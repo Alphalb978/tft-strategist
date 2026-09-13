@@ -239,8 +239,8 @@ describe('M13C.1 — Recommendation UI Clarity and Parity Suite', () => {
       // Must include uppercase pill text and lowercase css class
       expect(html).toContain(`${state.toUpperCase()} CONTEST`);
       expect(html).toContain(`contest-${state.toLowerCase()}`);
-      // Must separate score confidence
-      expect(html).toContain('Score confidence:');
+      // Must identify confidence as evidence reliability, not ranking-score confidence.
+      expect(html).toContain('Evidence confidence:');
     }
 
     // No lobby provided -> CONTEST UNAVAILABLE
